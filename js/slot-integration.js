@@ -1135,7 +1135,8 @@
       ? await window.Stats.placeBet(bet)
       : (Game.placeBet(bet) ? { balance: Game.balance } : null);
     if (!placeResult) {
-      alert('Insufficient balance or server error');
+      if (!window.Auth || !window.Auth.isAuthenticated()) throw new Error('Session expired');
+      alert('Insufficient balance or server error.');
       throw new Error('Insufficient balance');
     }
     if (!window.Stats || !window.Stats.placeBet) Game.recordBet();

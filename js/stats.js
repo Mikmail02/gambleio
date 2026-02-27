@@ -55,11 +55,12 @@ const Stats = {
     if (res.status === 401) {
       const ok = await this._reAuth();
       if (ok) {
-        // Rebuild headers with new token
-        if (opts.headers) {
-          opts.headers = this._headers();
-        }
+        if (opts.headers) opts.headers = this._headers();
         res = await fetch(url, opts);
+      } else {
+        if (window.Auth && window.Auth.onSessionExpired) {
+          window.Auth.onSessionExpired();
+        }
       }
     }
     return res;

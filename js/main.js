@@ -197,7 +197,8 @@
       ? await window.Stats.placeBet(bet)
       : (Game.placeBet(bet) ? { balance: Game.balance } : null);
     if (!placeResult) {
-      alert('Insufficient balance or server error');
+      if (!window.Auth || !window.Auth.isAuthenticated()) return;
+      alert('Insufficient balance or server error.');
       return;
     }
     if (!window.Stats || !window.Stats.placeBet) Game.recordBet();

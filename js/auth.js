@@ -458,6 +458,12 @@
     });
   }
 
+  function handleSessionExpired() {
+    logout();
+    showLoginModal();
+    showError('Session expired. Please log in again.');
+  }
+
   window.Auth = {
     requireAuth,
     showLoginModal,
@@ -465,6 +471,7 @@
     getAuthHeaders,
     isAuthenticated,
     user: null,
+    onSessionExpired: handleSessionExpired,
     updateProfileBalance: () => {
       updateBalance();
       updateProfileStats();

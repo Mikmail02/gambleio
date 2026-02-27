@@ -9,19 +9,25 @@ const Leaderboard = {
     try {
       const res = await fetch(`${this.apiBase}/leaderboard/${type}`);
       if (!res.ok) throw new Error('Failed to load leaderboard');
-      return await res.json();
+      const data = await res.json();
+      return { ok: true, data: Array.isArray(data) ? data : [] };
     } catch (error) {
       console.error('Leaderboard error:', error);
-      return [];
+      return { ok: false, data: [] };
     }
   },
 
   async render(type, container) {
     if (!container) return;
     container.innerHTML = '<div class="leaderboard-loading">Loading...</div>';
-    const data = await this.load(type);
+    const result = await this.load(type);
+    if (!result.ok) {
+      container.innerHTML = '<div class="leaderboard-empty">Could not load leaderboard. Make sure the server is running (node server.js).</div>';
+      return;
+    }
+    const data = result.data;
     if (data.length === 0) {
-      container.innerHTML = '<div class="leaderboard-empty">No data yet</div>';
+      container.innerHTML = '<div class="leaderboard-empty">No data yet. Play games and sign up to appear on the leaderboard!</div>';
       return;
     }
     const currentUser = window.Auth && window.Auth.user ? window.Auth.user.username : null;
@@ -36,7 +42,7 @@ const Leaderboard = {
       } else if (type === 'wins') {
         value = formatDollars(user.totalGamblingWins || 0);
       } else if (type === 'biggest-win') {
-        value = formatDollars(user.biggestWinAmount);
+        value = formatDollars(user.biggestWinAmount || 0);
         if (user.biggestWinMultiplier && user.biggestWinMultiplier > 0) {
           subValue = `<span class="leaderboard-multiplier">${formatMultiplier(user.biggestWinMultiplier)}&times;</span>`;
         }

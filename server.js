@@ -15,7 +15,8 @@ app.use(express.json());
 app.use(express.static(__dirname));
 
 // --- File-based persistence ---
-const DATA_DIR = path.join(__dirname, 'data');
+// Use DATA_DIR env for persistent storage on deploy (e.g. /data or mounted volume)
+const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 
@@ -73,6 +74,7 @@ function getUserFromSession(token) {
 function ensureFields(user) {
   if (user.totalClicks === undefined) user.totalClicks = 0;
   if (user.totalWinsCount === undefined) user.totalWinsCount = 0;
+  if (user.totalGamblingWins === undefined) user.totalGamblingWins = 0;
   if (user.biggestWinAmount === undefined) user.biggestWinAmount = 0;
   if (user.biggestWinMultiplier === undefined) user.biggestWinMultiplier = 1;
   if (user.totalBets === undefined) user.totalBets = 0;
@@ -310,6 +312,23 @@ app.get('/api/leaderboard/:type', (req, res) => {
   res.json(sorted.slice(0, 100));
 });
 
+// Admin: reset all data (for beta end, etc). Requires ADMIN_RESET_KEY env.
+app.post('/api/admin/reset', (req, res) => {
+  const key = req.body?.key || req.headers['x-admin-key'];
+  if (!process.env.ADMIN_RESET_KEY || key !== process.env.ADMIN_RESET_KEY) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  users.clear();
+  sessions.clear();
+  saveUsers();
+  saveSessions();
+  console.log('Admin reset: all data cleared');
+  res.json({ success: true });
+});
+
 app.listen(PORT, () => {
   console.log(`Gambleio server running on http://localhost:${PORT}`);
+  if (DATA_DIR !== path.join(__dirname, 'data')) {
+    console.log(`Data dir: ${DATA_DIR}`);
+  }
 });
