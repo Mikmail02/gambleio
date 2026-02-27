@@ -46,14 +46,80 @@
     </header>
 
     <main class="main">
-      <!-- Home: clicker -->
+      <!-- Home: clicker + upgrades -->
       <section id="page-home" class="page page-home">
+          <div class="home-bg" aria-hidden="true">
+          <div class="home-bg-image" style="background-image: url('https://images.unsplash.com/photo-1511512578047-dfb367046420?w=1920&q=80')"></div>
+          <div class="home-bg-orb home-bg-orb--1"></div>
+          <div class="home-bg-orb home-bg-orb--2"></div>
+          <div class="home-bg-orb home-bg-orb--3"></div>
+        </div>
+
+        <aside class="home-upgrade-panel">
+          <div class="upgrade-panel-header">
+            <span class="upgrade-panel-icon">&#x1F6D2;</span>
+            <h3 class="upgrade-panel-title">Upgrades</h3>
+          </div>
+          <div class="upgrade-panel-items">
+            <div class="upgrade-item upgrade-item--locked">
+              <div class="upgrade-item-icon">&#x2B06;</div>
+              <div class="upgrade-item-info">
+                <span class="upgrade-item-name">Click Power x2</span>
+                <span class="upgrade-item-desc">Double your earnings per click</span>
+                <span class="upgrade-item-price">$50,000</span>
+              </div>
+              <div class="upgrade-item-badge">Coming Soon</div>
+            </div>
+            <div class="upgrade-item upgrade-item--locked">
+              <div class="upgrade-item-icon">&#x1F4B0;</div>
+              <div class="upgrade-item-info">
+                <span class="upgrade-item-name">Auto-Collect</span>
+                <span class="upgrade-item-desc">Earn passively while away</span>
+                <span class="upgrade-item-price">$100,000</span>
+              </div>
+              <div class="upgrade-item-badge">Coming Soon</div>
+            </div>
+            <div class="upgrade-item upgrade-item--locked">
+              <div class="upgrade-item-icon">&#x1F525;</div>
+              <div class="upgrade-item-info">
+                <span class="upgrade-item-name">Lucky Streak</span>
+                <span class="upgrade-item-desc">+5% gambling win chance</span>
+                <span class="upgrade-item-price">$250,000</span>
+              </div>
+              <div class="upgrade-item-badge">Coming Soon</div>
+            </div>
+            <div class="upgrade-item upgrade-item--locked">
+              <div class="upgrade-item-icon">&#x1F48E;</div>
+              <div class="upgrade-item-info">
+                <span class="upgrade-item-name">VIP Status</span>
+                <span class="upgrade-item-desc">Exclusive badge &amp; perks</span>
+                <span class="upgrade-item-price">$1,000,000</span>
+              </div>
+              <div class="upgrade-item-badge">Coming Soon</div>
+            </div>
+          </div>
+          <div class="upgrade-panel-footer">
+            <span class="upgrade-panel-coming-soon-glow">More upgrades coming soon</span>
+          </div>
+        </aside>
+
         <div class="clicker-area">
           <p class="clicker-hint">Click to earn money</p>
-          <button type="button" class="clicker-btn" id="clickerBtn">
-            <span class="clicker-amount" id="clickerAmount">+$1</span>
-            <span class="clicker-label">per click</span>
-          </button>
+          <div class="clicker-btn-wrap" id="clickerBtnWrap">
+            <button type="button" class="clicker-btn" id="clickerBtn">
+              <div class="clicker-coin">
+                <span class="clicker-coin-symbol">$</span>
+              </div>
+              <span class="clicker-label">per click</span>
+            </button>
+          </div>
+          <div class="clicker-floats" id="clickerFloats" aria-hidden="true"></div>
+          <div class="auto-clicker-row">
+            <button type="button" class="auto-clicker-toggle" id="autoClickerToggle">
+              <span class="auto-clicker-icon" id="autoClickerIcon">&#x25B6;</span>
+              <span class="auto-clicker-text" id="autoClickerText">Auto-Click: OFF</span>
+            </button>
+          </div>
         </div>
       </section>
 
@@ -94,30 +160,45 @@
         </section>
       </section>
 
-      <!-- Roulette: left = chips + betting board together; center = large wheel -->
+      <!-- Roulette: CS:GO slider + multiplayer rounds -->
       <section id="page-roulette" class="page page-roulette hidden">
-        <div class="roulette-layout">
-          <div class="roulette-left">
-            <aside class="roulette-menu">
-              <p class="roulette-label">Chip</p>
-              <div class="chip-stack" id="rouletteChips"></div>
-              <div class="roulette-redo-row">
-                <button type="button" class="btn btn-redo" id="rouletteRedo" title="Repeat last bet">↺</button>
-                <button type="button" class="btn btn-double" id="roulette2x" title="Repeat last bet 2×">2×</button>
+        <div class="roulette-layout-v2">
+          <aside class="roulette-winner-feed" id="rouletteWinnerFeed">
+            <h4 class="winner-feed-title">Recent Winners</h4>
+            <div class="winner-feed-list" id="winnerFeedList"></div>
+          </aside>
+
+          <div class="roulette-main">
+            <div class="roulette-round-bar">
+              <span class="roulette-round-phase" id="roulettePhaseText">Place Your Bets</span>
+              <span class="roulette-round-timer" id="rouletteTimer">15s</span>
+              <div class="roulette-round-progress">
+                <div class="roulette-round-progress-fill" id="rouletteProgressFill"></div>
               </div>
-              <p class="roulette-total">Total: <span id="rouletteTotalBet">$0</span></p>
-              <button type="button" class="btn btn-spin" id="rouletteSpin" disabled>Spin</button>
-              <button type="button" class="btn btn-clear-bets" id="rouletteClearBets">Clear</button>
-              <p class="roulette-result" id="rouletteResult"></p>
-            </aside>
-            <div class="roulette-table-wrap">
-              <div class="roulette-grid" id="rouletteGrid"></div>
             </div>
-          </div>
-          <div class="roulette-wheel-area">
-            <div id="rouletteWheel" class="roulette-wheel">
-              <canvas id="rouletteWheelCanvas"></canvas>
-              <div class="roulette-stop-arrow" aria-hidden="true"></div>
+
+            <div class="csgo-slider-area">
+              <div class="csgo-slider-pointer" aria-hidden="true"></div>
+              <div class="csgo-slider-viewport" id="csgoSliderViewport">
+                <div class="csgo-slider-strip" id="csgoSliderStrip"></div>
+              </div>
+            </div>
+
+            <div class="roulette-result-display" id="rouletteResultDisplay"></div>
+
+            <div class="roulette-betting-area">
+              <div class="roulette-chip-bar">
+                <div class="chip-stack" id="rouletteChips"></div>
+                <div class="roulette-bet-controls">
+                  <button type="button" class="btn btn-redo" id="rouletteRedo" title="Repeat last bet">Redo</button>
+                  <button type="button" class="btn btn-double" id="roulette2x" title="Double last bet">2x</button>
+                  <button type="button" class="btn btn-clear-bets" id="rouletteClearBets">Clear</button>
+                </div>
+                <p class="roulette-total">Total: <span id="rouletteTotalBet">$0</span></p>
+              </div>
+              <div class="roulette-grid-wrap">
+                <div class="roulette-grid" id="rouletteGrid"></div>
+              </div>
             </div>
           </div>
         </div>

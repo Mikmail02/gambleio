@@ -167,8 +167,9 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(401).json({ error: 'User not found' });
   }
   let passwordMatch = false;
+  let isBcryptHash = false;
   try {
-    const isBcryptHash = typeof user.password === 'string' && user.password.startsWith('$2');
+    isBcryptHash = typeof user.password === 'string' && user.password.startsWith('$2');
     passwordMatch = isBcryptHash
       ? bcrypt.compareSync(password, user.password)
       : user.password === password;
@@ -389,6 +390,176 @@ app.post('/api/admin/reset', (req, res) => {
   saveSessions();
   console.log('Admin reset: all data cleared');
   res.json({ success: true });
+});
+
+// ===== ROULETTE ROUND SYSTEM =====
+const ROULETTE_BETTING_MS = 20000;
+const ROULETTE_SPINNING_MS = 5000;
+const ROULETTE_RESULT_MS = 3000;
+const ROULETTE_RED = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
+
+const rouletteState = {
+  roundId: 1,
+  phase: 'betting',
+  phaseEndTime: Date.now() + ROULETTE_BETTING_MS,
+  winNumber: null,
+  bets: new Map(),       // username -> [{key, amount}]
+  recentWinners: [],     // last 20
+};
+
+function rouletteTick() {
+  const now = Date.now();
+  if (now < rouletteState.phaseEndTime) return;
+  if (rouletteState.phase === 'betting') {
+    rouletteState.winNumber = Math.floor(Math.random() * 37);
+    rouletteState.phase = 'spinning';
+    rouletteState.phaseEndTime = now + ROULETTE_SPINNING_MS;
+  } else if (rouletteState.phase === 'spinning') {
+    resolveAllRouletteBets();
+    rouletteState.phase = 'result';
+    rouletteState.phaseEndTime = now + ROULETTE_RESULT_MS;
+  } else if (rouletteState.phase === 'result') {
+    rouletteState.roundId += 1;
+    rouletteState.phase = 'betting';
+    rouletteState.phaseEndTime = now + ROULETTE_BETTING_MS;
+    rouletteState.winNumber = null;
+    rouletteState.bets = new Map();
+  }
+}
+
+function isRouletteWin(key, n) {
+  if (key === String(n)) return true;
+  const isR = ROULETTE_RED.includes(n);
+  if (key === 'red' && isR) return true;
+  if (key === 'black' && n !== 0 && !isR) return true;
+  if (key === 'odd' && n !== 0 && n % 2 === 1) return true;
+  if (key === 'even' && n !== 0 && n % 2 === 0) return true;
+  if (key === '1-18' && n >= 1 && n <= 18) return true;
+  if (key === '19-36' && n >= 19 && n <= 36) return true;
+  if (key === '1-12' && n >= 1 && n <= 12) return true;
+  if (key === '13-24' && n >= 13 && n <= 24) return true;
+  if (key === '25-36' && n >= 25 && n <= 36) return true;
+  return false;
+}
+
+function roulettePayout(key) {
+  const num = parseInt(key, 10);
+  if (!isNaN(num) && num >= 0 && num <= 36) return 36;
+  if (key === '1-12' || key === '13-24' || key === '25-36') return 3;
+  return 2;
+}
+
+function resolveAllRouletteBets() {
+  const win = rouletteState.winNumber;
+  for (const [username, userBets] of rouletteState.bets) {
+    const user = users.get(username);
+    if (!user) continue;
+    ensureFields(user);
+    let totalWin = 0;
+    let totalBet = 0;
+    for (const { key, amount } of userBets) {
+      totalBet += amount;
+      if (isRouletteWin(key, win)) {
+        totalWin += amount * roulettePayout(key);
+      }
+    }
+    if (totalWin > 0) {
+      user.balance += totalWin;
+      user.totalGamblingWins += totalWin;
+      if (totalWin > totalBet) {
+        user.totalWinsCount += 1;
+        if (totalWin > user.biggestWinAmount) {
+          user.biggestWinAmount = totalWin;
+          user.biggestWinMultiplier = totalBet > 0 ? Math.round((totalWin / totalBet) * 100) / 100 : 1;
+        }
+      }
+      users.set(username, user);
+      rouletteState.recentWinners.unshift({
+        username: user.displayName || username,
+        amount: totalWin,
+        number: win,
+        timestamp: Date.now(),
+      });
+    }
+  }
+  if (rouletteState.recentWinners.length > 20) {
+    rouletteState.recentWinners = rouletteState.recentWinners.slice(0, 20);
+  }
+  saveUsers();
+}
+
+setInterval(rouletteTick, 500);
+
+app.get('/api/roulette/round', (req, res) => {
+  rouletteTick();
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = getUserFromSession(token);
+  const resp = {
+    roundId: rouletteState.roundId,
+    phase: rouletteState.phase,
+    phaseEndTime: rouletteState.phaseEndTime,
+    serverTime: Date.now(),
+    winNumber: (rouletteState.phase === 'spinning' || rouletteState.phase === 'result') ? rouletteState.winNumber : null,
+  };
+  if (user) {
+    ensureFields(user);
+    resp.balance = user.balance;
+    resp.myBets = rouletteState.bets.get(user.username) || [];
+  }
+  res.json(resp);
+});
+
+app.post('/api/roulette/bet', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  rouletteTick();
+  if (rouletteState.phase !== 'betting') {
+    return res.status(400).json({ error: 'Betting phase is over' });
+  }
+  const { key, amount } = req.body;
+  const amt = Number(amount);
+  if (!key || !Number.isFinite(amt) || amt < 1) {
+    return res.status(400).json({ error: 'Invalid bet' });
+  }
+  if (amt > user.balance) {
+    return res.status(400).json({ error: 'Insufficient balance' });
+  }
+  user.balance -= amt;
+  user.totalBets += 1;
+  users.set(user.username, user);
+  saveUsers();
+  if (!rouletteState.bets.has(user.username)) {
+    rouletteState.bets.set(user.username, []);
+  }
+  rouletteState.bets.get(user.username).push({ key, amount: amt });
+  res.json({ balance: user.balance, totalBets: user.totalBets });
+});
+
+app.post('/api/roulette/clear-bets', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  rouletteTick();
+  if (rouletteState.phase !== 'betting') {
+    return res.status(400).json({ error: 'Cannot clear bets outside betting phase' });
+  }
+  const userBets = rouletteState.bets.get(user.username) || [];
+  let refundTotal = 0;
+  for (const b of userBets) refundTotal += b.amount;
+  if (refundTotal > 0) {
+    user.balance += refundTotal;
+    users.set(user.username, user);
+    saveUsers();
+  }
+  rouletteState.bets.delete(user.username);
+  res.json({ balance: user.balance, refunded: refundTotal });
+});
+
+app.get('/api/roulette/winners', (req, res) => {
+  res.json(rouletteState.recentWinners);
 });
 
 app.listen(PORT, () => {

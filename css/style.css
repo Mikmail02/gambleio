@@ -596,80 +596,139 @@ body {
   display: none;
 }
 
-/* Home: clicker */
+/* ========== HOME PAGE ========== */
 .page-home {
-  align-items: center;
+  position: relative;
+  align-items: stretch;
   justify-content: center;
+  gap: 2rem;
+  overflow: hidden;
+  min-height: 80vh;
+  padding: 1.5rem;
 }
 
+/* Blurry background */
+.home-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.home-bg-image {
+  position: absolute; inset: 0; background-size: cover; background-position: center;
+  filter: blur(40px); opacity: 0.12; transform: scale(1.02);
+}
+.home-bg-orb { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.14; will-change: transform; }
+.home-bg-orb--1 { width: 500px; height: 500px; background: radial-gradient(circle, var(--accent) 0%, transparent 70%); top: -10%; left: -5%; animation: home-orb-1 18s ease-in-out infinite; }
+.home-bg-orb--2 { width: 400px; height: 400px; background: radial-gradient(circle, #7c3aed 0%, transparent 70%); bottom: -15%; right: -8%; animation: home-orb-2 22s ease-in-out infinite; }
+.home-bg-orb--3 { width: 350px; height: 350px; background: radial-gradient(circle, #0ea5e9 0%, transparent 70%); top: 40%; left: 50%; animation: home-orb-3 15s ease-in-out infinite; }
+@keyframes home-orb-1 { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(60px,40px) scale(1.1); } 66% { transform: translate(-30px,60px) scale(.95); } }
+@keyframes home-orb-2 { 0%,100% { transform: translate(0,0) scale(1); } 40% { transform: translate(-50px,-30px) scale(1.08); } 70% { transform: translate(30px,-50px) scale(.92); } }
+@keyframes home-orb-3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-40px,30px) scale(1.15); } }
+
+/* Upgrade panel */
+.home-upgrade-panel {
+  position: relative; z-index: 1; width: 280px; flex-shrink: 0;
+  background: rgba(21,25,34,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius);
+  padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; align-self: flex-start;
+}
+.upgrade-panel-header { display: flex; align-items: center; gap: 0.5rem; padding-bottom: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.upgrade-panel-icon { font-size: 1.2rem; }
+.upgrade-panel-title { font-size: 1rem; font-weight: 700; color: var(--text); margin: 0; }
+.upgrade-panel-items { display: flex; flex-direction: column; gap: 0.5rem; }
+.upgrade-item {
+  display: flex; align-items: center; gap: 0.65rem; padding: 0.75rem;
+  background: var(--bg-input); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px;
+  position: relative; overflow: hidden; transition: border-color 0.2s, transform 0.15s; cursor: default;
+}
+.upgrade-item--locked { opacity: 0.65; filter: grayscale(0.3); }
+.upgrade-item--locked:hover { opacity: 0.8; border-color: rgba(255,255,255,0.12); transform: translateY(-1px); }
+.upgrade-item-icon { font-size: 1.5rem; flex-shrink: 0; width: 36px; text-align: center; }
+.upgrade-item-info { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; flex: 1; }
+.upgrade-item-name { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+.upgrade-item-desc { font-size: 0.7rem; color: var(--text-muted); }
+.upgrade-item-price { font-size: 0.75rem; font-weight: 700; color: var(--accent); }
+.upgrade-item-badge {
+  position: absolute; top: 4px; right: 4px; font-size: 0.55rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 4px;
+  background: rgba(0,212,170,0.15); color: var(--accent); border: 1px solid rgba(0,212,170,0.25);
+}
+.upgrade-panel-footer { text-align: center; padding-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.06); }
+.upgrade-panel-coming-soon-glow { font-size: 0.72rem; color: var(--accent); opacity: 0.7; animation: coming-soon-pulse 2.5s ease-in-out infinite; }
+@keyframes coming-soon-pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+/* Clicker area */
 .clicker-area {
-  text-align: center;
+  position: relative; z-index: 1; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 1.5rem;
+  flex: 1; justify-content: center;
 }
-
-.clicker-hint {
-  font-size: 1rem;
-  color: var(--text-muted);
-  margin-bottom: 1.5rem;
-}
-
+.clicker-hint { font-size: 1rem; color: var(--text-muted); margin-bottom: 0; }
+.clicker-btn-wrap { position: relative; display: inline-block; }
 .clicker-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 200px;
-  height: 200px;
-  border-radius: 50%;
-  border: none;
-  background: linear-gradient(145deg, var(--accent), var(--accent-dim));
-  color: var(--bg-dark);
-  font-family: inherit;
-  font-weight: 700;
-  font-size: 1.5rem;
-  cursor: pointer;
-  box-shadow: 0 8px 32px rgba(0, 212, 170, 0.35);
-  transition: transform 0.1s, box-shadow 0.2s;
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 200px; height: 200px; border-radius: 50%; border: none;
+  background: linear-gradient(145deg, #0d0f14, #1a1e28); color: var(--accent);
+  font-family: inherit; font-weight: 700; cursor: pointer;
+  box-shadow: 0 0 0 4px rgba(0,212,170,0.2), 0 0 40px rgba(0,212,170,0.15), inset 0 0 40px rgba(0,212,170,0.06);
+  transition: transform 0.06s ease-out, box-shadow 0.15s; z-index: 1; overflow: hidden;
 }
-
+.clicker-btn::before {
+  content: ''; position: absolute; inset: 3px; border-radius: 50%;
+  border: 2px solid rgba(0,212,170,0.3); pointer-events: none;
+}
 .clicker-btn:hover {
   transform: scale(1.03);
-  box-shadow: 0 12px 40px rgba(0, 212, 170, 0.45);
+  box-shadow: 0 0 0 4px rgba(0,212,170,0.35), 0 0 50px rgba(0,212,170,0.25), inset 0 0 40px rgba(0,212,170,0.12);
 }
-
 .clicker-btn:active {
-  transform: scale(0.97);
+  transform: scale(0.9);
+  box-shadow: 0 0 0 4px rgba(0,212,170,0.5), 0 0 60px rgba(0,212,170,0.4), inset 0 0 50px rgba(0,212,170,0.15);
+  transition: transform 0.08s ease-out;
 }
-
-.clicker-amount {
-  font-size: 2rem;
-  line-height: 1.2;
+.clicker-coin {
+  width: 110px; height: 110px; border-radius: 50%;
+  background: linear-gradient(145deg, #ffd700, #ffb700);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 6px 20px rgba(255,215,0,0.4), inset 0 -3px 6px rgba(0,0,0,0.25), inset 0 3px 6px rgba(255,255,255,0.4);
+  transition: transform 0.06s; border: 2px solid rgba(255,255,255,0.2);
 }
+.clicker-btn:active .clicker-coin { transform: scale(0.88) rotate(-5deg); }
+.clicker-coin-symbol { font-size: 3.2rem; font-weight: 900; color: #1a1a1a; text-shadow: 0 2px 4px rgba(0,0,0,0.3); line-height: 1; }
+.clicker-label { font-size: 0.8rem; opacity: 0.8; margin-top: 0.6rem; color: var(--text-muted); font-weight: 500; }
 
-.clicker-label {
-  font-size: 0.85rem;
-  opacity: 0.9;
+/* Ripple + floating text */
+.clicker-ripple {
+  position: absolute; border-radius: 50%; background: rgba(0,212,170,0.3);
+  transform: scale(0); animation: clicker-ripple-anim 0.6s ease-out forwards; pointer-events: none; z-index: 0;
 }
+@keyframes clicker-ripple-anim { 0% { transform: scale(0); opacity: 1; } 100% { transform: scale(2.5); opacity: 0; } }
+.clicker-floats {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 200px; height: 200px; pointer-events: none; z-index: 10;
+}
+.clicker-float-text {
+  position: absolute; bottom: 0; left: 50%; font-size: 1.1rem; font-weight: 700; color: var(--accent);
+  pointer-events: none; animation: float-up 1s ease-out forwards;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.5); white-space: nowrap;
+}
+@keyframes float-up { 0% { opacity: 1; transform: translateX(-50%) translateY(0); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) translateY(-80px); } }
 
-/* Click rate-limit block toast (bottom center) */
+/* Auto-clicker toggle */
+.auto-clicker-row { margin-top: 0.5rem; }
+.auto-clicker-toggle {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem;
+  background: var(--bg-input); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+  color: var(--text-muted); font-family: inherit; font-size: 0.85rem; font-weight: 500;
+  cursor: pointer; transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.auto-clicker-toggle:hover { border-color: var(--accent); color: var(--text); }
+.auto-clicker-toggle.active { background: rgba(0,212,170,0.12); border-color: var(--accent); color: var(--accent); }
+
+/* Click rate-limit block toast */
 .click-block-toast {
-  position: fixed;
-  bottom: 1.5rem;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 0.75rem 1.25rem;
-  background: var(--bg-panel);
-  border: 1px solid var(--danger);
-  border-radius: var(--radius);
-  color: var(--text);
-  font-size: 0.95rem;
-  font-weight: 500;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  z-index: 9999;
-  transition: opacity 0.2s;
+  position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+  padding: 0.75rem 1.25rem; background: var(--bg-panel); border: 1px solid var(--danger);
+  border-radius: var(--radius); color: var(--text); font-size: 0.95rem; font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 9999; transition: opacity 0.2s;
 }
-.click-block-toast.hidden {
-  display: none !important;
-}
+.click-block-toast.hidden { display: none !important; }
 
 /* Plinko page */
 .page-plinko {
@@ -2360,175 +2419,107 @@ body {
   color: var(--accent);
 }
 
-/* Roulette: left = chips + table together; center = large wheel */
+/* ========== ROULETTE V2: CS:GO Slider ========== */
 .page-roulette {
   flex-direction: row;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 0.75rem;
   gap: 0;
 }
 
-.roulette-layout {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  max-width: 1200px;
-  gap: 1.5rem;
-  align-items: center;
-  justify-content: center;
-}
+/* V2 Layout */
+.roulette-layout-v2 { display: flex; width: 100%; max-width: 1400px; gap: 1rem; align-items: flex-start; }
 
-/* Left block: chip selector + betting board side by side */
-.roulette-left {
-  flex-shrink: 0;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
+/* Winner feed */
+.roulette-winner-feed {
+  width: 220px; flex-shrink: 0; background: var(--bg-panel);
+  border: 1px solid rgba(255,255,255,0.06); border-radius: var(--radius);
+  padding: 0.75rem; max-height: 600px; overflow: hidden;
 }
+.winner-feed-title {
+  font-size: 0.8rem; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 0.5rem 0;
+  padding-bottom: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.winner-feed-list { display: flex; flex-direction: column; gap: 0.35rem; overflow: hidden; }
+.winner-feed-entry {
+  padding: 0.45rem 0.6rem; background: var(--bg-input); border-radius: 8px;
+  font-size: 0.75rem; color: var(--text); border-left: 3px solid var(--accent);
+  animation: winner-slide-in 0.6s ease-out, winner-fade-out 1.5s 5s ease-in forwards;
+}
+@keyframes winner-fade-out {
+  0% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-20px); }
+}
+.winner-feed-entry .winner-name { font-weight: 600; color: var(--accent); }
+.winner-feed-entry .winner-amount { font-weight: 700; color: var(--mult-high); }
+@keyframes winner-slide-in { 0% { transform: translateY(-20px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
 
-/* Chip menu – compact */
-.roulette-menu {
-  flex-shrink: 0;
-  width: 90px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.6rem;
-  background: var(--bg-panel);
-  border-radius: var(--radius);
-  border: 1px solid rgba(255,255,255,0.06);
-}
+/* Main content */
+.roulette-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 
-.roulette-menu .roulette-label {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+/* Round timer bar */
+.roulette-round-bar {
+  display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 1rem;
+  background: var(--bg-panel); border-radius: var(--radius); border: 1px solid rgba(255,255,255,0.06);
 }
+.roulette-round-phase { font-size: 0.85rem; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.roulette-round-timer { font-size: 1.1rem; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; min-width: 2.5rem; text-align: center; }
+.roulette-round-progress { flex: 1; height: 6px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden; }
+.roulette-round-progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-dim)); border-radius: 999px; transition: width 0.3s linear; width: 100%; }
 
-.roulette-menu .chip-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  align-items: center;
+/* CS:GO Slider */
+.csgo-slider-area {
+  position: relative; background: var(--bg-panel); border-radius: var(--radius);
+  border: 1px solid rgba(255,255,255,0.06); padding: 1rem 0; overflow: hidden;
 }
+.csgo-slider-pointer {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 0; height: 0; border-left: 12px solid transparent; border-right: 12px solid transparent;
+  border-top: 18px solid var(--accent); z-index: 10; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+.csgo-slider-area::after {
+  content: ''; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 2px; height: 100%; background: rgba(0,212,170,0.25); z-index: 5; pointer-events: none;
+}
+.csgo-slider-viewport { width: 100%; overflow: hidden; position: relative; }
+.csgo-slider-strip { display: flex; gap: 3px; will-change: transform; }
+.csgo-slider-cell {
+  flex-shrink: 0; width: 60px; height: 70px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; font-weight: 700; color: #fff; border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.1); text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+.csgo-slider-cell--green { background: linear-gradient(180deg, #1a6b3a, #145a2e); border-color: rgba(0,180,80,0.3); }
+.csgo-slider-cell--red { background: linear-gradient(180deg, #c0392b, #922b21); border-color: rgba(192,57,43,0.3); }
+.csgo-slider-cell--black { background: linear-gradient(180deg, #2c2c2c, #1a1a1a); border-color: rgba(255,255,255,0.08); }
+.csgo-slider-cell--winner { box-shadow: 0 0 0 2px var(--accent), 0 0 20px rgba(0,212,170,0.4); border-color: var(--accent); }
 
-.roulette-redo-row {
-  display: flex;
-  gap: 0.35rem;
-  width: 100%;
-  justify-content: center;
-}
+/* Result display */
+.roulette-result-display { text-align: center; font-size: 1rem; font-weight: 600; min-height: 2rem; color: var(--text-muted); padding: 0.5rem; }
+.roulette-result-display.win { color: var(--mult-high); }
 
-.roulette-menu .btn-redo,
-.roulette-menu .btn-double {
-  flex: 1;
-  padding: 0.4rem 0.35rem;
-  font-size: 0.85rem;
-  min-width: 0;
-  background: var(--bg-input);
-  color: var(--text);
-  border: 1px solid rgba(255,255,255,0.15);
+/* Betting area */
+.roulette-betting-area {
+  background: var(--bg-panel); border-radius: var(--radius);
+  border: 1px solid rgba(255,255,255,0.06); padding: 0.75rem;
 }
-
-.roulette-menu .btn-redo:hover,
-.roulette-menu .btn-double:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+.roulette-chip-bar {
+  display: flex; align-items: center; gap: 0.75rem; padding-bottom: 0.75rem;
+  margin-bottom: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.06); flex-wrap: wrap;
 }
-
-.roulette-menu .btn-double {
-  font-weight: 700;
+.roulette-chip-bar .chip-stack { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.roulette-bet-controls { display: flex; gap: 0.35rem; }
+.roulette-bet-controls .btn {
+  width: auto; padding: 0.4rem 0.75rem; font-size: 0.8rem;
+  background: var(--bg-input); color: var(--text); border: 1px solid rgba(255,255,255,0.12);
 }
-
-.roulette-menu .roulette-total {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin: 0;
-}
-
-.roulette-menu .roulette-total #rouletteTotalBet {
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.roulette-menu .btn-spin,
-.roulette-menu .btn-clear-bets {
-  width: 100%;
-  padding: 0.5rem 0.5rem;
-  font-size: 0.8rem;
-}
-
-.roulette-menu .btn-spin {
-  background: linear-gradient(180deg, var(--accent), var(--accent-dim));
-  color: var(--bg-dark);
-}
-
-.roulette-menu .btn-clear-bets {
-  background: var(--bg-input);
-  color: var(--text-muted);
-  border: 1px solid rgba(255,255,255,0.15);
-}
-
-.roulette-menu .roulette-result {
-  font-size: 0.7rem;
-  text-align: center;
-  min-height: 2rem;
-  margin: 0;
-}
-
-/* Wheel – large, center; stop arrow at 3 o'clock (right), pointing in */
-.roulette-wheel-area {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.roulette-wheel {
-  position: relative;
-  width: 380px;
-  height: 380px;
-}
-
-#rouletteWheelCanvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  background: var(--bg-panel);
-  border: 5px solid rgba(255,255,255,0.12);
-  box-shadow: inset 0 0 40px rgba(0,0,0,0.5);
-}
-
-/* Arrow at 3 o'clock, pointing left at the wheel (winning number is the one at the arrow) */
-.roulette-stop-arrow {
-  position: absolute;
-  right: -6px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 0;
-  height: 0;
-  border-top: 16px solid transparent;
-  border-bottom: 16px solid transparent;
-  border-right: 26px solid var(--accent);
-  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5));
-  pointer-events: none;
-  z-index: 10;
-}
-
-.roulette-result {
-  color: var(--text-muted);
-  text-align: center;
-}
-
-.roulette-result.win {
-  color: var(--mult-high);
-  font-weight: 600;
-}
+.roulette-bet-controls .btn:hover { border-color: var(--accent); color: var(--accent); }
+.roulette-total { font-size: 0.85rem; color: var(--text-muted); margin: 0 0 0 auto; }
+.roulette-total span { color: var(--accent); font-weight: 700; }
+.roulette-grid-wrap { width: 100%; }
+.roulette-grid.disabled .roulette-cell { pointer-events: none; opacity: 0.5; }
 
 /* Chips – poker style with design + bg color + value */
 .chip-stack {

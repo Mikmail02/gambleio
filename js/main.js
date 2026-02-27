@@ -320,6 +320,14 @@
     pendingClickAmount += Game.clickEarning;
     pendingClickCount += 1;
     if (Game.rewardClickXP) Game.rewardClickXP();
+    const floatsEl = document.getElementById('clickerFloats');
+    if (floatsEl) {
+      const span = document.createElement('span');
+      span.className = 'clicker-float-text';
+      span.textContent = '+$' + Game.clickEarning;
+      floatsEl.appendChild(span);
+      setTimeout(() => span.remove(), 1100);
+    }
     if (!window.Stats || !window.Stats.sendClickEarnings) {
       Game.totalClickEarnings = (Game.totalClickEarnings || 0) + Game.clickEarning;
       Game.totalClicks = (Game.totalClicks || 0) + 1;
@@ -354,6 +362,46 @@
       updateBalance();
     }
   }, CLICK_SEND_INTERVAL_MS);
+
+  let autoClickerActive = false;
+  let autoClickerInterval = null;
+  const AUTO_CLICK_RATE = 9;
+  const autoClickerToggle = document.getElementById('autoClickerToggle');
+  const autoClickerIcon = document.getElementById('autoClickerIcon');
+  const autoClickerText = document.getElementById('autoClickerText');
+
+  function startAutoClicker() {
+    if (autoClickerInterval) return;
+    autoClickerActive = true;
+    if (autoClickerToggle) autoClickerToggle.classList.add('active');
+    if (autoClickerIcon) autoClickerIcon.textContent = '\u25A0';
+    if (autoClickerText) autoClickerText.textContent = 'Auto-Click: ON';
+    autoClickerInterval = setInterval(() => {
+      if (!autoClickerActive || isClickBlocked()) return;
+      if (clickerBtn) {
+        onClickerClick();
+      }
+    }, 1000 / AUTO_CLICK_RATE);
+  }
+
+  function stopAutoClicker() {
+    autoClickerActive = false;
+    if (autoClickerInterval) {
+      clearInterval(autoClickerInterval);
+      autoClickerInterval = null;
+    }
+    if (autoClickerToggle) autoClickerToggle.classList.remove('active');
+    if (autoClickerIcon) autoClickerIcon.textContent = '\u25B6';
+    if (autoClickerText) autoClickerText.textContent = 'Auto-Click: OFF';
+  }
+
+  if (autoClickerToggle) {
+    autoClickerToggle.addEventListener('click', () => {
+      autoClickerActive = !autoClickerActive;
+      if (autoClickerActive) startAutoClicker();
+      else stopAutoClicker();
+    });
+  }
 
   if (clickerBtn) {
     clickerBtn.addEventListener('click', onClickerClick);
