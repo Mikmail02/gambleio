@@ -206,9 +206,9 @@
 
     const added = window.Plinko && window.Plinko.dropBall(bet, async (result) => {
       if (window.Stats && window.Stats.win) {
-        await window.Stats.win(result.winAmount, result.multiplier);
+        await window.Stats.win(result.winAmount, result.multiplier, bet);
       } else {
-        Game.win(result.winAmount, result.multiplier);
+        Game.win(result.winAmount, result.multiplier, bet);
       }
       updateBalance();
       addLastMultiplier(result.multiplier);
@@ -222,9 +222,9 @@
 
     if (!added) {
       if (window.Stats && window.Stats.win) {
-        await window.Stats.win(bet);
+        await window.Stats.win(bet, 1, bet);
       } else {
-        Game.win(bet);
+        Game.win(bet, 1, bet);
       }
       updateBalance();
       updateDropButton();

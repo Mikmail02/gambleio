@@ -8,7 +8,7 @@ const Game = {
   bet: 10,
   maxActiveBalls: 25,
   clickEarning: 1,
-  xpPerAction: 100, // testing value
+  xpPerAction: 3,
   currentLevel: 1,
   xp: 0,
   xpPerLevel: 1000,
@@ -132,16 +132,19 @@ const Game = {
     return true;
   },
 
-  win(amount, multiplier) {
+  win(amount, multiplier, betAmount) {
     this.balance += amount;
     if (amount > 0) {
       this.totalWon += amount;
-      this.totalWinsCount = (this.totalWinsCount || 0) + 1;
-      if (amount > (this.biggestWinAmount || 0)) {
+      const isProfit = betAmount != null ? amount > betAmount : true;
+      if (isProfit) {
+        this.totalWinsCount = (this.totalWinsCount || 0) + 1;
+      }
+      if (amount > (this.biggestWinAmount || 0) && isProfit) {
         this.biggestWinAmount = amount;
         this.biggestWinMultiplier = multiplier || 1;
       }
-      this.rewardWinXP();
+      if (isProfit) this.rewardWinXP();
     }
   },
 

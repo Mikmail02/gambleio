@@ -34,7 +34,7 @@ const Leaderboard = {
       if (type === 'clicks') {
         value = formatNumber(user.totalClicks) + ' clicks';
       } else if (type === 'wins') {
-        value = formatNumber(user.totalWinsCount) + ' wins';
+        value = formatDollars(user.totalGamblingWins || 0);
       } else if (type === 'biggest-win') {
         value = formatDollars(user.biggestWinAmount);
         if (user.biggestWinMultiplier && user.biggestWinMultiplier > 0) {
@@ -53,7 +53,7 @@ const Leaderboard = {
       return `
         <div class="${classes}">
           <span class="leaderboard-rank">${rankIcon(rank)}</span>
-          <span class="leaderboard-username">${escapeHtml(user.username)}</span>
+          <span class="leaderboard-username">${escapeHtml(user.displayName || user.username)}</span>
           <span class="leaderboard-value">${value}${subValue}</span>
         </div>
       `;

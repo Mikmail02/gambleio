@@ -193,9 +193,17 @@
     if (isSpinning) return;
     const total = getTotalBet();
     if (total > 0) {
-      // Refund — not a win, just return money to balance
       if (window.Stats && window.Stats.refund) {
-        await window.Stats.refund(total);
+        const result = await window.Stats.refund(total);
+        if (!result) {
+          const popup = document.getElementById('rouletteBalancePopup');
+          if (popup) {
+            popup.textContent = 'Refund failed. Please try again.';
+            popup.classList.remove('hidden');
+            setTimeout(() => popup.classList.add('hidden'), 3000);
+          }
+          return;
+        }
       } else {
         Game.balance += total;
       }
@@ -260,6 +268,7 @@
     const dpr = window.devicePixelRatio || 1;
     const rect = wheelContainer.getBoundingClientRect();
     const size = Math.min(rect.width, rect.height);
+    if (size <= 0) return; // hidden page → skip drawing
     if (canvas.width !== size * dpr) {
       canvas.width = size * dpr;
       canvas.height = size * dpr;
@@ -365,9 +374,9 @@
       const totalBet = getTotalBet();
       const effectiveMultiplier = totalBet > 0 ? Math.round((totalWin / totalBet) * 100) / 100 : 1;
       if (window.Stats && window.Stats.win) {
-        await window.Stats.win(totalWin, effectiveMultiplier);
+        await window.Stats.win(totalWin, effectiveMultiplier, totalBet);
       } else {
-        Game.win(totalWin, effectiveMultiplier);
+        Game.win(totalWin, effectiveMultiplier, totalBet);
       }
     }
     return totalWin;
@@ -388,6 +397,7 @@
     const winNumber = Math.floor(Math.random() * 37);
     const durationMs = 4000 + Math.random() * 3000;
     animateSpin(winNumber, durationMs).then(async (finalRot) => {
+      lastWheelRotation = finalRot;
       const won = await resolveBets(winNumber);
       const color = winNumber === 0 ? 'green' : isRed(winNumber) ? 'red' : 'black';
       resultEl.textContent = `Result: ${winNumber} (${color}). ${won > 0 ? 'Won ' + formatDollars(won) : 'No win.'}`;
@@ -404,7 +414,15 @@
   }
 
   function onShow() {
-    drawWheel(0);
+    requestAnimationFrame(() => {
+      drawWheel(lastWheelRotation);
+      if (wheelContainer) {
+        const rect = wheelContainer.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+          setTimeout(() => drawWheel(lastWheelRotation), 100);
+        }
+      }
+    });
   }
 
   function init() {

@@ -6,6 +6,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const bcrypt = require('bcrypt');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -83,6 +84,7 @@ function ensureFields(user) {
 function publicUser(u) {
   return {
     username: u.username,
+    displayName: u.displayName || u.username,
     balance: u.balance,
     totalGamblingWins: u.totalGamblingWins,
     totalClickEarnings: u.totalClickEarnings,
@@ -99,7 +101,7 @@ function publicUser(u) {
 // ===== AUTH =====
 
 app.post('/api/auth/register', (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, displayName } = req.body;
   if (!username || !password || username.length < 3 || password.length < 3) {
     return res.status(400).json({ error: 'Username and password must be at least 3 characters' });
   }
@@ -108,7 +110,8 @@ app.post('/api/auth/register', (req, res) => {
   }
   const user = {
     username,
-    password,
+    password: bcrypt.hashSync(password, 10),
+    displayName: displayName || username,
     balance: 10000,
     totalGamblingWins: 0,
     totalClickEarnings: 0,
@@ -132,8 +135,20 @@ app.post('/api/auth/register', (req, res) => {
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
   const user = users.get(username);
-  if (!user || user.password !== password) {
-    return res.status(401).json({ error: 'Invalid credentials' });
+  if (!user) {
+    return res.status(401).json({ error: 'User not found' });
+  }
+  const isBcryptHash = typeof user.password === 'string' && user.password.startsWith('$2');
+  const passwordMatch = isBcryptHash
+    ? bcrypt.compareSync(password, user.password)
+    : user.password === password;
+  if (!passwordMatch) {
+    return res.status(401).json({ error: 'Wrong password' });
+  }
+  if (!isBcryptHash) {
+    user.password = bcrypt.hashSync(password, 10);
+    users.set(user.username, user);
+    saveUsers();
   }
   ensureFields(user);
   const token = generateToken();
@@ -204,12 +219,14 @@ app.post('/api/user/win', (req, res) => {
   ensureFields(user);
   const amount = Number(req.body.amount);
   const multiplier = req.body.multiplier != null ? Number(req.body.multiplier) : null;
+  const betAmount = req.body.betAmount != null ? Number(req.body.betAmount) : null;
   if (!Number.isFinite(amount) || amount < 0) {
     return res.status(400).json({ error: 'Invalid win amount' });
   }
   user.balance += amount;
   user.totalGamblingWins += amount;
-  if (amount > 0) {
+  const isProfit = betAmount != null ? amount > betAmount : true;
+  if (amount > 0 && isProfit) {
     user.totalWinsCount += 1;
     if (amount > user.biggestWinAmount) {
       user.biggestWinAmount = amount;
@@ -274,9 +291,11 @@ app.get('/api/leaderboard/:type', (req, res) => {
     ensureFields(u);
     return {
       username: u.username,
+      displayName: u.displayName || u.username,
       level: u.level,
       xp: u.xp || 0,
       totalClicks: u.totalClicks || 0,
+      totalGamblingWins: u.totalGamblingWins || 0,
       totalWinsCount: u.totalWinsCount || 0,
       biggestWinAmount: u.biggestWinAmount || 0,
       biggestWinMultiplier: u.biggestWinMultiplier || 1,
@@ -284,7 +303,7 @@ app.get('/api/leaderboard/:type', (req, res) => {
   });
   let sorted;
   if (type === 'clicks') sorted = allUsers.sort((a, b) => b.totalClicks - a.totalClicks);
-  else if (type === 'wins') sorted = allUsers.sort((a, b) => b.totalWinsCount - a.totalWinsCount);
+  else if (type === 'wins') sorted = allUsers.sort((a, b) => (b.totalGamblingWins || 0) - (a.totalGamblingWins || 0));
   else if (type === 'biggest-win') sorted = allUsers.sort((a, b) => b.biggestWinAmount - a.biggestWinAmount);
   else if (type === 'xp') sorted = allUsers.sort((a, b) => b.xp - a.xp);
   else if (type === 'level') sorted = allUsers.sort((a, b) => b.level - a.level || b.xp - a.xp);

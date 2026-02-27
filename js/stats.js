@@ -137,17 +137,17 @@ const Stats = {
     }
   },
 
-  /** Record a win with amount and multiplier. */
-  async win(amount, multiplier) {
+  /** Record a win with amount, multiplier, and betAmount (only count as win when amount > betAmount). */
+  async win(amount, multiplier, betAmount) {
     if (!window.Auth || !window.Auth.isAuthenticated()) {
-      Game.win(amount, multiplier);
+      Game.win(amount, multiplier, betAmount);
       return { balance: Game.balance };
     }
     try {
       const res = await this._fetch(`${this.apiBase}/user/win`, {
         method: 'POST',
         headers: this._headers(),
-        body: JSON.stringify({ amount, multiplier: multiplier ?? null }),
+        body: JSON.stringify({ amount, multiplier: multiplier ?? null, betAmount: betAmount ?? null }),
       });
       if (!res.ok) return null;
       const data = await res.json();
@@ -159,7 +159,8 @@ const Stats = {
         Game.biggestWinAmount = data.biggestWinAmount ?? Game.biggestWinAmount;
         Game.biggestWinMultiplier = data.biggestWinMultiplier ?? Game.biggestWinMultiplier;
       }
-      if (amount > 0 && Game.rewardWinXP) Game.rewardWinXP();
+      const isProfit = betAmount != null ? amount > betAmount : true;
+      if (amount > 0 && isProfit && Game.rewardWinXP) Game.rewardWinXP();
       return data;
     } catch (e) {
       console.error('win API failed:', e);

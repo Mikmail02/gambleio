@@ -1147,9 +1147,9 @@
     const bet = window.SlotIntegration ? window.SlotIntegration.getCurrentBet() : currentBet;
     const winAmount = bet * multiplier;
     if (window.Stats && window.Stats.win) {
-      await window.Stats.win(winAmount, multiplier);
+      await window.Stats.win(winAmount, multiplier, bet);
     } else if (typeof Game !== 'undefined' && Game.win) {
-      Game.win(winAmount, multiplier);
+      Game.win(winAmount, multiplier, bet);
     }
     if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
     if (window.Auth && window.Auth.updateProfileStats) window.Auth.updateProfileStats();

@@ -227,39 +227,64 @@
   }
 
   async function signInWithEmail(email, password) {
-    const users = JSON.parse(localStorage.getItem('gambleio_users') || '{}');
-    const userKey = email.toLowerCase();
-    if (!users[userKey]) {
-      showError('User not found. Please sign up first.');
-      return;
-    }
-    if (users[userKey].password !== password) {
-      showError('Incorrect password.');
-      return;
-    }
-    currentUser = {
-      uid: users[userKey].uid,
-      email: users[userKey].email,
-      displayName: users[userKey].displayName,
-      photoURL: users[userKey].photoURL || null,
-      username: email.toLowerCase(),
-    };
-    saveUser(currentUser);
-    if (window.Auth) window.Auth.user = currentUser;
+    const emailKey = email.toLowerCase().trim();
     try {
       const res = await fetch(API_BASE + '/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: email.toLowerCase(), password }),
+        body: JSON.stringify({ username: emailKey, password }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.token) {
+        currentUser = {
+          uid: data.user?.username || emailKey,
+          email: emailKey,
+          displayName: data.user?.displayName || emailKey.split('@')[0],
+          photoURL: null,
+          username: emailKey,
+        };
+        saveUser(currentUser);
+        if (window.Auth) window.Auth.user = currentUser;
         localStorage.setItem('gambleio_token', data.token);
         if (window.Stats && window.Stats.loadStats) await window.Stats.loadStats();
+        updateUI();
+        hideLoginModal();
+        if (window.Auth && window.Auth.onAuthStateChanged) {
+          window.Auth.onAuthStateChanged(currentUser);
+        }
+        return;
+      }
+      if (res.status === 401 && data.error) {
+        if (data.error === 'User not found') {
+          showError('Email not found. Please sign up first.');
+        } else if (data.error === 'Wrong password') {
+          showError('Incorrect password.');
+        } else {
+          showError(data.error || 'Invalid credentials.');
+        }
+        return;
       }
     } catch (e) {
-      console.warn('Server login skipped:', e.message);
+      console.warn('Server login failed, trying local:', e.message);
     }
+    const users = JSON.parse(localStorage.getItem('gambleio_users') || '{}');
+    if (!users[emailKey]) {
+      showError('Email not found. Please sign up first.');
+      return;
+    }
+    if (users[emailKey].password !== password) {
+      showError('Incorrect password.');
+      return;
+    }
+    currentUser = {
+      uid: users[emailKey].uid,
+      email: users[emailKey].email,
+      displayName: users[emailKey].displayName,
+      photoURL: users[emailKey].photoURL || null,
+      username: emailKey,
+    };
+    saveUser(currentUser);
+    if (window.Auth) window.Auth.user = currentUser;
     updateUI();
     hideLoginModal();
     if (window.Auth && window.Auth.onAuthStateChanged) {
@@ -300,7 +325,7 @@
       const res = await fetch(API_BASE + '/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: email.toLowerCase(), password }),
+        body: JSON.stringify({ username: email.toLowerCase(), password, displayName: username || email.split('@')[0] }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.token) {
