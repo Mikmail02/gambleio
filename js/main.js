@@ -219,6 +219,9 @@
     updatePlinkoSessionPnl();
 
     const added = window.Plinko && window.Plinko.dropBall(bet, async (result) => {
+      if (window.Stats && window.Stats.recordPlinkoLand) {
+        window.Stats.recordPlinkoLand(result.slotIndex, bet, result.multiplier);
+      }
       if (window.Stats && window.Stats.win) {
         await window.Stats.win(result.winAmount, result.multiplier, bet);
       } else {

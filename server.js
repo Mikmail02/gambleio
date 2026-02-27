@@ -19,9 +19,12 @@ app.use(express.static(__dirname));
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
+const PLINKO_STATS_FILE = path.join(DATA_DIR, 'plinko-stats.json');
 
 const users = new Map();
 const sessions = new Map();
+
+const plinkoStats = { totalBalls: 0, landings: Array(19).fill(0) };
 
 function loadData() {
   try {
@@ -42,8 +45,23 @@ function loadData() {
       for (const [k, v] of Object.entries(obj)) sessions.set(k, v);
       console.log(`Loaded ${sessions.size} sessions`);
     }
+    if (fs.existsSync(PLINKO_STATS_FILE)) {
+      const obj = JSON.parse(fs.readFileSync(PLINKO_STATS_FILE, 'utf8'));
+      plinkoStats.totalBalls = obj.totalBalls || 0;
+      plinkoStats.landings = Array.isArray(obj.landings) ? obj.landings : Array(19).fill(0);
+      while (plinkoStats.landings.length < 19) plinkoStats.landings.push(0);
+      console.log(`Loaded plinko stats: ${plinkoStats.totalBalls} balls`);
+    }
   } catch (e) {
     console.warn('Could not load data, starting fresh:', e.message);
+  }
+}
+
+function savePlinkoStats() {
+  try {
+    fs.writeFileSync(PLINKO_STATS_FILE, JSON.stringify(plinkoStats, null, 2));
+  } catch (e) {
+    console.error('Failed to save plinko stats:', e.message);
   }
 }
 
@@ -324,6 +342,39 @@ app.get('/api/leaderboard/:type', (req, res) => {
   else if (type === 'xp') sorted = allUsers.sort((a, b) => b.xp - a.xp);
   else if (type === 'level') sorted = allUsers.sort((a, b) => b.level - a.level || b.xp - a.xp);
   res.json(sorted.slice(0, 100));
+});
+
+app.post('/api/plinko-land', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  const { slotIndex, bet, multiplier } = req.body;
+  const si = typeof slotIndex === 'number' ? Math.floor(slotIndex) : -1;
+  const idx = si >= 0 && si <= 17 ? si : 18;
+  plinkoStats.totalBalls += 1;
+  plinkoStats.landings[idx] = (plinkoStats.landings[idx] || 0) + 1;
+  savePlinkoStats();
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/plinko-stats', (req, res) => {
+  const key = req.query.key || req.headers['x-admin-key'];
+  if (!process.env.ADMIN_RESET_KEY || key !== process.env.ADMIN_RESET_KEY) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const total = plinkoStats.totalBalls;
+  const slots = plinkoStats.landings.slice(0, 18).map((n, i) => ({
+    slot: i,
+    count: n,
+    pct: total > 0 ? ((n / total) * 100).toFixed(2) + '%' : '0%',
+  }));
+  const edge = plinkoStats.landings[18] || 0;
+  res.json({
+    totalBalls: total,
+    slots,
+    edgeCount: edge,
+    edgePct: total > 0 ? ((edge / total) * 100).toFixed(2) + '%' : '0%',
+  });
 });
 
 // Admin: reset all data (for beta end, etc). Requires ADMIN_RESET_KEY env.

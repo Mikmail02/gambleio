@@ -43,6 +43,22 @@ curl -X POST https://din-app.com/api/admin/reset \
 
 Sett `ADMIN_RESET_KEY` i miljøvariablene på deploy-plattformen.
 
+## Plinko-statistikk (backend, ikke synlig)
+
+Serveren teller alle Plinko-ballandinger per multiplier. Hent statistikk (krever ADMIN_RESET_KEY):
+
+```bash
+curl "https://din-app.com/api/admin/plinko-stats?key=DIN_ADMIN_RESET_KEY"
+```
+
+Eller i nettleser-konsollen (når du er logget inn på siden):
+
+```javascript
+fetch('/api/admin/plinko-stats?key=DIN_ADMIN_RESET_KEY').then(r=>r.json()).then(console.log)
+```
+
+Data lagres i `data/plinko-stats.json`.
+
 ## Lokal testing
 
 Kjør serveren og åpne i nettleser:

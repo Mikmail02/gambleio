@@ -191,6 +191,19 @@ const Stats = {
     }
   },
 
+  async recordPlinkoLand(slotIndex, bet, multiplier) {
+    if (!window.Auth || !window.Auth.isAuthenticated()) return;
+    try {
+      await this._fetch(`${this.apiBase}/plinko-land`, {
+        method: 'POST',
+        headers: this._headers(),
+        body: JSON.stringify({ slotIndex, bet, multiplier }),
+      });
+    } catch (e) {
+      console.warn('recordPlinkoLand failed:', e.message);
+    }
+  },
+
   /** Send accumulated click earnings to server. */
   async sendClickEarnings(amount, clickCount) {
     if (!window.Auth || !window.Auth.isAuthenticated() || !(amount > 0)) return null;
