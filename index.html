@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Play Plinko and Roulette games on Gambleio - A modern gambling game platform">
+  <meta name="keywords" content="plinko, roulette, casino, gambling, games">
+  <meta name="author" content="Gambleio">
+  <title>Gambleio - Plinko & Roulette Games</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎰</text></svg>">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1 class="logo">Gambleio</h1>
+      <nav class="nav">
+        <a href="#home" class="nav-link active" data-page="home">Home</a>
+        <a href="#plinko" class="nav-link" data-page="plinko">Plinko</a>
+        <a href="#roulette" class="nav-link" data-page="roulette">Roulette</a>
+        <a href="#slots" class="nav-link" data-page="slots">Slots</a>
+        <a href="#leaderboard" class="nav-link" data-page="leaderboard">Leaderboard</a>
+      </nav>
+      <div class="header-right">
+        <div id="userInfo" class="user-info hidden">
+          <img id="userAvatar" class="user-avatar" src="" alt="Avatar">
+          <div class="user-details">
+            <div class="user-level-info" id="headerLevelInfo">
+              <span class="user-level-text" id="headerLevelText">Lv 1</span>
+              <span class="user-level-progress" aria-hidden="true">
+                <span class="user-level-progress-fill" id="headerLevelProgressFill" style="width:0%"></span>
+              </span>
+              <span class="user-level-progress-text" id="headerLevelProgressText">0 / 1,000 XP • 1,000 left</span>
+            </div>
+            <div class="user-name-row">
+              <span id="userName" class="user-name">User</span>
+              <div class="rank-badge rank-badge--header rank-tier rank-tier-noob rank-div-5" id="headerRankBadge">Noob V</div>
+            </div>
+            <div class="balance-compact">
+              <span class="balance-value" id="balance">$10,000</span>
+            </div>
+          </div>
+        </div>
+        <button type="button" class="btn-login" id="loginBtn">Login</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- Home: clicker -->
+      <section id="page-home" class="page page-home">
+        <div class="clicker-area">
+          <p class="clicker-hint">Click to earn money</p>
+          <button type="button" class="clicker-btn" id="clickerBtn">
+            <span class="clicker-amount" id="clickerAmount">+$1</span>
+            <span class="clicker-label">per click</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Plinko -->
+      <section id="page-plinko" class="page page-plinko hidden">
+        <aside class="controls">
+          <div class="control-group risk-level-group">
+            <p class="risk-level-title">Risk level</p>
+            <p class="risk-level-current" id="riskLevelCurrent">Low</p>
+            <div class="risk-level-buttons" id="riskLevelButtons">
+              <button type="button" class="btn-risk btn-risk-low active" data-risk="low">Low</button>
+              <button type="button" class="btn-risk" data-risk="medium" id="buyMedium">Medium <span class="risk-cost" id="costMedium"></span></button>
+              <button type="button" class="btn-risk" data-risk="high" id="buyHigh">High <span class="risk-cost" id="costHigh"></span></button>
+              <button type="button" class="btn-risk" data-risk="extreme" id="buyExtreme">Extreme <span class="risk-cost" id="costExtreme"></span></button>
+            </div>
+          </div>
+          <div class="control-group">
+            <label for="bet">Bet per ball ($)</label>
+            <input type="number" id="bet" min="0.01" value="10" step="0.5">
+          </div>
+          <button type="button" class="btn btn-drop" id="dropBall">
+            Drop ball
+          </button>
+          <div class="last-multipliers">
+            <p class="last-multipliers-title">Last multipliers</p>
+            <div class="last-multipliers-list" id="lastMultipliersList"></div>
+          </div>
+          <div class="last-result" id="lastResult"></div>
+          <p class="balls-hint">Max 25 balls on board. Drop again to add more.</p>
+        </aside>
+
+        <section class="plinko-area">
+          <div id="plinkoBoard" class="plinko-board"></div>
+        </section>
+      </section>
+
+      <!-- Roulette: left = chips + betting board together; center = large wheel -->
+      <section id="page-roulette" class="page page-roulette hidden">
+        <div class="roulette-layout">
+          <div class="roulette-left">
+            <aside class="roulette-menu">
+              <p class="roulette-label">Chip</p>
+              <div class="chip-stack" id="rouletteChips"></div>
+              <div class="roulette-redo-row">
+                <button type="button" class="btn btn-redo" id="rouletteRedo" title="Repeat last bet">↺</button>
+                <button type="button" class="btn btn-double" id="roulette2x" title="Repeat last bet 2×">2×</button>
+              </div>
+              <p class="roulette-total">Total: <span id="rouletteTotalBet">$0</span></p>
+              <button type="button" class="btn btn-spin" id="rouletteSpin" disabled>Spin</button>
+              <button type="button" class="btn btn-clear-bets" id="rouletteClearBets">Clear</button>
+              <p class="roulette-result" id="rouletteResult"></p>
+            </aside>
+            <div class="roulette-table-wrap">
+              <div class="roulette-grid" id="rouletteGrid"></div>
+            </div>
+          </div>
+          <div class="roulette-wheel-area">
+            <div id="rouletteWheel" class="roulette-wheel">
+              <canvas id="rouletteWheelCanvas"></canvas>
+              <div class="roulette-stop-arrow" aria-hidden="true"></div>
+            </div>
+          </div>
+        </div>
+        <div id="rouletteBalancePopup" class="roulette-popup hidden" aria-live="polite">Not enough balance</div>
+      </section>
+
+      <!-- Slots listing page -->
+      <section id="page-slots" class="page page-slots hidden">
+        <div class="slots-container">
+          <h2 class="slots-title">Slot Games</h2>
+          <div class="slots-grid" id="slotsGrid">
+            <!-- Slot games will be dynamically added here -->
+          </div>
+        </div>
+      </section>
+
+      <!-- Slot game page -->
+      <section id="page-slot-game" class="page page-slot-game hidden">
+        <div class="slot-game-container">
+          <button type="button" class="btn-back slot-back-floating" id="slotBackBtn">← Back</button>
+          <div class="slot-game-hero">
+            <h2 id="slotGameTitle" class="slot-game-title slot-game-title--hero">Circular Slots</h2>
+          </div>
+          <input type="number" id="slotBet" class="slot-bet-hidden-input" min="0" max="2000" value="10" step="10" title="Bet Amount ($)">
+          <div class="slot-game-area" id="slotGameArea">
+            <!-- Slot machine structure - must exist before initialization -->
+            <section class="sm__base" id="slotMachineBase">
+              <div class="sm__reelsContainer" id="slotReelsContainer"></div>
+              <div class="sm__display" id="slotDisplay"></div>
+            </section>
+            <div class="slot-center-bet-control" id="slotCenterBetControl">
+              <span class="slot-center-bet-label">Bet size</span>
+              <div class="slot-center-bet-row">
+                <button type="button" class="slot-center-bet-arrow" id="slotBetDown" aria-label="Decrease bet">▼</button>
+                <button type="button" class="slot-center-bet-value" id="slotBetValueBtn" aria-haspopup="dialog" aria-expanded="false">$10</button>
+                <button type="button" class="slot-center-bet-arrow" id="slotBetUp" aria-label="Increase bet">▲</button>
+              </div>
+              <button type="button" class="slot-center-spin" id="slotSpinBtn">Spin</button>
+            </div>
+            <div class="slot-bet-popup hidden" id="slotBetPopup" role="dialog" aria-modal="false" aria-label="Choose bet size">
+              <div class="slot-bet-popup-card">
+                <div class="slot-bet-popup-head">
+                  <span>Select bet</span>
+                  <button type="button" class="slot-bet-popup-close" id="slotBetPopupClose" aria-label="Close bet picker">×</button>
+                </div>
+                <div class="slot-bet-popup-grid" id="slotBetPopupGrid"></div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Slot game footer with controls -->
+          <div class="slot-game-footer" id="slotGameFooter" style="display: none;">
+            <button class="footer__button footer__modalButton" id="togglePayTable" title="Pay Table" aria-label="Pay Table">
+              <span class="footer__buttonIcon" aria-hidden="true">🏆</span>
+            </button>
+            <button class="footer__button footer__modalButton" id="toggleInstructions" title="Instructions" aria-label="Instructions">
+              <span class="footer__buttonIcon" aria-hidden="true">ℹ️</span>
+            </button>
+            <div class="slot-volume-wrap">
+              <button class="footer__button footer__toggleButton" id="slotSoundBtn" title="Sound volume" aria-label="Sound volume">
+                <span class="footer__buttonIcon" id="slotSoundIcon" aria-hidden="true">🔊</span>
+              </button>
+              <div class="slot-volume-panel hidden" id="slotVolumePanel" aria-label="Sound volume control">
+                <input type="range" id="slotVolumeSlider" min="0" max="100" step="1" value="25" aria-label="Slot sound volume">
+                <span class="slot-volume-value" id="slotVolumeValue">25%</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Modals -->
+          <section class="modal__root" id="instructionsModal">
+            <h2 class="modal__title instructions__title">
+              <span class="modal__titleIcon instructions__titleIcon">🕹️</span>About the game
+              <button class="modal__button" aria-label="Close">
+                <span class="modal__buttonIcon">×</span>
+              </button>
+            </h2>
+            <div class="instructions__root">
+              <p class="instructions__p">Circular Slots has 5 circular reels with symbols. Set your bet in the center control and press <strong>Spin</strong> to start.</p>
+              <p class="instructions__p">Click or press Space/Enter to stop one reel at a time. You need at least <strong>3 matching symbols in a row</strong> to win.</p>
+              <p class="instructions__p">Wins are multiplier-based: your bet × the multiplier (e.g. 20× or 10,000×). More matches (×3, ×4, ×5) and rarer symbols pay higher multipliers. Press the <strong>trophy 🏆</strong> to see multipliers per symbol.</p>
+              <p class="instructions__p">Toggle sound with <span class="instructions__symbol">🔊</span>.</p>
+            </div>
+          </section>
+
+          <section class="modal__root" id="payTableModal">
+            <h2 class="modal__title pt__title">
+              <span class="modal__titleIcon pt__titleIcon">🏆</span>Multipliers per symbol
+              <button class="modal__button" aria-label="Close Pay Table">
+                <span class="modal__buttonIcon">×</span>
+              </button>
+            </h2>
+            <p class="pt__intro">Multipliers for 3, 4 or 5 matching symbols. Win = bet × multiplier. Symbols change each time you load or open the game.</p>
+            <ul class="pt__base pt__base--activeC2" id="payTableBase"></ul>
+          </section>
+        </div>
+      </section>
+
+      <!-- Leaderboard page -->
+      <section id="page-leaderboard" class="page page-leaderboard hidden">
+        <div class="leaderboard-container">
+          <h2 class="leaderboard-title">Leaderboard</h2>
+          <div class="leaderboard-tabs">
+            <button type="button" class="leaderboard-tab active" data-tab="clicks">Clicks</button>
+            <button type="button" class="leaderboard-tab" data-tab="wins">Total Wins</button>
+            <button type="button" class="leaderboard-tab" data-tab="biggest-win">Biggest Win</button>
+            <button type="button" class="leaderboard-tab" data-tab="xp">XP</button>
+            <button type="button" class="leaderboard-tab" data-tab="level">Level</button>
+          </div>
+          <div class="leaderboard-list" id="leaderboardList">
+            <div class="leaderboard-empty">Select a tab to view rankings</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Profile page -->
+      <section id="page-profile" class="page page-profile hidden">
+        <div class="profile-container">
+          <h2 class="profile-title">Profile</h2>
+          <div class="profile-content">
+            <img id="profileAvatar" class="profile-avatar" src="" alt="Avatar">
+            <p class="profile-name" id="profileName">User</p>
+            <div class="rank-badge rank-badge--profile rank-tier rank-tier-noob rank-div-5" id="profileRankBadge">
+              <span class="rank-badge-main" id="profileRankLabel">Noob V</span>
+              <span class="rank-badge-level" id="profileRankLevelBadge">Lv 1</span>
+            </div>
+            <p class="profile-email" id="profileEmail">email@example.com</p>
+            <div class="profile-stats">
+              <div class="profile-stat">
+                <span class="stat-label">Balance</span>
+                <span class="stat-value" id="profileBalance">$0</span>
+              </div>
+              <div class="profile-stat">
+                <span class="stat-label">XP</span>
+                <span class="stat-value" id="profileXp">0</span>
+              </div>
+              <div class="profile-stat">
+                <span class="stat-label">Level</span>
+                <span class="stat-value stat-value-win" id="profileRankLevel">Lv 1</span>
+              </div>
+              <div class="profile-stat">
+                <span class="stat-label">Total Bets</span>
+                <span class="stat-value" id="profileTotalBets">0</span>
+              </div>
+              <div class="profile-stat">
+                <span class="stat-label">Total Won</span>
+                <span class="stat-value stat-value-win" id="profileTotalWon">$0</span>
+              </div>
+            </div>
+            <button type="button" class="btn-logout-profile" id="logoutBtnProfile" style="display: none;">Logout</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Login Modal -->
+  <div id="loginModal" class="modal hidden">
+    <div class="modal-content auth-modal">
+      <button type="button" class="modal-close" id="closeLoginModal">×</button>
+      <h2>Login / Sign Up</h2>
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" data-tab="login">Login</button>
+        <button type="button" class="auth-tab" data-tab="signup">Sign Up</button>
+      </div>
+      <div id="authError" class="auth-error hidden"></div>
+      <form id="authForm">
+        <div class="form-group" id="usernameGroup" style="display: none;">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" required>
+        </div>
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required minlength="6">
+        </div>
+        <button type="submit" class="btn-primary" id="authSubmit">Login</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/auth.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/stats.js"></script>
+  <script src="js/leaderboard.js"></script>
+  <script src="js/plinko.js"></script>
+  <script src="js/roulette.js"></script>
+  <script>
+    console.log('[index.html] About to load slot-integration.js...');
+  </script>
+  <script src="js/slot-integration.js"></script>
+  <script>
+    console.log('[index.html] slot-integration.js loaded, checking:', {
+      SlotIntegration: typeof window.SlotIntegration,
+      hasInitialize: !!(window.SlotIntegration && typeof window.SlotIntegration.initialize === 'function')
+    });
+  </script>
+  <script src="js/slots.js"></script>
+  <script src="js/main.js"></script>
+  <script>
+    console.log('[index.html] All scripts loaded. Final check:', {
+      SlotIntegration: typeof window.SlotIntegration,
+      hasInitialize: !!(window.SlotIntegration && typeof window.SlotIntegration.initialize === 'function'),
+      showPage: typeof window.showPage
+    });
+  </script>
+  <!-- Toast for click rate-limit block (shown at bottom) -->
+  <div id="clickBlockToast" class="click-block-toast hidden" role="status" aria-live="polite">
+    You are clicking too fast – Blocked for <span id="clickBlockSeconds">0</span>s
+  </div>
+</body>
+</html>

@@ -1,0 +1,523 @@
+# Matter.js – research & referanser
+
+## Klikkbare lenker (copy-paste fra GitHub fungerer ikke som lenker; bruk disse)
+
+- **Hjem / docs:** [https://brm.io/matter-js](https://brm.io/matter-js) · [Docs API](https://brm.io/matter-js/docs/)
+- **GitHub repo:** [https://github.com/liabru/matter-js](https://github.com/liabru/matter-js)
+- **Getting started:** [https://github.com/liabru/matter-js/wiki/Getting-started](https://github.com/liabru/matter-js/wiki/Getting-started)
+- **Running (egen game loop):** [https://github.com/liabru/matter-js/wiki/Running](https://github.com/liabru/matter-js/wiki/Running)
+- **Rendering (egen render):** [https://github.com/liabru/matter-js/wiki/Rendering](https://github.com/liabru/matter-js/wiki/Rendering)
+- **Demos:** [https://brm.io/matter-js/demo/](https://brm.io/matter-js/demo/) · Demo.js: [GitHub demo/js](https://github.com/liabru/matter-js/tree/master/examples)
+- **Wiki oversikt:** [https://github.com/liabru/matter-js/wiki](https://github.com/liabru/matter-js/wiki)
+- **Using plugins:** [https://github.com/liabru/matter-js/wiki/Using-plugins](https://github.com/liabru/matter-js/wiki/Using-plugins)
+- **Creating plugins:** [https://github.com/liabru/matter-js/wiki/Creating-plugins](https://github.com/liabru/matter-js/wiki/Creating-plugins)
+- **List of plugins:** [https://github.com/liabru/matter-js/wiki/List-of-plugins](https://github.com/liabru/matter-js/wiki/List-of-plugins)
+- **matter-plugin-boilerplate:** [https://github.com/liabru/matter-plugin-boilerplate](https://github.com/liabru/matter-plugin-boilerplate)
+- **Latest build / releases:** [https://github.com/liabru/matter-js/releases](https://github.com/liabru/matter-js/releases)
+
+---
+
+## Getting started (fra wiki)
+
+Install
+Usage examples
+Running and Rendering
+Documentation
+Install
+Download the [latest build](https://github.com/liabru/matter-js/releases) or get a release version and include the script in your web page e.g.
+
+<script src="matter.js"></script>
+You can also install using the package manager npm
+
+npm install matter-js
+Webpack
+Some webpack configs including the default may impact your project's performance during development, for a solution see [GitHub issue #1001](https://github.com/liabru/matter-js/issues/1001).
+
+Usage example
+The following is a minimal example using the built in renderer and runner to get you started:
+
+// module aliases
+var Engine = Matter.Engine,
+    Render = Matter.Render,
+    Runner = Matter.Runner,
+    Bodies = Matter.Bodies,
+    Composite = Matter.Composite;
+
+// create an engine
+var engine = Engine.create();
+
+// create a renderer
+var render = Render.create({
+    element: document.body,
+    engine: engine
+});
+
+// create two boxes and a ground
+var boxA = Bodies.rectangle(400, 200, 80, 80);
+var boxB = Bodies.rectangle(450, 50, 80, 80);
+var ground = Bodies.rectangle(400, 610, 810, 60, { isStatic: true });
+
+// add all of the bodies to the world
+Composite.add(engine.world, [boxA, boxB, ground]);
+
+// run the renderer
+Render.run(render);
+
+// create runner
+var runner = Runner.create();
+
+// run the engine
+Runner.run(runner, engine);
+Include the above script into a page that has Matter.js installed and then open the page in your browser. Make sure the script is at the bottom of the page (or called on the window load event, or after DOM is ready).
+
+Hopefully you will see two rectangle bodies fall and then hit each other as they land on the ground. If you don't, check the browser console to see if there are any errors.
+
+Check out the [demo page](https://brm.io/matter-js/demo/) for more examples and then refer to [Demo.js / examples](https://github.com/liabru/matter-js/tree/master/examples) to see how they work. Some of the demos are also available on [CodePen](https://codepen.io/collection/DPRzMX).
+
+**Running and Rendering**  
+The above example uses the built-in renderer and runner, but these are both optional; you can use your own game loop and render. See the [Rendering](https://github.com/liabru/matter-js/wiki/Rendering) and [Running](https://github.com/liabru/matter-js/wiki/Running) wiki pages.
+
+**Documentation**  
+See the [Matter.js Documentation](https://brm.io/matter-js/docs/) for the full API.
+
+---
+
+Matter.js is a JavaScript 2D rigid body physics engine for the web: [brm.io/matter-js](https://brm.io/matter-js)
+
+Demos · Gallery · Features · Plugins · Install · Usage · Examples · [Docs](https://brm.io/matter-js/docs/) · [Wiki](https://github.com/liabru/matter-js/wiki) · References · License
+
+Demos
+Mixed Shapes
+Solid Shapes
+Concave SVG Paths
+Concave Terrain
+Concave Bodies
+Compound Bodies
+Newton's Cradle
+Wrecking Ball
+Slingshot Game
+Rounded Corners
+Views
+Time Scaling
+Body Manipulation
+Composite Manipulation
+Raycasting
+Sprites
+Pyramid
+Car
+Catapult
+Reverse Gravity
+Bridge
+Avalanche
+Basic Soft Bodies
+Cloth
+Events
+Collision Filtering
+Chains
+Ball Pool
+Stack
+Circle Stack
+Compound Stack
+Restitution
+Friction
+Air Friction
+Static Friction
+Sleeping
+Beach Balls
+Stress 1
+Stress 2
+Sensors
+
+Gallery
+See how others are using matter.js physics
+
+Patrick Heng by Patrick Heng
+USELESS by Nice and Serious
+Secret 7 by Goodness
+New Company by New Company
+Game of The Year by Google
+Pablo The Flamingo by Nathan Gordon
+Les métamorphoses de Mr. Kalia by Lab212
+Phaser by Photon Storm
+Sorry I Have No Filter by Jessica Walsh
+Fuse by Fuse
+Glyphfinder by überdosis
+Isolation by sabato studio
+more...
+Features
+Rigid bodies
+Compound bodies
+Composite bodies
+Concave and convex hulls
+Physical properties (mass, area, density etc.)
+Restitution (elastic and inelastic collisions)
+Collisions (broad-phase, mid-phase and narrow-phase)
+Stable stacking and resting
+Conservation of momentum
+Friction and resistance
+Events
+Constraints
+Gravity
+Sleeping and static bodies
+Plugins
+Rounded corners (chamfering)
+Views (translate, zoom)
+Collision queries (raycasting, region tests)
+Time scaling (slow-mo, speed-up)
+Canvas renderer (supports vectors and textures)
+MatterTools for creating, testing and debugging worlds
+World state serialisation (requires resurrect.js)
+Cross-browser and Node.js support (Chrome, Firefox, Safari, IE8+)
+Mobile-compatible (touch, responsive)
+An original JavaScript physics implementation (not a port)
+Install
+You can install using package managers npm and Yarn using:
+
+npm install matter-js
+Alternatively you can download a stable release or try the latest experimental alpha build (master) and include the script in your web page:
+
+<script src="matter.js" type="text/javascript"></script>
+Performance with other tools (e.g. Webpack, Vue etc.)
+Bundlers and frameworks may reduce real-time performance when using their default configs, especially in development modes.
+
+When using Webpack, the default sourcemap config can have a large impact, for a solution see issue.
+
+When using Vue.js, watchers can have a large impact, for a solution see issue.
+
+Usage
+Visit the [Getting started](https://github.com/liabru/matter-js/wiki/Getting-started) wiki page for a minimal usage example which should work in both browsers and Node.js.
+Also see the Running and Rendering wiki pages, which show how to use your own game and rendering loops.
+
+Tutorials
+See the [list of tutorials](https://github.com/liabru/matter-js/wiki/Tutorials).
+
+Examples
+See the [examples directory](https://github.com/liabru/matter-js/tree/master/examples) which contains the source for all demos.
+There are even more examples on codepen.
+
+Plugins
+The engine can be extended through plugins, see these resources:
+
+Using plugins
+Creating plugins
+List of plugins
+matter-plugin-boilerplate
+Documentation
+See the [API Documentation](https://brm.io/matter-js/docs/) and the [wiki](https://github.com/liabru/matter-js/wiki)
+
+Building and Contributing
+To build you must first install node.js, then run
+
+npm install
+This will install the required build dependencies, then run
+
+npm run dev
+to spawn a development server. For information on contributing see [CONTRIBUTING.md](https://github.com/liabru/matter-js/blob/master/CONTRIBUTING.md).
+
+Changelog
+To see what's new or changed in the latest version, see the changelog.
+
+References
+See the [wiki page on References](https://github.com/liabru/matter-js/wiki/References).
+
+License
+Matter.js is licensed under The MIT License (MIT)
+Copyright (c) 2014 Liam Brummitt
+
+This license is also supplied with the release and source code.
+As stated in the license, absolutely no warranty is provided.
+
+Using Matter.js plugins
+
+Introduction
+Using plugins
+Loading plugins
+Installing plugins
+List of plugins
+Creating plugins
+Experimental
+The following information may be subject to change
+
+Introduction
+Plugins allow developers to extend Matter.js with new features in highly modular way.
+They are designed to be simple to use, create and compose.
+
+They work by installing themselves through patching the Matter.* modules directly. This approach is a powerful way to extend virtually any part of the library, in a way that is decoupled and composable.
+
+It is also possible to specify other plugins that must be installed first as dependencies. This allows plugins to be reused through composition, for example the matter-gravity plugin uses the plugin matter-attractors.
+
+The plugin system automatically tracks, resolves and installs dependencies recursively, ensuring they are installed only once in an order that satisfies all dependencies (where possible).
+
+Plugins are versioned using the semver approach, making it easier to specify compatibility. Versions may be specified for plugins themselves, the version of Matter.js they are recommended for and the versions of their dependencies.
+
+Note that while they share some things in common, plugins are not a new module or package format (as any of these existing formats may be used to build or package a plugin).
+
+Using plugins
+Loading plugins
+To use a plugin you must first load its files along with any of its dependencies' files. How you do this is up to you, the simplest way is to just use multiple <script src="..."> tags, but it is recommended to use a bundler such as webpack or browserify (but this is not required).
+
+Installing plugins
+Once you have loaded your plugin, you can install it using Matter.use like so:
+
+Matter.use(
+    'matter-gravity', 
+    'matter-world-wrap'
+);
+Check the console to confirm that they were installed correctly and in order, you should see something like:
+
+matter-js: ✅ matter-attractors@0.1.0  ✅ matter-gravity@0.1.0  ✅ matter-world-wrap@0.1.0
+Here we see that matter-attractors was also installed, due to it being a dependency of matter-gravity. Note that plugins do not usually bundle their dependencies in their distributions, so it is down to you to source and load them. Also note that plugins may only ever be installed once on a given module.
+
+Any plugins that could not be resolved will show a red cross ❌, any plugins that threw any warnings will show a 🔶. The latter may or may not operate as expected, depending on the reason for the warning.
+
+Make sure that you install plugins as early as possible in your project lifecycle, before creating any function aliases (e.g. var Body = Matter.Body;) otherwise those aliases will not refer to the newly patched versions of those functions and your plugins will fail in unexpected ways.
+
+You can see a working example that uses plugins in examples/attractors.js.
+
+Advanced users should check out Plugin.use which provides more flexibility.
+
+List of plugins
+See the list of plugins.
+
+Creating plugins
+
+Creating Matter.js plugins
+
+Using plugins
+Creating plugins
+Example
+Boilerplate
+Versioning
+Registering
+Patching
+Using other plugins as dependencies
+Guidelines for plugins
+Documentation
+Examples
+Experimental
+The following information may be subject to change
+
+Using plugins
+To find out how to use and install plugins, see the wiki page on using plugins. This article explains how you can make your own.
+
+Creating plugins
+Example
+Here is a basic Matter.js plugin boilerplate:
+
+var MyPlugin = {
+    name: 'matter-my-plugin',
+
+    version: '0.1.0',
+
+    for: 'matter-js@^0.10.0',
+
+    uses: [
+        'matter-some-dependency@^0.1.0',
+        'matter-another-dependency@^0.1.0'
+    ],
+
+    options: {
+        something: true
+    },
+
+    install: function(matter) {
+        // patch `matter` here (not the global Matter object)
+    },
+
+    // implement your plugin functions etc...
+};
+
+Matter.Plugin.register(MyPlugin);
+A description of the required properties:
+
+name string, required The unique name of the plugin (e.g. same as package.json)
+version string, required The version of the plugin (a limited subset of semver)
+install function, required The install function, it will be called only once and is passed a reference to the module it is being installed on as the first argument
+There are some additional optional properties:
+
+for string, optional The name and optionally version of module this plugin should be installed on
+uses array, optional The names and optionally versions of any other plugins this plugin requires to be installed before itself It is also possible to directly pass references to plugin objects here, but it is not recommended
+options object, optional Any global options for the plugin
+While the above boilerplate is given as a guide, any equivalent representations exposing these properties should also work (such as CommonJS or ES6 modules).
+
+Boilerplate
+A complete, production ready boilerplate starter project is available at matter-plugin-boilerplate which you can fork to start your plugin with all the essentials (build, dev, lint, test, doc, release etc.).
+
+Versioning
+Plugins are versioned using the semver approach, making it easier to specify compatibility. Versions may be specified for plugins themselves, the version of Matter.js they are recommended for and the versions of their dependencies.
+
+Versions are strictly of the format x.y.z (as in semver). Versions may optionally have a prerelease tag in the format x.y.z-alpha. Ranges are a strict subset of npm ranges. Only the following range types are supported:
+
+Tilde ranges e.g. ~1.2.3
+Caret ranges e.g. ^1.2.3
+Exact version e.g. 1.2.3
+Any version *
+If a version or range is not specified, then any version (*) is assumed to satisfy.
+
+Registering
+It is very important to call Plugin.register after your plugin definition. This allows it to be resolved by name inside the plugin system, which is the recommended way to specify dependencies.
+
+Matter.Plugin.register(MyPlugin);
+Patching
+A plugin's install function is where it should apply patches that implement the plugin's features on Matter.* modules.
+
+Included in the library are the functions Matter.before and Matter.after that you should use for patching in most cases, as they will help ensure that you do not break the original function or any other plugins that may also patch it.
+
+Here is an example of the recommended approach:
+
+var MyPlugin = {
+    // ...
+
+    install: function(base) {
+        base.before('Engine.create', function(options) {
+            MyPlugin.Engine.beforeCreate(options);
+        });
+
+        base.after('Engine.create', function() {
+            MyPlugin.Engine.afterCreate(this);
+        });
+    },
+
+    Engine: {
+        beforeCreate: function(options) {
+            console.log('Creating engine for:', options);
+        },
+        afterCreate: function(engine) {
+            console.log('Engine created:', engine);
+        }
+    }
+};
+
+// ...
+When this plugin is installed, it will log to the console before and after Matter.Engine.create gets called.
+
+Under the hood, Matter.before and Matter.after are both helpers for Common.chain.
+
+Tips for patching:
+
+the arguments passed are the same for each function in the chain
+the value of this is the last object returned in the chain
+don't change the original function signature
+don't return inside a Matter.before and Matter.after unless you intend to change the result
+when returning, ensure the same type as the patched function
+don't store references to Matter.* functions (as they may reference unpatched versions)
+Using other plugins as dependencies
+Plugins may be broken down in to smaller parts, shared and combined. Dependencies can be specified inside the uses property, and these will be installed before the plugin that specifies them.
+
+var MyPlugin = {
+    // ...
+
+    uses: [
+        'matter-some-dependency@^0.1.0',
+        'matter-another-dependency@^0.1.0'
+    ],
+
+    // ...
+};
+
+// ...
+Note that these dependencies will only ever be installed once, no matter how many plugins use them. If a plugin's code is loaded multiple times, the one with the highest version will be used.
+
+Guidelines for plugins
+Some general guidelines for plugins:
+
+consider whether to implement as a plugin at all (a pull request might be more appropriate)
+version everything
+document everything (code and readme)
+build plugins with sharing and reuse in mind
+don't store references to Matter.* functions (as they may reference unpatched versions)
+don't add new functions to modules or namespaces you don't maintain (only patch existing functions)
+add custom properties to obj.plugin e.g. body.plugin.newFeature.enabled
+follow the same namespacing structure as the core (e.g. MyPlugin.Body.init, MyPlugin.Engine.update)
+expose and implement your plugin's functions so that they can be called manually
+avoid relying a particular order of execution where possible
+the smaller the better
+but avoid unnecessary dependencies
+don't modify options or settings in unexpected or undocumented ways
+use conditionals before operating on possibly undefined properties
+don't bundle dependencies (document them)
+Documentation
+Check the documentation for a full description of the Matter.Plugin API.
+
+A list of Matter.js plugins and tools
+
+Plugins
+matter-attractors by liabru
+An attractors plugin that makes it easy to apply continual forces on bodies. It's possible to simulate effects such as wind, gravity and magnetism.
+matter-wrap by liabru
+A coordinate wrapping plugin that automatically wraps the position of bodies such that they always stay within the given bounds. Upon crossing a boundary the body will appear on the opposite side of the bounds, while maintaining its velocity.
+lark-matter by abagames
+Pixel art style renderer plugin.
+matter-collision-events by dxu
+A plugin for adding per-body collision events and event handlers.
+matter-springs by momentumworks
+Adds Damped Harmonic Oscillator (DHO) springs.
+matter-dom-plugin by elopezga
+A DOM renderer.
+Tools
+matter-tools by liabru
+Tools for creating, testing and debugging worlds.
+p5-matter by pzp1997
+Use with p5.js.
+react-game-kit by FormidableLabs
+Use with react.
+@types/matter-js by DefinitelyTyped
+Type definitions.
+matter-lines by shundroid
+Adds lines.
+crafty-matter by demipel8
+CraftyJS wrapper.
+scala-js-matterjs by DefinitelyScala
+Scala facade.
+PhysicsEditor by Andreas Löw
+Polygon editor.
+
+matter-plugin-boilerplate
+A plugin boilerplate for matter.js
+
+Build Status
+
+This project helps you quickly start a production ready plugin. If you just want to build something quickly, check out the minimal plugin example first.
+
+The wiki articles on Using plugins and Creating plugins contain information on the plugin format and provide some best practices. It can also be useful to study the implementation of existing plugins.
+
+Features
+a simple plugin example (matter-js)
+build, develop and release scripts (npm run <x>)
+a bundler and dev server (webpack)
+an ES6 transpiler (babel)
+a linter (eslint)
+a test suite (mocha and chai)
+a documentation generator (markdox)
+a demo runner (matter-tools)
+continuous integration (travis)
+Usage
+Import or manually clone this repository
+Update package.json
+Run npm install && npm run build
+Implement your plugin code
+Create a examples
+Write tests
+Document the code
+Release your plugin (see commands)
+Enable Github Pages to serve the demo
+Setup Travis CI (optional)
+Update the readme
+Notes
+Running a build will automatically replace strings commented with PLUGIN_NAME, PLUGIN_VERSION and PLUGIN_REPO_URL with constants pulled directly from package.json. Leave these intact unless you wish to manually keep them up to date.
+
+The included plugin is a very basic example that just sets the friction of all bodies to 0 after creation.
+
+If you add more source files, you will need to update the lint, doc and version scripts in package.json.
+
+Commands
+All commands are implemented as npm scripts:
+
+npm run build - builds the plugin
+npm run dev - runs development server
+npm run test - runs tests
+npm run lint - runs linter
+npm run doc - outputs docs to API.md
+npm run release - lint, test, bump minor, build, doc, commit, tag, push, publish (any will stop all on failure)
+npm run release-patch - same as above but patch bump
+
