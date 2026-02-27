@@ -2442,19 +2442,49 @@ body {
   text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 0.5rem 0;
   padding-bottom: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.06);
 }
-.winner-feed-list { display: flex; flex-direction: column; gap: 0.35rem; overflow: hidden; }
+.winner-feed-list {
+  display: flex; flex-direction: column; gap: 0.35rem;
+  overflow: hidden; max-height: 50vh; transition: max-height 0.4s ease;
+}
+.winner-feed-list.has-entries { max-height: min(400px, 70vh); }
 .winner-feed-entry {
   padding: 0.45rem 0.6rem; background: var(--bg-input); border-radius: 8px;
   font-size: 0.75rem; color: var(--text); border-left: 3px solid var(--accent);
-  animation: winner-slide-in 0.6s ease-out, winner-fade-out 1.5s 5s ease-in forwards;
+  animation: winner-slide-in 0.5s ease-out forwards;
 }
-@keyframes winner-fade-out {
-  0% { opacity: 1; }
-  100% { opacity: 0; transform: translateX(-20px); }
+.winner-feed-entry.slide-out {
+  animation: winner-slide-out 0.6s ease-in forwards;
 }
 .winner-feed-entry .winner-name { font-weight: 600; color: var(--accent); }
 .winner-feed-entry .winner-amount { font-weight: 700; color: var(--mult-high); }
-@keyframes winner-slide-in { 0% { transform: translateY(-20px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+@keyframes winner-slide-in {
+  0% { transform: translateY(-100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes winner-slide-out {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+
+/* Live bets panel */
+.roulette-live-bets {
+  width: 200px; flex-shrink: 0; background: var(--bg-panel);
+  border: 1px solid rgba(255,255,255,0.06); border-radius: var(--radius);
+  padding: 0.75rem; max-height: 400px; overflow: hidden;
+}
+.live-bets-title {
+  font-size: 0.8rem; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 0.5rem 0;
+  padding-bottom: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.live-bets-list { display: flex; flex-direction: column; gap: 0.3rem; overflow-y: auto; }
+.live-bet-entry {
+  padding: 0.4rem 0.5rem; background: var(--bg-input); border-radius: 6px;
+  font-size: 0.75rem; color: var(--text); display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
+}
+.live-bet-entry .bet-key { font-weight: 600; color: var(--accent); }
+.live-bet-entry .bet-meta { font-size: 0.7rem; color: var(--text-muted); white-space: nowrap; }
+.live-bets-empty { font-size: 0.75rem; color: var(--text-muted); margin: 0; padding: 0.5rem; }
 
 /* Main content */
 .roulette-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.75rem; }
@@ -2504,6 +2534,7 @@ body {
 .roulette-betting-area {
   background: var(--bg-panel); border-radius: var(--radius);
   border: 1px solid rgba(255,255,255,0.06); padding: 0.75rem;
+  display: flex; flex-direction: column; min-width: 0; flex: 1;
 }
 .roulette-chip-bar {
   display: flex; align-items: center; gap: 0.75rem; padding-bottom: 0.75rem;
@@ -2518,7 +2549,7 @@ body {
 .roulette-bet-controls .btn:hover { border-color: var(--accent); color: var(--accent); }
 .roulette-total { font-size: 0.85rem; color: var(--text-muted); margin: 0 0 0 auto; }
 .roulette-total span { color: var(--accent); font-weight: 700; }
-.roulette-grid-wrap { width: 100%; }
+.roulette-grid-wrap { width: 100%; min-width: 0; flex: 1; }
 .roulette-grid.disabled .roulette-cell { pointer-events: none; opacity: 0.5; }
 
 /* Chips – poker style with design + bg color + value */
@@ -2585,7 +2616,7 @@ body {
 .chip { z-index: 0; }
 .chip span { position: relative; z-index: 1; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
 
-/* Betting table – horizontal number grid, same width as 0 */
+/* Betting table – horizontal number grid */
 .roulette-table-wrap {
   flex-shrink: 0;
   display: flex;
@@ -2593,8 +2624,6 @@ body {
   border-radius: var(--radius);
   border: 1px solid rgba(255,255,255,0.06);
   padding: 0.4rem;
-  min-width: 360px;
-  max-width: 440px;
   width: 100%;
 }
 
@@ -2649,6 +2678,13 @@ body {
 .roulette-row {
   display: flex;
   gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.roulette-row .roulette-cell-num {
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
 }
 
 .roulette-cell {

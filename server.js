@@ -562,6 +562,23 @@ app.get('/api/roulette/winners', (req, res) => {
   res.json(rouletteState.recentWinners);
 });
 
+app.get('/api/roulette/all-bets', (req, res) => {
+  const agg = new Map();
+  for (const [username, userBets] of rouletteState.bets) {
+    for (const { key, amount } of userBets) {
+      const cur = agg.get(key) || { key, total: 0, players: new Set() };
+      cur.total += amount;
+      cur.players.add(username);
+      agg.set(key, cur);
+    }
+  }
+  res.json(Array.from(agg.entries()).map(([k, v]) => ({
+    key: k,
+    total: v.total,
+    count: v.players.size,
+  })).sort((a, b) => b.total - a.total));
+});
+
 app.listen(PORT, () => {
   console.log(`Gambleio server running on http://localhost:${PORT}`);
   if (DATA_DIR !== path.join(__dirname, 'data')) {

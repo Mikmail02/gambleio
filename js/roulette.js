@@ -5,7 +5,8 @@
 (function () {
   const CHIP_VALUES = [1, 5, 25, 100, 500, 5000, 50000];
   const RED_NUMBERS = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
-  const WHEEL_ORDER = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
+  const CELL_WIDTH = 60;
+  const CELL_GAP = 3;
   const API = '/api';
 
   function isRed(n) { return RED_NUMBERS.includes(n); }
@@ -22,6 +23,7 @@
   const sliderStrip = document.getElementById('csgoSliderStrip');
   const resultDisplay = document.getElementById('rouletteResultDisplay');
   const winnerFeedList = document.getElementById('winnerFeedList');
+  const liveBetsList = document.getElementById('liveBetsList');
 
   let selectedChipValue = CHIP_VALUES[0];
   let localBets = {};
@@ -30,6 +32,8 @@
   let pollInterval = null;
   let lastRoundId = 0;
   let animatedRoundId = 0;
+  let lastPhase = null;
+  let winnerFeedRoundId = 0;
 
   function getBetMultiplier(key) {
     if (key === '1-12' || key === '13-24' || key === '25-36') return 3;
@@ -97,48 +101,62 @@
   function buildSliderStrip() {
     if (!sliderStrip) return;
     const cells = [];
-    for (let i = 0; i < 120; i++) {
-      const num = WHEEL_ORDER[i % 37];
+    for (let i = 0; i < 222; i++) {
+      const num = i % 37;
       const cls = num === 0 ? 'csgo-slider-cell--green' : isRed(num) ? 'csgo-slider-cell--red' : 'csgo-slider-cell--black';
       cells.push(`<div class="csgo-slider-cell ${cls}" data-num="${num}">${num}</div>`);
     }
     sliderStrip.innerHTML = cells.join('');
     const vw = sliderStrip.parentElement?.offsetWidth || 600;
-    sliderStrip.style.transform = `translateX(${vw / 2 - 31}px)`;
+    const first = sliderStrip.querySelector('.csgo-slider-cell');
+    const cw = first ? first.offsetWidth : CELL_WIDTH;
+    sliderStrip.style.transform = `translateX(${vw / 2 - cw / 2}px)`;
   }
 
-  function animateSliderToWinner(winNumber, durationMs) {
+  function animateSliderToWinner(winNumber) {
     if (!sliderStrip) return Promise.resolve();
     const cells = sliderStrip.querySelectorAll('.csgo-slider-cell');
     if (!cells.length) return Promise.resolve();
-    const cellWidth = 63;
-    const viewportWidth = sliderStrip.parentElement?.offsetWidth || 600;
-    const centerOffset = viewportWidth / 2 - cellWidth / 2;
-    let targetIdx = 0;
-    for (let i = 0; i < cells.length; i++) {
-      if (parseInt(cells[i].dataset.num, 10) === winNumber) {
-        targetIdx = i;
-        break;
-      }
-    }
-    const wiggle = (Math.random() - 0.5) * 150;
-    const targetX = centerOffset - targetIdx * cellWidth + wiggle;
-    const startX = parseFloat(sliderStrip.style.transform?.replace(/translateX\(([^)]+)\)/, '$1')) || 0;
-    const distance = Math.abs(targetX - startX);
-    const duration = durationMs || 3000 + Math.random() * 2000;
+    const viewport = sliderStrip.parentElement;
+    const viewportWidth = viewport?.offsetWidth || 600;
+    const firstCell = cells[0];
+    const actualCellWidth = firstCell ? firstCell.offsetWidth : CELL_WIDTH;
+    const cellStep = actualCellWidth + CELL_GAP;
+    const centerOffset = viewportWidth / 2 - actualCellWidth / 2;
+
+    const startX = parseFloat(sliderStrip.style.transform?.replace(/translateX\(([^)]+)\)/, '$1')) || (viewportWidth / 2 - actualCellWidth / 2);
+    const CONSTANT_MS = 3000;
+    const DECEL_MS = 2500;
+    const TOTAL_MS = CONSTANT_MS + DECEL_MS;
+    const constantSpeed = 1100;
+    const constantDistance = constantSpeed * (CONSTANT_MS / 1000);
+    const cellsInConstant = constantDistance / cellStep;
+    const minCycles = Math.max(1, Math.ceil(cellsInConstant / 37));
+    const targetIdx = minCycles * 37 + winNumber;
+    const targetX = centerOffset - targetIdx * cellStep;
+    const endXAfterConstant = startX - constantDistance;
+
     const startTime = performance.now();
 
     return new Promise((resolve) => {
       function tick(now) {
-        const t = Math.min((now - startTime) / duration, 1);
-        const ease = 1 - Math.pow(1 - t, 3.5);
-        const x = startX + (targetX - startX) * ease;
+        const elapsed = now - startTime;
+        let x;
+        if (elapsed < CONSTANT_MS) {
+          x = startX - (elapsed / 1000) * constantSpeed;
+        } else {
+          const decelT = (elapsed - CONSTANT_MS) / DECEL_MS;
+          const ease = 1 - Math.pow(1 - decelT, 3.2);
+          x = endXAfterConstant + (targetX - endXAfterConstant) * ease;
+        }
         sliderStrip.style.transform = `translateX(${x}px)`;
         cells.forEach((c) => c.classList.remove('csgo-slider-cell--winner'));
-        const centerCell = Math.round((-x + centerOffset) / cellWidth);
-        if (cells[centerCell]) cells[centerCell].classList.add('csgo-slider-cell--winner');
-        if (t < 1) requestAnimationFrame(tick);
-        else {
+        const centerCellIdx = Math.round((-x + centerOffset) / cellStep);
+        if (cells[centerCellIdx]) cells[centerCellIdx].classList.add('csgo-slider-cell--winner');
+        if (elapsed < TOTAL_MS) {
+          requestAnimationFrame(tick);
+        } else {
+          sliderStrip.style.transform = `translateX(${targetX}px)`;
           const winnerCell = sliderStrip.querySelector(`[data-num="${winNumber}"]`);
           if (winnerCell) winnerCell.classList.add('csgo-slider-cell--winner');
           resolve();
@@ -163,7 +181,7 @@
       if (gridEl) gridEl.classList.add('disabled');
       if (data.winNumber !== null && data.winNumber !== undefined && animatedRoundId !== data.roundId) {
         animatedRoundId = data.roundId;
-        animateSliderToWinner(data.winNumber, 4500);
+        animateSliderToWinner(data.winNumber);
       }
       if (data.phase === 'result' && data.winNumber !== null) {
         const color = data.winNumber === 0 ? 'green' : isRed(data.winNumber) ? 'red' : 'black';
@@ -328,15 +346,52 @@
     });
   }
 
-  async function loadWinners() {
+  function formatBetKey(key) {
+    const labels = { '1-12': '1st 12', '13-24': '2nd 12', '25-36': '3rd 12' };
+    return labels[key] || key;
+  }
+
+  async function loadAllBets() {
+    try {
+      const res = await fetch(API + '/roulette/all-bets');
+      if (!res.ok) return;
+      const bets = await res.json();
+      if (!liveBetsList) return;
+      if (bets.length === 0) {
+        liveBetsList.innerHTML = '<p class="live-bets-empty">No bets yet</p>';
+        return;
+      }
+      liveBetsList.innerHTML = bets.map((b) =>
+        `<div class="live-bet-entry"><span class="bet-key">${escapeHtml(formatBetKey(b.key))}</span><span class="bet-meta">${b.count} ${b.count === 1 ? 'player' : 'players'} · $${b.total.toLocaleString()}</span></div>`
+      ).join('');
+    } catch (e) {}
+  }
+
+  async function loadWinners(data) {
+    if (!winnerFeedList) return;
+    const prevPhase = lastPhase;
+    lastPhase = data?.phase ?? lastPhase;
+    if (data && data.phase === 'betting' && prevPhase && prevPhase !== 'betting' && winnerFeedList.children.length) {
+      winnerFeedList.querySelectorAll('.winner-feed-entry').forEach((el) => el.classList.add('slide-out'));
+      setTimeout(() => {
+        winnerFeedList.innerHTML = '';
+        winnerFeedList.classList.remove('has-entries');
+      }, 650);
+      return;
+    }
+    if (!data || (data.phase !== 'result' && data.phase !== 'spinning')) return;
     try {
       const res = await fetch(API + '/roulette/winners');
       if (!res.ok) return;
       const winners = await res.json();
-      if (!winnerFeedList) return;
-      winnerFeedList.innerHTML = winners.slice(0, 10).map((w) =>
-        `<div class="winner-feed-entry"><span class="winner-name">${escapeHtml(w.username)}</span> won <span class="winner-amount">${formatDollars(w.amount)}</span> on ${w.number}</div>`
-      ).join('');
+      const toShow = winners.slice(0, 10);
+      if (toShow.length && (data.roundId !== winnerFeedRoundId || !winnerFeedList.children.length)) {
+        winnerFeedRoundId = data.roundId;
+        winnerFeedList.classList.add('has-entries');
+        winnerFeedList.innerHTML = toShow.map((w) =>
+          `<div class="winner-feed-entry"><span class="winner-name">${escapeHtml(w.username)}</span> won <span class="winner-amount">${formatDollars(w.amount)}</span> on ${w.number}</div>`
+        ).join('');
+      }
     } catch (e) {}
   }
 
@@ -349,7 +404,8 @@
   async function poll() {
     const data = await fetchRound();
     updateUIFromRound(data);
-    await loadWinners();
+    await loadWinners(data);
+    if (data?.phase === 'betting') await loadAllBets();
   }
 
   function init() {
