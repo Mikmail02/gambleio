@@ -25,6 +25,8 @@
 
   const LAST_MULTIPLIERS_MAX = 10;
   let lastMultipliers = [];
+  let plinkoSessionBet = 0;
+  let plinkoSessionWon = 0;
 
   function formatDollars(n) {
     return '$' + new Intl.NumberFormat('en', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
@@ -58,6 +60,14 @@
     if (!lastResultEl) return;
     lastResultEl.textContent = text;
     lastResultEl.className = 'last-result' + (isWin ? ' win' : text ? ' loss' : '');
+  }
+
+  function updatePlinkoSessionPnl() {
+    const el = document.getElementById('plinkoSessionValue');
+    if (!el) return;
+    const pnl = plinkoSessionWon - plinkoSessionBet;
+    el.textContent = (pnl >= 0 ? '+' : '') + formatDollars(pnl);
+    el.className = 'plinko-session-value' + (pnl > 0 ? ' plinko-session-profit' : pnl < 0 ? ' plinko-session-loss' : '');
   }
 
   function addLastMultiplier(multiplier) {
@@ -106,6 +116,7 @@
     if (pageId === 'plinko') {
       updateDropButton();
       updateRiskLevelUI();
+      updatePlinkoSessionPnl();
       if (window.Plinko && window.Plinko.updateMultipliers) {
         window.Plinko.updateMultipliers();
       }
@@ -202,8 +213,10 @@
       return;
     }
     if (!window.Stats || !window.Stats.placeBet) Game.recordBet();
+    plinkoSessionBet += bet;
     updateBalance();
     updateDropButton();
+    updatePlinkoSessionPnl();
 
     const added = window.Plinko && window.Plinko.dropBall(bet, async (result) => {
       if (window.Stats && window.Stats.win) {
@@ -211,6 +224,8 @@
       } else {
         Game.win(result.winAmount, result.multiplier, bet);
       }
+      plinkoSessionWon += result.winAmount;
+      updatePlinkoSessionPnl();
       updateBalance();
       addLastMultiplier(result.multiplier);
       const winText = result.multiplier >= 1 
@@ -222,6 +237,8 @@
     });
 
     if (!added) {
+      plinkoSessionWon += bet;
+      updatePlinkoSessionPnl();
       if (window.Stats && window.Stats.win) {
         await window.Stats.win(bet, 1, bet);
       } else {

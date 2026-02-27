@@ -264,6 +264,10 @@
         }
         return;
       }
+      if (res.status >= 400 && data.error) {
+        showError(data.error || 'Login failed. Please try again.');
+        return;
+      }
     } catch (e) {
       console.warn('Server login failed, trying local:', e.message);
     }
@@ -293,53 +297,48 @@
   }
 
   async function signUpWithEmail(email, password, username) {
-    const users = JSON.parse(localStorage.getItem('gambleio_users') || '{}');
-    const userKey = email.toLowerCase();
-    if (users[userKey]) {
-      showError('Email already registered. Please login instead.');
-      return;
-    }
     if (password.length < 6) {
       showError('Password must be at least 6 characters.');
       return;
     }
-    const uid = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    users[userKey] = {
-      uid,
-      email: email.toLowerCase(),
-      password,
-      displayName: username || email.split('@')[0],
-      photoURL: null,
-    };
-    localStorage.setItem('gambleio_users', JSON.stringify(users));
-    currentUser = {
-      uid,
-      email: email.toLowerCase(),
-      displayName: username || email.split('@')[0],
-      photoURL: null,
-      username: email.toLowerCase(),
-    };
-    saveUser(currentUser);
-    if (window.Auth) window.Auth.user = currentUser;
+    const emailKey = email.toLowerCase().trim();
+    const displayName = (username || '').trim() || emailKey.split('@')[0];
     try {
       const res = await fetch(API_BASE + '/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: email.toLowerCase(), password, displayName: username || email.split('@')[0] }),
+        body: JSON.stringify({ username: emailKey, password, displayName }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.token) {
+        currentUser = {
+          uid: data.user?.username || emailKey,
+          email: emailKey,
+          displayName: data.user?.displayName || displayName,
+          photoURL: null,
+          username: emailKey,
+        };
+        saveUser(currentUser);
+        if (window.Auth) window.Auth.user = currentUser;
         localStorage.setItem('gambleio_token', data.token);
         if (window.Stats && window.Stats.loadStats) await window.Stats.loadStats();
+        updateUI();
+        hideLoginModal();
+        if (window.Auth && window.Auth.onAuthStateChanged) {
+          window.Auth.onAuthStateChanged(currentUser);
+        }
+        return;
+      }
+      if (res.status === 400 && data.error) {
+        showError(data.error === 'Username already exists' ? 'Email already registered. Please login instead.' : data.error);
+        return;
       }
     } catch (e) {
-      console.warn('Server register skipped:', e.message);
+      console.warn('Server register failed:', e.message);
+      showError('Could not connect to server. Make sure the server is running (node server.js).');
+      return;
     }
-    updateUI();
-    hideLoginModal();
-    if (window.Auth && window.Auth.onAuthStateChanged) {
-      window.Auth.onAuthStateChanged(currentUser);
-    }
+    showError('Registration failed. Please try again.');
   }
 
   function logout() {

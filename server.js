@@ -28,7 +28,13 @@ function loadData() {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     if (fs.existsSync(USERS_FILE)) {
       const obj = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-      for (const [k, v] of Object.entries(obj)) users.set(k, v);
+      for (const [k, v] of Object.entries(obj)) {
+        const key = (k || '').toLowerCase().trim();
+        if (key && v) {
+          v.username = v.username || key;
+          users.set(key, v);
+        }
+      }
       console.log(`Loaded ${users.size} users`);
     }
     if (fs.existsSync(SESSIONS_FILE)) {
@@ -104,16 +110,17 @@ function publicUser(u) {
 
 app.post('/api/auth/register', (req, res) => {
   const { username, password, displayName } = req.body;
-  if (!username || !password || username.length < 3 || password.length < 3) {
+  const userKey = (username || '').toLowerCase().trim();
+  if (!userKey || !password || userKey.length < 3 || password.length < 3) {
     return res.status(400).json({ error: 'Username and password must be at least 3 characters' });
   }
-  if (users.has(username)) {
+  if (users.has(userKey)) {
     return res.status(400).json({ error: 'Username already exists' });
   }
   const user = {
-    username,
+    username: userKey,
     password: bcrypt.hashSync(password, 10),
-    displayName: displayName || username,
+    displayName: (displayName || '').trim() || userKey,
     balance: 10000,
     totalGamblingWins: 0,
     totalClickEarnings: 0,
@@ -126,24 +133,31 @@ app.post('/api/auth/register', (req, res) => {
     biggestWinMultiplier: 1,
     createdAt: Date.now(),
   };
-  users.set(username, user);
+  users.set(userKey, user);
   saveUsers();
   const token = generateToken();
-  sessions.set(token, username);
+  sessions.set(token, userKey);
   saveSessions();
   res.json({ token, user: publicUser(user) });
 });
 
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
-  const user = users.get(username);
+  const userKey = (username || '').toLowerCase().trim();
+  const user = users.get(userKey);
   if (!user) {
     return res.status(401).json({ error: 'User not found' });
   }
-  const isBcryptHash = typeof user.password === 'string' && user.password.startsWith('$2');
-  const passwordMatch = isBcryptHash
-    ? bcrypt.compareSync(password, user.password)
-    : user.password === password;
+  let passwordMatch = false;
+  try {
+    const isBcryptHash = typeof user.password === 'string' && user.password.startsWith('$2');
+    passwordMatch = isBcryptHash
+      ? bcrypt.compareSync(password, user.password)
+      : user.password === password;
+  } catch (e) {
+    console.error('Login password check error:', e.message);
+    return res.status(500).json({ error: 'Login error. Please try again.' });
+  }
   if (!passwordMatch) {
     return res.status(401).json({ error: 'Wrong password' });
   }
@@ -154,7 +168,7 @@ app.post('/api/auth/login', (req, res) => {
   }
   ensureFields(user);
   const token = generateToken();
-  sessions.set(token, username);
+  sessions.set(token, userKey);
   saveSessions();
   res.json({ token, user: publicUser(user) });
 });

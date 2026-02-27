@@ -9,8 +9,8 @@
   const pegRows = 15;
   const pegSpacing = 36;
   const ballSize = 10;
-  const gravity = 0.52;
-  const bounceDamping = 0.44;
+  const gravity = 0.36;
+  const bounceDamping = 0.34;
   const centerBias = 0.0005;
   const randomBias = 0.018;
 

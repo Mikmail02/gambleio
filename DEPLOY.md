@@ -52,3 +52,16 @@ node server.js
 ```
 
 Åpne **http://localhost:3000** (ikke åpne `index.html` direkte – da vil API-kall feile).
+
+### Resette data for testing
+
+For å starte på nytt (slette alle brukere og sesjoner):
+
+```bash
+# Slett data-mappen (Windows PowerShell)
+Remove-Item -Recurse -Force data
+
+# Eller manuelt: slett data/users.json og data/sessions.json
+```
+
+Start serveren på nytt etterpå.

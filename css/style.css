@@ -831,6 +831,35 @@ body {
   margin-top: 0.5rem;
 }
 
+.plinko-session-pnl {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-input);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.plinko-session-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.plinko-session-value {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.plinko-session-value.plinko-session-profit {
+  color: var(--mult-high);
+}
+
+.plinko-session-value.plinko-session-loss {
+  color: var(--mult-low);
+}
+
 .last-multipliers {
   margin-top: 1rem;
   padding-top: 1rem;

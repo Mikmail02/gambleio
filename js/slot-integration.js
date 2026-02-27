@@ -175,7 +175,8 @@
     static EXTENSION = IS_FIREFOX ? 'ogg' : 'mp3';
     static BASE_URL = 'https://raw.githubusercontent.com/Danziger/slotjs/master/static/sounds/';
     static STORAGE_KEY = 'slotVolume';
-    static DEFAULT_VOLUME = 0.25;
+    static DEFAULT_VOLUME = 0.5;
+    static BASE_VOLUME_MULT = 0.1;
 
     constructor() {
       this.isEnabled = true;
@@ -230,7 +231,7 @@
     }
 
     getEffectiveVolume(baseVolume = 1) {
-      return Math.max(0, Math.min(1, baseVolume * this.volume));
+      return Math.max(0, Math.min(1, baseVolume * this.volume * SMSoundServiceClass.BASE_VOLUME_MULT));
     }
 
     canPlay() {
