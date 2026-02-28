@@ -1,12 +1,53 @@
 /**
  * Stats sync with backend. Server is source of truth for balance.
  * Auto-re-authenticates on 401 (expired session after server restart).
+ * Caches xp/level in localStorage so refresh doesn't reset before loadStats completes.
  */
 const Stats = {
   apiBase: '/api',
   syncDebounce: 2000,
   syncTimer: null,
   _reAuthInProgress: null,
+  GAME_STATS_KEY: 'gambleio_game_stats',
+
+  _restoreFromCache() {
+    try {
+      const raw = localStorage.getItem(this.GAME_STATS_KEY);
+      if (!raw) return;
+      const cached = JSON.parse(raw);
+      if (cached && typeof cached === 'object') {
+        if (cached.xp !== undefined) Game.xp = cached.xp;
+        if (cached.level !== undefined) Game.currentLevel = cached.level;
+        if (cached.balance !== undefined) Game.balance = cached.balance;
+        if (cached.totalGamblingWins !== undefined) Game.totalGamblingWins = cached.totalGamblingWins;
+        if (cached.totalClickEarnings !== undefined) Game.totalClickEarnings = cached.totalClickEarnings;
+        if (cached.totalBets !== undefined) Game.totalBets = cached.totalBets;
+        if (cached.totalClicks !== undefined) Game.totalClicks = cached.totalClicks;
+        if (cached.totalWinsCount !== undefined) Game.totalWinsCount = cached.totalWinsCount;
+        if (cached.biggestWinAmount !== undefined) Game.biggestWinAmount = cached.biggestWinAmount;
+        if (cached.biggestWinMultiplier !== undefined) Game.biggestWinMultiplier = cached.biggestWinMultiplier;
+        Game.totalWon = Game.totalGamblingWins ?? 0;
+        if (Game.recalculateLevelFromXp) Game.recalculateLevelFromXp();
+      }
+    } catch (e) { /* ignore */ }
+  },
+
+  _saveToCache() {
+    try {
+      localStorage.setItem(this.GAME_STATS_KEY, JSON.stringify({
+        xp: Game.xp,
+        level: Game.currentLevel,
+        balance: Game.balance,
+        totalGamblingWins: Game.totalGamblingWins,
+        totalClickEarnings: Game.totalClickEarnings,
+        totalBets: Game.totalBets,
+        totalClicks: Game.totalClicks,
+        totalWinsCount: Game.totalWinsCount,
+        biggestWinAmount: Game.biggestWinAmount,
+        biggestWinMultiplier: Game.biggestWinMultiplier,
+      }));
+    } catch (e) { /* ignore */ }
+  },
 
   // --- Auto re-auth: if server session expired, re-login using stored credentials ---
   async _reAuth() {
@@ -75,7 +116,7 @@ const Stats = {
 
   async _doSync() {
     try {
-      await this._fetch(`${this.apiBase}/user/update-stats`, {
+      const res = await this._fetch(`${this.apiBase}/user/update-stats`, {
         method: 'POST',
         headers: this._headers(),
         body: JSON.stringify({
@@ -85,6 +126,7 @@ const Stats = {
           biggestWinMultiplier: Game.biggestWinMultiplier || 1,
         }),
       });
+      if (res && res.ok) this._saveToCache();
     } catch (error) {
       console.error('Failed to sync stats:', error);
     }
@@ -92,6 +134,7 @@ const Stats = {
 
   async loadStats() {
     if (!window.Auth || !window.Auth.isAuthenticated()) return;
+    this._restoreFromCache();
     try {
       const res = await this._fetch(`${this.apiBase}/user/stats`, {
         headers: this._headers(),
@@ -110,6 +153,7 @@ const Stats = {
       Game.biggestWinAmount = stats.biggestWinAmount ?? 0;
       Game.biggestWinMultiplier = stats.biggestWinMultiplier ?? 1;
       if (Game.recalculateLevelFromXp) Game.recalculateLevelFromXp();
+      this._saveToCache();
     } catch (error) {
       console.error('Failed to load stats:', error);
     }

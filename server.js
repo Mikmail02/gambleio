@@ -116,22 +116,12 @@ function ensureMikmailUser() {
     saveUsers();
     console.log(`[Gambleio] Mikmail owner created. Login: ${MIKMAIL_EMAIL} / ${MIKMAIL_PASSWORD}`);
   } else {
-    user.username = key;
     user.profileSlug = getProfileSlug(key);
     user.password = fullUser.password;
     user.displayName = 'Mikmail';
-    user.balance = fullUser.balance;
-    user.totalGamblingWins = fullUser.totalGamblingWins;
-    user.totalClickEarnings = fullUser.totalClickEarnings;
-    user.totalBets = fullUser.totalBets;
-    user.level = fullUser.level;
-    user.xp = fullUser.xp;
-    user.totalClicks = fullUser.totalClicks;
-    user.totalWinsCount = fullUser.totalWinsCount;
-    user.biggestWinAmount = fullUser.biggestWinAmount;
-    user.biggestWinMultiplier = fullUser.biggestWinMultiplier;
     user.isOwner = true;
     ensureFields(user);
+    user.level = getLevelFromXp(user.xp);
     users.set(key, user);
     saveUsers();
   }
@@ -441,14 +431,16 @@ app.get('/api/leaderboard/:type', (req, res) => {
   const allUsers = Array.from(users.values()).map(u => {
     ensureFields(u);
     ensureProfileSlug(u);
+    const xp = u.xp || 0;
+    const level = getLevelFromXp(xp);
     return {
       username: u.username,
       profileSlug: u.profileSlug || getProfileSlug(u.username),
       displayName: u.displayName || u.username,
       isOwner: !!u.isOwner,
       balance: u.balance ?? 0,
-      level: u.level,
-      xp: u.xp || 0,
+      level,
+      xp,
       totalClicks: u.totalClicks || 0,
       totalGamblingWins: u.totalGamblingWins || 0,
       totalWinsCount: u.totalWinsCount || 0,

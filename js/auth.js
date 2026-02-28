@@ -465,6 +465,7 @@
     if (window.Auth) window.Auth.user = null;
     saveUser(null);
     localStorage.removeItem('gambleio_token');
+    localStorage.removeItem('gambleio_game_stats');
     updateUI();
     if (window.Auth && window.Auth.onAuthStateChanged) {
       window.Auth.onAuthStateChanged(null);
