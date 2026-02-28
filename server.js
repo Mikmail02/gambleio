@@ -479,6 +479,23 @@ app.post('/api/plinko-land', (req, res) => {
   res.json({ ok: true });
 });
 
+// Plinko stats – public, read-only (hvor mange baller har landet i hver slot)
+app.get('/api/plinko-stats', (req, res) => {
+  const total = plinkoStats.totalBalls;
+  const slots = plinkoStats.landings.slice(0, 18).map((n, i) => ({
+    slot: i,
+    count: n,
+    pct: total > 0 ? ((n / total) * 100).toFixed(2) + '%' : '0%',
+  }));
+  const edge = plinkoStats.landings[18] || 0;
+  res.json({
+    totalBalls: total,
+    slots,
+    edgeCount: edge,
+    edgePct: total > 0 ? ((edge / total) * 100).toFixed(2) + '%' : '0%',
+  });
+});
+
 app.get('/api/admin/plinko-stats', (req, res) => {
   const key = req.query.key || req.headers['x-admin-key'];
   if (!process.env.ADMIN_RESET_KEY || key !== process.env.ADMIN_RESET_KEY) {
