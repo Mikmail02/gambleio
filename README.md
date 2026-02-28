@@ -16,8 +16,17 @@ A modern, interactive gambling game platform featuring Plinko and Roulette games
 ### Local Development
 
 1. Clone or download this repository
-2. Open `index.html` in a web browser
-3. No build process required - it's pure HTML/CSS/JS!
+2. Run the server: `node server.js`
+3. Open `http://localhost:3000` in a web browser
+
+### Demo / Mikmail Owner Login
+
+A pre-made Mikmail owner account is created when the server starts (survives data resets):
+
+- **Email/Username:** `mikael@betyr.no`
+- **Password:** `owner123`
+
+Use these credentials in the login form.
 
 ### File Structure
 

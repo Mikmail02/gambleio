@@ -13,8 +13,10 @@
   const bounceDamping = 0.34;
   const centerBias = 0.0005;
   const randomBias = 0.018;
+  const DROP_DELAY_MS = 80;
 
   let balls = [];
+  let lastDropTime = 0;
   let pegs = [];
   let multiplierBoxes = [];
   let rebuildTimer = null;
@@ -170,6 +172,15 @@
       return false;
     }
 
+    const now = Date.now();
+    const elapsed = now - lastDropTime;
+    if (elapsed < DROP_DELAY_MS) {
+      const wait = DROP_DELAY_MS - elapsed;
+      setTimeout(() => dropBall(betAmount, onComplete), wait);
+      return true;
+    }
+    lastDropTime = now;
+
     const ball = document.createElement('div');
     ball.className = 'ball';
     ball.style.position = 'absolute';
@@ -209,12 +220,17 @@
       let newTop = parseFloat(ball.style.top) + velocityY;
       let newLeft = parseFloat(ball.style.left) + velocityX;
 
-      if (newLeft < 0) {
-        newLeft = 0;
+      const leftBox = multiplierBoxes[0];
+      const rightBox = multiplierBoxes[multiplierBoxes.length - 1];
+      const wallLeft = parseFloat(leftBox.style.left);
+      const wallRight = parseFloat(rightBox.style.left) + 36 - ballSize;
+
+      if (newLeft < wallLeft) {
+        newLeft = wallLeft;
         velocityX *= -bounceDamping;
       }
-      if (newLeft > pegBoard.offsetWidth - ballSize) {
-        newLeft = pegBoard.offsetWidth - ballSize;
+      if (newLeft > wallRight) {
+        newLeft = wallRight;
         velocityX *= -bounceDamping;
       }
 

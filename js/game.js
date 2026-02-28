@@ -7,11 +7,10 @@ const Game = {
   balance: 10_000,
   bet: 10,
   maxActiveBalls: 25,
-  clickEarning: 1,
+  get clickEarning() { return this.getCurrentLevel(); },
   xpPerAction: 3,
   currentLevel: 1,
   xp: 0,
-  xpPerLevel: 1000,
   totalGamblingWins: 0,
   totalClickEarnings: 0,
   totalBets: 0,
@@ -193,8 +192,9 @@ const Game = {
   },
 
   getLevelFromXp(xpValue) {
-    const rawLevel = Math.floor(Math.max(0, xpValue) / this.xpPerLevel) + 1;
-    return Math.max(1, rawLevel);
+    const x = Math.max(0, xpValue);
+    const level = Math.max(1, Math.floor((1 + Math.sqrt(1 + 4 * x / 500)) / 2));
+    return level;
   },
 
   recalculateLevelFromXp() {
@@ -230,11 +230,12 @@ const Game = {
   getXpProgressInLevel() {
     const xp = this.getXp();
     const currentLevel = this.getCurrentLevel();
-    const currentLevelStart = (currentLevel - 1) * this.xpPerLevel;
-    const nextLevelStart = currentLevel * this.xpPerLevel;
+    const currentLevelStart = 500 * currentLevel * (currentLevel - 1);
+    const needed = 1000 * currentLevel;
+    const nextLevelStart = currentLevelStart + needed;
     return {
       inLevel: xp - currentLevelStart,
-      needed: this.xpPerLevel,
+      needed,
       currentLevelStart,
       nextLevelStart,
     };
@@ -242,6 +243,27 @@ const Game = {
 
   getCurrentLevel() {
     return Math.max(1, this.currentLevel || 1);
+  },
+
+  getRankInfoForXp(xp) {
+    const level = this.getLevelFromXp(xp || 0);
+    const titles = ['Noob', 'Amateur', 'Addict', 'Addicted', 'Degen'];
+    const romans = ['V', 'IV', 'III', 'II', 'I'];
+    const rankLevel = Math.min(level, 25);
+    const zeroBased = rankLevel - 1;
+    const titleIndex = Math.min(titles.length - 1, Math.floor(zeroBased / 5));
+    const divisionIndex = zeroBased % 5;
+    return {
+      level,
+      rankLevel,
+      title: titles[titleIndex],
+      division: 5 - divisionIndex,
+      roman: romans[divisionIndex],
+      tierIndex: titleIndex,
+      badgeClass: `rank-tier-${titles[titleIndex].toLowerCase()} rank-div-${5 - divisionIndex}`,
+      label: `${titles[titleIndex]} ${romans[divisionIndex]}`,
+      isMaxRank: level >= 25,
+    };
   },
 
   getRankInfo() {

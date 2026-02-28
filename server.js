@@ -6,6 +6,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,6 +36,7 @@ function loadData() {
         const key = (k || '').toLowerCase().trim();
         if (key && v) {
           v.username = v.username || key;
+          if (!v.profileSlug) v.profileSlug = getProfileSlug(v.username);
           users.set(key, v);
         }
       }
@@ -83,6 +85,59 @@ function saveSessions() {
 
 loadData();
 
+// Pre-made Mikmail owner – full profile, always exists after server start
+const MIKMAIL_EMAIL = 'mikael@betyr.no';
+const MIKMAIL_PASSWORD = 'owner123';
+
+function ensureMikmailUser() {
+  const key = MIKMAIL_EMAIL.toLowerCase().trim();
+  let user = users.get(key);
+  const fullUser = {
+    username: key,
+    profileSlug: getProfileSlug(key),
+    password: bcrypt.hashSync(MIKMAIL_PASSWORD, 10),
+    displayName: 'Mikmail',
+    balance: 10000,
+    totalGamblingWins: 0,
+    totalClickEarnings: 0,
+    totalBets: 0,
+    level: 1,
+    xp: 0,
+    totalClicks: 0,
+    totalWinsCount: 0,
+    biggestWinAmount: 0,
+    biggestWinMultiplier: 1,
+    isOwner: true,
+    createdAt: Date.now(),
+  };
+  ensureFields(fullUser);
+  if (!user) {
+    users.set(key, fullUser);
+    saveUsers();
+    console.log(`[Gambleio] Mikmail owner created. Login: ${MIKMAIL_EMAIL} / ${MIKMAIL_PASSWORD}`);
+  } else {
+    user.username = key;
+    user.profileSlug = getProfileSlug(key);
+    user.password = fullUser.password;
+    user.displayName = 'Mikmail';
+    user.balance = fullUser.balance;
+    user.totalGamblingWins = fullUser.totalGamblingWins;
+    user.totalClickEarnings = fullUser.totalClickEarnings;
+    user.totalBets = fullUser.totalBets;
+    user.level = fullUser.level;
+    user.xp = fullUser.xp;
+    user.totalClicks = fullUser.totalClicks;
+    user.totalWinsCount = fullUser.totalWinsCount;
+    user.biggestWinAmount = fullUser.biggestWinAmount;
+    user.biggestWinMultiplier = fullUser.biggestWinMultiplier;
+    user.isOwner = true;
+    ensureFields(user);
+    users.set(key, user);
+    saveUsers();
+  }
+}
+ensureMikmailUser();
+
 function generateToken() {
   return Math.random().toString(36).substring(2) + Date.now().toString(36);
 }
@@ -92,6 +147,11 @@ function getUserFromSession(token) {
   const userId = sessions.get(token);
   if (!userId) return null;
   return users.get(userId);
+}
+
+function getLevelFromXp(xp) {
+  const x = Math.max(0, xp || 0);
+  return Math.max(1, Math.floor((1 + Math.sqrt(1 + 4 * x / 500)) / 2));
 }
 
 // Ensure user has all fields (for users created before new fields existed)
@@ -104,14 +164,49 @@ function ensureFields(user) {
   if (user.totalBets === undefined) user.totalBets = 0;
   if (user.xp === undefined) user.xp = 0;
   if (user.level === undefined) user.level = 1;
+  if (user.balance === undefined) user.balance = 0;
   return user;
 }
 
 function publicUser(u) {
+  ensureProfileSlug(u);
   return {
     username: u.username,
+    profileSlug: u.profileSlug || getProfileSlug(u.username),
     displayName: u.displayName || u.username,
+    isOwner: !!u.isOwner,
     balance: u.balance,
+    totalGamblingWins: u.totalGamblingWins,
+    totalClickEarnings: u.totalClickEarnings,
+    totalBets: u.totalBets || 0,
+    level: u.level,
+    xp: u.xp || 0,
+    totalClicks: u.totalClicks || 0,
+    totalWinsCount: u.totalWinsCount || 0,
+    biggestWinAmount: u.biggestWinAmount || 0,
+    biggestWinMultiplier: u.biggestWinMultiplier || 1,
+  };
+}
+
+function getProfileSlug(username) {
+  if (!username || typeof username !== 'string') return '';
+  if (!username.includes('@')) return username.toLowerCase();
+  return 'u' + crypto.createHash('sha256').update(username.toLowerCase()).digest('hex').slice(0, 12);
+}
+
+function ensureProfileSlug(user) {
+  if (!user.profileSlug) {
+    user.profileSlug = getProfileSlug(user.username);
+  }
+}
+
+function publicProfile(u) {
+  ensureProfileSlug(u);
+  return {
+    username: u.username,
+    profileSlug: u.profileSlug || getProfileSlug(u.username),
+    displayName: u.displayName || u.username,
+    isOwner: !!u.isOwner,
     totalGamblingWins: u.totalGamblingWins,
     totalClickEarnings: u.totalClickEarnings,
     totalBets: u.totalBets || 0,
@@ -137,6 +232,7 @@ app.post('/api/auth/register', (req, res) => {
   }
   const user = {
     username: userKey,
+    profileSlug: getProfileSlug(userKey),
     password: bcrypt.hashSync(password, 10),
     displayName: (displayName || '').trim() || userKey,
     balance: 10000,
@@ -201,6 +297,23 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
+// Public profile (no balance, no email) – for viewing other users. Lookup by username or profileSlug.
+app.get('/api/user/:slug/profile', (req, res) => {
+  const slug = (req.params.slug || '').trim();
+  if (!slug) return res.status(400).json({ error: 'Profile identifier required' });
+  let user = users.get(slug.toLowerCase());
+  if (!user) {
+    user = Array.from(users.values()).find(u => {
+      ensureProfileSlug(u);
+      return (u.profileSlug || getProfileSlug(u.username)) === slug;
+    });
+  }
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  ensureFields(user);
+  user.level = getLevelFromXp(user.xp);
+  res.json(publicProfile(user));
+});
+
 // ===== STATS =====
 
 app.get('/api/user/stats', (req, res) => {
@@ -208,6 +321,7 @@ app.get('/api/user/stats', (req, res) => {
   const user = getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
+  user.level = getLevelFromXp(user.xp);
   res.json(publicUser(user));
 });
 
@@ -218,8 +332,10 @@ app.post('/api/user/update-stats', (req, res) => {
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
   const { level, xp, biggestWinAmount, biggestWinMultiplier } = req.body;
-  if (level !== undefined) user.level = level;
-  if (xp !== undefined) user.xp = xp;
+  if (xp !== undefined) {
+    user.xp = xp;
+    user.level = getLevelFromXp(xp);
+  } else if (level !== undefined) user.level = level;
   if (biggestWinAmount !== undefined && biggestWinAmount > user.biggestWinAmount) {
     user.biggestWinAmount = biggestWinAmount;
     user.biggestWinMultiplier = biggestWinMultiplier || 1;
@@ -318,15 +434,19 @@ app.post('/api/user/click-earnings', (req, res) => {
 
 app.get('/api/leaderboard/:type', (req, res) => {
   const { type } = req.params;
-  const validTypes = ['clicks', 'wins', 'biggest-win', 'xp', 'level'];
+  const validTypes = ['clicks', 'wins', 'biggest-win', 'networth', 'xp', 'level'];
   if (!validTypes.includes(type)) {
     return res.status(400).json({ error: 'Invalid leaderboard type' });
   }
   const allUsers = Array.from(users.values()).map(u => {
     ensureFields(u);
+    ensureProfileSlug(u);
     return {
       username: u.username,
+      profileSlug: u.profileSlug || getProfileSlug(u.username),
       displayName: u.displayName || u.username,
+      isOwner: !!u.isOwner,
+      balance: u.balance ?? 0,
       level: u.level,
       xp: u.xp || 0,
       totalClicks: u.totalClicks || 0,
@@ -340,6 +460,7 @@ app.get('/api/leaderboard/:type', (req, res) => {
   if (type === 'clicks') sorted = allUsers.sort((a, b) => b.totalClicks - a.totalClicks);
   else if (type === 'wins') sorted = allUsers.sort((a, b) => (b.totalGamblingWins || 0) - (a.totalGamblingWins || 0));
   else if (type === 'biggest-win') sorted = allUsers.sort((a, b) => b.biggestWinAmount - a.biggestWinAmount);
+  else if (type === 'networth') sorted = allUsers.sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0));
   else if (type === 'xp') sorted = allUsers.sort((a, b) => b.xp - a.xp);
   else if (type === 'level') sorted = allUsers.sort((a, b) => b.level - a.level || b.xp - a.xp);
   res.json(sorted.slice(0, 100));
@@ -424,6 +545,7 @@ function rouletteTick() {
     rouletteState.phaseEndTime = now + ROULETTE_BETTING_MS;
     rouletteState.winNumber = null;
     rouletteState.bets = new Map();
+    rouletteState.recentWinners = [];
   }
 }
 
@@ -478,6 +600,7 @@ function resolveAllRouletteBets() {
         username: user.displayName || username,
         amount: totalWin,
         number: win,
+        roundId: rouletteState.roundId,
         timestamp: Date.now(),
       });
     }

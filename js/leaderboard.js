@@ -48,6 +48,8 @@ const Leaderboard = {
         }
       } else if (type === 'xp') {
         value = formatNumber(user.xp) + ' XP';
+      } else if (type === 'networth') {
+        value = formatDollars(user.balance ?? 0);
       } else if (type === 'level') {
         value = `Lv ${user.level}`;
         subValue = `<span class="leaderboard-xp-sub">${formatNumber(user.xp)} XP</span>`;
@@ -55,11 +57,14 @@ const Leaderboard = {
 
       const podiumClass = rank === 1 ? 'leaderboard-item-gold' : rank === 2 ? 'leaderboard-item-silver' : rank === 3 ? 'leaderboard-item-bronze' : '';
       const classes = ['leaderboard-item', podiumClass, isCurrentUser ? 'leaderboard-item-current' : ''].filter(Boolean).join(' ');
+      const displayName = escapeHtml(user.displayName || user.username);
+      const profileSlug = user.profileSlug || user.username;
+      const usernameLink = `<a href="#profile/${encodeURIComponent(profileSlug)}" class="leaderboard-username leaderboard-username-link" data-username="${escapeHtml(user.username)}">${displayName}</a>`;
 
       return `
         <div class="${classes}">
           <span class="leaderboard-rank">${rankIcon(rank)}</span>
-          <span class="leaderboard-username">${escapeHtml(user.displayName || user.username)}</span>
+          ${usernameLink}
           <span class="leaderboard-value">${value}${subValue}</span>
         </div>
       `;

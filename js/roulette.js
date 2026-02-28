@@ -34,6 +34,9 @@
   let animatedRoundId = 0;
   let lastPhase = null;
   let winnerFeedRoundId = 0;
+  let lastPhaseEndTime = 0;
+  let lastPhaseName = '';
+  let timerTickInterval = null;
 
   function getBetMultiplier(key) {
     if (key === '1-12' || key === '13-24' || key === '25-36') return 3;
@@ -98,11 +101,13 @@
     }
   }
 
+  const WHEEL_ORDER = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
+
   function buildSliderStrip() {
     if (!sliderStrip) return;
     const cells = [];
     for (let i = 0; i < 222; i++) {
-      const num = i % 37;
+      const num = WHEEL_ORDER[i % 37];
       const cls = num === 0 ? 'csgo-slider-cell--green' : isRed(num) ? 'csgo-slider-cell--red' : 'csgo-slider-cell--black';
       cells.push(`<div class="csgo-slider-cell ${cls}" data-num="${num}">${num}</div>`);
     }
@@ -113,10 +118,17 @@
     sliderStrip.style.transform = `translateX(${vw / 2 - cw / 2}px)`;
   }
 
+  const STRIP_CELLS = 222;
+  const STRIP_MAX_IDX = STRIP_CELLS - 1;
+
   function animateSliderToWinner(winNumber) {
     if (!sliderStrip) return Promise.resolve();
-    const cells = sliderStrip.querySelectorAll('.csgo-slider-cell');
-    if (!cells.length) return Promise.resolve();
+    let cells = sliderStrip.querySelectorAll('.csgo-slider-cell');
+    if (!cells.length) {
+      buildSliderStrip();
+      cells = sliderStrip.querySelectorAll('.csgo-slider-cell');
+      if (!cells.length) return Promise.resolve();
+    }
     const viewport = sliderStrip.parentElement;
     const viewportWidth = viewport?.offsetWidth || 600;
     const firstCell = cells[0];
@@ -124,15 +136,29 @@
     const cellStep = actualCellWidth + CELL_GAP;
     const centerOffset = viewportWidth / 2 - actualCellWidth / 2;
 
-    const startX = parseFloat(sliderStrip.style.transform?.replace(/translateX\(([^)]+)\)/, '$1')) || (viewportWidth / 2 - actualCellWidth / 2);
+    let startX = parseFloat(sliderStrip.style.transform?.replace(/translateX\(([^)]+)\)/, '$1'));
+    if (isNaN(startX)) startX = viewportWidth / 2 - actualCellWidth / 2;
+    let currentIdx = Math.round((centerOffset - startX) / cellStep);
     const CONSTANT_MS = 3000;
     const DECEL_MS = 2500;
     const TOTAL_MS = CONSTANT_MS + DECEL_MS;
     const constantSpeed = 1100;
     const constantDistance = constantSpeed * (CONSTANT_MS / 1000);
     const cellsInConstant = constantDistance / cellStep;
-    const minCycles = Math.max(1, Math.ceil(cellsInConstant / 37));
-    const targetIdx = minCycles * 37 + winNumber;
+    let minTargetIdx = currentIdx + Math.ceil(cellsInConstant) + 1;
+    if (minTargetIdx > STRIP_MAX_IDX - 37) {
+      buildSliderStrip();
+      cells = sliderStrip.querySelectorAll('.csgo-slider-cell');
+      if (!cells.length) return Promise.resolve();
+      startX = viewportWidth / 2 - actualCellWidth / 2;
+      currentIdx = 0;
+      minTargetIdx = Math.ceil(cellsInConstant) + 1;
+    }
+    const wheelIndex = WHEEL_ORDER.indexOf(winNumber);
+    const kMin = Math.max(0, Math.ceil((minTargetIdx - wheelIndex) / 37));
+    const kMax = Math.floor((STRIP_MAX_IDX - wheelIndex) / 37);
+    const k = kMin <= kMax ? kMin : 0;
+    const targetIdx = Math.min(k * 37 + wheelIndex, STRIP_MAX_IDX);
     const targetX = centerOffset - targetIdx * cellStep;
     const endXAfterConstant = startX - constantDistance;
 
@@ -151,14 +177,19 @@
         }
         sliderStrip.style.transform = `translateX(${x}px)`;
         cells.forEach((c) => c.classList.remove('csgo-slider-cell--winner'));
-        const centerCellIdx = Math.round((-x + centerOffset) / cellStep);
-        if (cells[centerCellIdx]) cells[centerCellIdx].classList.add('csgo-slider-cell--winner');
+        const centerCellIdx = Math.round((centerOffset - x) / cellStep);
+        const idx = Math.max(0, Math.min(centerCellIdx, cells.length - 1));
+        if (cells[idx]) cells[idx].classList.add('csgo-slider-cell--winner');
         if (elapsed < TOTAL_MS) {
           requestAnimationFrame(tick);
         } else {
           sliderStrip.style.transform = `translateX(${targetX}px)`;
-          const winnerCell = sliderStrip.querySelector(`[data-num="${winNumber}"]`);
-          if (winnerCell) winnerCell.classList.add('csgo-slider-cell--winner');
+          if (cells[targetIdx] && cells[targetIdx].getAttribute('data-num') === String(winNumber)) {
+            cells[targetIdx].classList.add('csgo-slider-cell--winner');
+          } else {
+            const winnerCell = sliderStrip.querySelector(`[data-num="${winNumber}"]`);
+            if (winnerCell) winnerCell.classList.add('csgo-slider-cell--winner');
+          }
           resolve();
         }
       }
@@ -166,16 +197,22 @@
     });
   }
 
+  function updateTimerDisplay() {
+    const now = Date.now();
+    const remaining = Math.max(0, Math.ceil((lastPhaseEndTime - now) / 1000));
+    if (timerEl) timerEl.textContent = remaining + 's';
+    const totalPhase = lastPhaseName === 'betting' ? 20000 : lastPhaseName === 'spinning' ? 5000 : 3000;
+    const elapsed = totalPhase - remaining * 1000;
+    const pct = Math.min(100, Math.max(0, (elapsed / totalPhase) * 100));
+    if (progressFill) progressFill.style.width = pct + '%';
+  }
+
   function updateUIFromRound(data) {
     if (!data) return;
+    lastPhaseEndTime = data.phaseEndTime;
+    lastPhaseName = data.phase;
     if (phaseEl) phaseEl.textContent = data.phase === 'betting' ? 'Place Your Bets' : data.phase === 'spinning' ? 'Spinning...' : 'Result';
-    const now = data.serverTime || Date.now();
-    const remaining = Math.max(0, Math.ceil((data.phaseEndTime - now) / 1000));
-    if (timerEl) timerEl.textContent = remaining + 's';
-    const totalPhase = data.phase === 'betting' ? 20000 : data.phase === 'spinning' ? 5000 : 3000;
-    const elapsed = totalPhase - remaining * 1000;
-    const pct = Math.min(100, (elapsed / totalPhase) * 100);
-    if (progressFill) progressFill.style.width = pct + '%';
+    updateTimerDisplay();
 
     if (data.phase === 'spinning' || data.phase === 'result') {
       if (gridEl) gridEl.classList.add('disabled');
@@ -204,6 +241,9 @@
       data.myBets.forEach((b) => {
         localBets[b.key] = (localBets[b.key] || 0) + b.amount;
       });
+      if (data.phase === 'spinning' || data.phase === 'result') {
+        lastBets = JSON.parse(JSON.stringify(localBets));
+      }
     } else if (data.phase === 'betting') {
       if (data.roundId !== lastRoundId) {
         lastRoundId = data.roundId;
@@ -230,6 +270,7 @@
       return;
     }
     localBets[key] = (localBets[key] || 0) + selectedChipValue;
+    lastBets = JSON.parse(JSON.stringify(localBets));
     if (balanceUpdateCallback) balanceUpdateCallback();
     updateBetDisplay();
   }
@@ -247,23 +288,52 @@
   }
 
   async function redoLastBet() {
-    if (!lastBets || !Object.keys(lastBets).length) return;
-    for (const [key, amount] of Object.entries(lastBets)) {
-      if (Game.canBet(amount)) {
-        await placeBetApi(key, amount);
-        localBets[key] = (localBets[key] || 0) + amount;
-      }
-    }
+    if (!window.Auth || !window.Auth.requireAuth(() => {})) return;
     const data = await fetchRound();
-    if (data && data.balance !== undefined) Game.balance = data.balance;
+    if (!data || data.phase !== 'betting') {
+      showPopup('Place bets during betting phase');
+      return;
+    }
+    if (!lastBets || !Object.keys(lastBets).length) {
+      showPopup('No previous bets to redo');
+      return;
+    }
+    const total = Object.values(lastBets).reduce((s, v) => s + v, 0);
+    if (!Game.canBet(total)) {
+      showPopup('Not enough balance');
+      return;
+    }
+    await clearBetsApi();
+    localBets = {};
+    for (const [key, amount] of Object.entries(lastBets)) {
+      const res = await placeBetApi(key, amount);
+      if (res) localBets[key] = (localBets[key] || 0) + amount;
+    }
+    const roundData = await fetchRound();
+    if (roundData && roundData.balance !== undefined) Game.balance = roundData.balance;
     updateBetDisplay();
     if (balanceUpdateCallback) balanceUpdateCallback();
   }
 
   async function doubleLastBet() {
-    if (!lastBets || !Object.keys(lastBets).length) return;
+    if (!window.Auth || !window.Auth.requireAuth(() => {})) return;
+    const data = await fetchRound();
+    if (!data || data.phase !== 'betting') {
+      showPopup('Place bets during betting phase');
+      return;
+    }
+    const current = {};
+    if (data.myBets?.length) {
+      data.myBets.forEach((b) => { current[b.key] = (current[b.key] || 0) + b.amount; });
+    } else {
+      Object.assign(current, localBets);
+    }
+    if (!current || !Object.keys(current).length) {
+      showPopup('No bets to double');
+      return;
+    }
     const template = {};
-    for (const [key, amount] of Object.entries(lastBets)) {
+    for (const [key, amount] of Object.entries(current)) {
       template[key] = amount * 2;
     }
     const total = Object.values(template).reduce((s, v) => s + v, 0);
@@ -271,12 +341,14 @@
       showPopup('Not enough balance');
       return;
     }
+    await clearBetsApi();
+    localBets = {};
     for (const [key, amount] of Object.entries(template)) {
-      await placeBetApi(key, amount);
-      localBets[key] = (localBets[key] || 0) + amount;
+      const res = await placeBetApi(key, amount);
+      if (res) localBets[key] = (localBets[key] || 0) + amount;
     }
-    const data = await fetchRound();
-    if (data && data.balance !== undefined) Game.balance = data.balance;
+    const roundData = await fetchRound();
+    if (roundData && roundData.balance !== undefined) Game.balance = roundData.balance;
     updateBetDisplay();
     if (balanceUpdateCallback) balanceUpdateCallback();
   }
@@ -367,30 +439,47 @@
     } catch (e) {}
   }
 
-  async function loadWinners(data) {
+  function clearWinnerFeed(animate) {
     if (!winnerFeedList) return;
-    const prevPhase = lastPhase;
-    lastPhase = data?.phase ?? lastPhase;
-    if (data && data.phase === 'betting' && prevPhase && prevPhase !== 'betting' && winnerFeedList.children.length) {
+    if (animate && winnerFeedList.children.length) {
       winnerFeedList.querySelectorAll('.winner-feed-entry').forEach((el) => el.classList.add('slide-out'));
       setTimeout(() => {
         winnerFeedList.innerHTML = '';
         winnerFeedList.classList.remove('has-entries');
       }, 650);
+    } else {
+      winnerFeedList.innerHTML = '';
+      winnerFeedList.classList.remove('has-entries');
+    }
+  }
+
+  async function loadWinners(data) {
+    if (!winnerFeedList) return;
+    const prevPhase = lastPhase;
+    lastPhase = data?.phase ?? lastPhase;
+    if (data?.phase === 'betting') {
+      clearWinnerFeed(prevPhase && prevPhase !== 'betting');
       return;
     }
-    if (!data || (data.phase !== 'result' && data.phase !== 'spinning')) return;
+    if (data?.phase === 'spinning') {
+      clearWinnerFeed(false);
+      return;
+    }
+    if (!data || data.phase !== 'result') return;
     try {
       const res = await fetch(API + '/roulette/winners');
       if (!res.ok) return;
       const winners = await res.json();
-      const toShow = winners.slice(0, 10);
-      if (toShow.length && (data.roundId !== winnerFeedRoundId || !winnerFeedList.children.length)) {
+      const roundWinners = winners.filter((w) => w.roundId === data.roundId);
+      if (data.roundId !== winnerFeedRoundId) {
         winnerFeedRoundId = data.roundId;
-        winnerFeedList.classList.add('has-entries');
-        winnerFeedList.innerHTML = toShow.map((w) =>
-          `<div class="winner-feed-entry"><span class="winner-name">${escapeHtml(w.username)}</span> won <span class="winner-amount">${formatDollars(w.amount)}</span> on ${w.number}</div>`
-        ).join('');
+        clearWinnerFeed(false);
+        if (roundWinners.length) {
+          winnerFeedList.classList.add('has-entries');
+          winnerFeedList.innerHTML = roundWinners.slice(0, 10).map((w) =>
+            `<div class="winner-feed-entry"><span class="winner-name">${escapeHtml(w.username)}</span> won <span class="winner-amount">${formatDollars(w.amount)}</span> on ${w.number}</div>`
+          ).join('');
+        }
       }
     } catch (e) {}
   }
@@ -403,6 +492,8 @@
 
   async function poll() {
     const data = await fetchRound();
+    if (gridEl && gridEl.children.length === 0) buildGrid();
+    if (sliderStrip && !sliderStrip.querySelector('.csgo-slider-cell')) buildSliderStrip();
     updateUIFromRound(data);
     await loadWinners(data);
     if (data?.phase === 'betting') await loadAllBets();
@@ -418,10 +509,13 @@
     if (doubleBtn) doubleBtn.addEventListener('click', doubleLastBet);
     poll();
     pollInterval = setInterval(poll, 1500);
+    if (timerTickInterval) clearInterval(timerTickInterval);
+    timerTickInterval = setInterval(updateTimerDisplay, 1000);
   }
 
   function onShow() {
     buildSliderStrip();
+    if (gridEl && !gridEl.innerHTML.trim()) buildGrid();
     poll();
   }
 

@@ -102,16 +102,27 @@
     }
   }
 
+  function isViewingOwnProfile() {
+    const hash = (window.location && window.location.hash) || '';
+    if (hash === '#profile') return true;
+    if (hash.startsWith('#profile/') && currentUser) {
+      const slug = hash.slice(hash.indexOf('/') + 1);
+      return (currentUser.username || '').toLowerCase() === slug.toLowerCase() ||
+             (currentUser.profileSlug || '').toLowerCase() === slug.toLowerCase();
+    }
+    return false;
+  }
+
   function updateProfileUI() {
     if (!currentUser) return;
+    if (!isViewingOwnProfile()) return;
     const profileName = document.getElementById('profileName');
-    const profileEmail = document.getElementById('profileEmail');
     const profileAvatar = document.getElementById('profileAvatar');
     const logoutBtnProfile = document.getElementById('logoutBtnProfile');
-    const viewingOwnProfile = window.location && window.location.hash === '#profile';
+    const hash = (window.location && window.location.hash) || '';
+    const viewingOwnProfile = hash === '#profile' || (hash.startsWith('#profile/') && currentUser && hash.slice(9).toLowerCase() === (currentUser.username || '').toLowerCase());
 
-    if (profileName) profileName.textContent = currentUser.displayName || currentUser.email || 'User';
-    if (profileEmail) profileEmail.textContent = currentUser.email || '';
+    if (profileName) profileName.textContent = currentUser.displayName || currentUser.username || 'User';
     if (profileAvatar) {
       profileAvatar.src = currentUser.photoURL || '';
       profileAvatar.style.display = currentUser.photoURL ? 'block' : 'none';
@@ -120,10 +131,108 @@
     if (logoutBtnProfile) {
       logoutBtnProfile.style.display = viewingOwnProfile ? 'block' : 'none';
     }
+    const balanceStat = document.getElementById('profileBalanceStat');
+    if (balanceStat) balanceStat.style.display = viewingOwnProfile ? '' : 'none';
+    const crown = document.getElementById('profileOwnerCrown');
+    const ownerTag = document.getElementById('profileOwnerTag');
+    if (crown) crown.classList.toggle('hidden', !(currentUser && currentUser.isOwner));
+    if (ownerTag) ownerTag.classList.toggle('hidden', !(currentUser && currentUser.isOwner));
+  }
+
+  function renderProfileForUser(user) {
+    const profileName = document.getElementById('profileName');
+    const profileAvatar = document.getElementById('profileAvatar');
+    const profileBalance = document.getElementById('profileBalance');
+    const profileBalanceStat = document.getElementById('profileBalanceStat');
+    const profileTotalBets = document.getElementById('profileTotalBets');
+    const profileTotalWon = document.getElementById('profileTotalWon');
+    const profileXp = document.getElementById('profileXp');
+    const profileRankLevel = document.getElementById('profileRankLevel');
+    const logoutBtnProfile = document.getElementById('logoutBtnProfile');
+    const profileBadge = document.getElementById('profileRankBadge');
+
+    if (profileName) profileName.textContent = user.displayName || user.username || 'User';
+    if (profileAvatar) {
+      profileAvatar.src = user.photoURL || '';
+      profileAvatar.style.display = (user.photoURL ? 'block' : 'none');
+    }
+    if (profileBalanceStat) profileBalanceStat.style.display = 'none';
+    if (logoutBtnProfile) logoutBtnProfile.style.display = 'none';
+
+    const formatDollars = (n) => '$' + new Intl.NumberFormat('en', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+    const formatNum = (n) => new Intl.NumberFormat('en').format(n);
+
+    if (profileXp) profileXp.textContent = formatNum(user.xp || 0);
+    if (profileRankLevel) profileRankLevel.textContent = `Lv ${user.level || 1}`;
+    if (profileTotalBets) profileTotalBets.textContent = formatNum(user.totalBets || 0);
+    if (profileTotalWon) profileTotalWon.textContent = formatDollars(user.totalGamblingWins || 0);
+
+    if (window.Game && window.Game.getRankInfoForXp && profileBadge) {
+      const rank = Game.getRankInfoForXp(user.xp);
+      profileBadge.className = `rank-badge rank-tier rank-badge--profile ${rank.badgeClass}`;
+      const labelEl = document.getElementById('profileRankLabel');
+      const levelEl = document.getElementById('profileRankLevelBadge');
+      if (labelEl) labelEl.textContent = rank.label;
+      if (levelEl) levelEl.textContent = rank.isMaxRank ? `MAX RANK • Lv ${rank.level}` : `Lv ${rank.level}`;
+    }
+    const crown = document.getElementById('profileOwnerCrown');
+    const ownerTag = document.getElementById('profileOwnerTag');
+    if (crown) crown.classList.toggle('hidden', !user.isOwner);
+    if (ownerTag) ownerTag.classList.toggle('hidden', !user.isOwner);
+  }
+
+  async function showProfile(profileUsername) {
+    const navProfile = document.getElementById('navProfile');
+    if (navProfile) {
+      const display = profileUsername
+        ? (profileUsername.charAt(0).toUpperCase() + profileUsername.slice(1).toLowerCase())
+        : (currentUser ? (currentUser.displayName || currentUser.username || 'Profile') : 'Profile');
+      navProfile.textContent = display;
+    }
+
+    if (!profileUsername) {
+      if (currentUser) {
+        updateProfileUI();
+      } else {
+        const profileName = document.getElementById('profileName');
+        if (profileName) profileName.textContent = 'Log in to view your profile';
+        document.getElementById('profileBalanceStat') && (document.getElementById('profileBalanceStat').style.display = 'none');
+        document.getElementById('logoutBtnProfile') && (document.getElementById('logoutBtnProfile').style.display = 'none');
+        document.getElementById('profileOwnerCrown')?.classList.add('hidden');
+        document.getElementById('profileOwnerTag')?.classList.add('hidden');
+      }
+      return;
+    }
+
+    const currentSlug = (currentUser && (currentUser.profileSlug || currentUser.username)) || '';
+    if (currentUser && (currentSlug.toLowerCase() === profileUsername.toLowerCase() || (currentUser.username || '').toLowerCase() === profileUsername.toLowerCase())) {
+      updateProfileUI();
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/user/${encodeURIComponent(profileUsername)}/profile`);
+      if (!res.ok) {
+        const profileName = document.getElementById('profileName');
+        if (profileName) profileName.textContent = 'User not found';
+        document.getElementById('profileBalanceStat') && (document.getElementById('profileBalanceStat').style.display = 'none');
+        document.getElementById('logoutBtnProfile') && (document.getElementById('logoutBtnProfile').style.display = 'none');
+        document.getElementById('profileOwnerCrown')?.classList.add('hidden');
+        document.getElementById('profileOwnerTag')?.classList.add('hidden');
+        return;
+      }
+      const user = await res.json();
+      renderProfileForUser(user);
+    } catch (e) {
+      console.error('Profile load error:', e);
+      const profileName = document.getElementById('profileName');
+      if (profileName) profileName.textContent = 'Could not load profile';
+    }
   }
 
   function updateProfileStats() {
     if (!window.Game) return;
+    if (!isViewingOwnProfile()) return;
     const formatDollars = (n) => '$' + new Intl.NumberFormat('en', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
     const formatNum = (n) => new Intl.NumberFormat('en').format(n);
     const profileBalance = document.getElementById('profileBalance');
@@ -196,7 +305,7 @@
       headerBadge.textContent = rank.label;
       headerBadge.title = rank.isMaxRank ? 'Maximum rank reached' : 'Rank badge';
     }
-    if (profileBadge) {
+    if (profileBadge && isViewingOwnProfile()) {
       profileBadge.className = `${className} rank-badge--profile`;
       renderRankBadge(profileBadge, rank, progress, {
         labelId: 'profileRankLabel',
@@ -213,6 +322,10 @@
     if (balanceEl && window.Game) {
       const formatDollars = (n) => '$' + new Intl.NumberFormat('en', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
       balanceEl.textContent = formatDollars(Game.getBalance());
+    }
+    const clickerPerClickEl = document.getElementById('clickerPerClick');
+    if (clickerPerClickEl && window.Game) {
+      clickerPerClickEl.textContent = '$' + Game.clickEarning;
     }
     refreshRankBadge();
   }
@@ -242,6 +355,8 @@
           displayName: data.user?.displayName || emailKey.split('@')[0],
           photoURL: null,
           username: emailKey,
+          profileSlug: data.user?.profileSlug,
+          isOwner: !!data.user?.isOwner,
         };
         saveUser(currentUser);
         if (window.Auth) window.Auth.user = currentUser;
@@ -269,7 +384,9 @@
         return;
       }
     } catch (e) {
-      console.warn('Server login failed, trying local:', e.message);
+      console.warn('Server login failed:', e.message);
+      showError('Could not connect to server. Make sure the server is running (node server.js).');
+      return;
     }
     const users = JSON.parse(localStorage.getItem('gambleio_users') || '{}');
     if (!users[emailKey]) {
@@ -317,6 +434,8 @@
           displayName: data.user?.displayName || displayName,
           photoURL: null,
           username: emailKey,
+          profileSlug: data.user?.profileSlug,
+          isOwner: !!data.user?.isOwner,
         };
         saveUser(currentUser);
         if (window.Auth) window.Auth.user = currentUser;
@@ -379,13 +498,15 @@
     }
     updateUI();
 
-    // Login button - simple click handler
-    document.addEventListener('click', function(e) {
-      if (e.target && (e.target.id === 'loginBtn' || e.target.classList.contains('btn-login'))) {
+    // Login button – direct handler for reliability
+    const loginBtn = document.getElementById('loginBtn');
+    if (loginBtn) {
+      loginBtn.addEventListener('click', function(e) {
         e.preventDefault();
+        e.stopPropagation();
         showLoginModal();
-      }
-    });
+      });
+    }
 
     // Close modal button
     document.addEventListener('click', function(e) {
@@ -413,39 +534,49 @@
       }
     });
 
-    // Auth form submit
+    // Auth form submit + button click (both for reliability)
+    function doAuthSubmit(e) {
+      if (e) e.preventDefault();
+      hideError();
+      const emailInput = document.getElementById('email');
+      const passwordInput = document.getElementById('password');
+      const usernameInput = document.getElementById('username');
+
+      const email = emailInput ? emailInput.value.trim() : '';
+      const password = passwordInput ? passwordInput.value : '';
+      const username = usernameInput ? usernameInput.value.trim() : '';
+
+      if (!email || !password) {
+        showError('Please fill in all fields.');
+        return;
+      }
+      if (isLoginMode) {
+        signInWithEmail(email, password);
+      } else {
+        signUpWithEmail(email, password, username);
+      }
+    }
+
     const authForm = document.getElementById('authForm');
+    const authSubmitBtn = document.getElementById('authSubmit');
     if (authForm) {
-      authForm.addEventListener('submit', async function(e) {
+      authForm.addEventListener('submit', function(e) {
         e.preventDefault();
-        hideError();
-        const emailInput = document.getElementById('email');
-        const passwordInput = document.getElementById('password');
-        const usernameInput = document.getElementById('username');
-
-        const email = emailInput ? emailInput.value.trim() : '';
-        const password = passwordInput ? passwordInput.value : '';
-        const username = usernameInput ? usernameInput.value.trim() : '';
-
-        if (!email || !password) {
-          showError('Please fill in all fields.');
-          return;
-        }
-        if (isLoginMode) {
-          await signInWithEmail(email, password);
-        } else {
-          await signUpWithEmail(email, password, username);
-        }
+        doAuthSubmit();
+      });
+    }
+    if (authSubmitBtn) {
+      authSubmitBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        doAuthSubmit();
       });
     }
 
-    // User name click to profile
+    // User name click to own profile
     document.addEventListener('click', function(e) {
       if (e.target && (e.target.id === 'userName' || e.target.classList.contains('user-name'))) {
-        if (window.showPage) {
-          window.showPage('profile');
-          updateProfileUI();
-        }
+        window.location.hash = '#profile';
       }
     });
 
@@ -478,6 +609,7 @@
     updateProfileStats,
     updateBalance,
     refreshRankBadge,
+    showProfile,
     onAuthStateChanged: null,
   };
 
@@ -488,11 +620,11 @@
     init();
   }
 
-  // Update profile balance periodically
+  // Update profile balance periodically (only when viewing own profile)
   setInterval(() => {
     if (currentUser && window.Game) {
       updateBalance();
-      updateProfileStats();
+      if (isViewingOwnProfile()) updateProfileStats();
     }
   }, 1000);
 })();

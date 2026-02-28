@@ -20,6 +20,7 @@
         <a href="#roulette" class="nav-link" data-page="roulette">Roulette</a>
         <a href="#slots" class="nav-link" data-page="slots">Slots</a>
         <a href="#leaderboard" class="nav-link" data-page="leaderboard">Leaderboard</a>
+        <a href="#profile" class="nav-link" data-page="profile" id="navProfile">Profile</a>
       </nav>
       <div class="header-right">
         <div id="userInfo" class="user-info hidden">
@@ -49,10 +50,8 @@
       <!-- Home: clicker + upgrades -->
       <section id="page-home" class="page page-home">
           <div class="home-bg" aria-hidden="true">
-          <div class="home-bg-image" style="background-image: url('https://images.unsplash.com/photo-1511512578047-dfb367046420?w=1920&q=80')"></div>
-          <div class="home-bg-orb home-bg-orb--1"></div>
-          <div class="home-bg-orb home-bg-orb--2"></div>
-          <div class="home-bg-orb home-bg-orb--3"></div>
+          <div class="home-bg-image" style="background-image: url('https://images.unsplash.com/photo-1511512578047-dfb367046420?w=1920&q=90&auto=format')"></div>
+          <div class="home-bg-overlay"></div>
         </div>
 
         <aside class="home-upgrade-panel">
@@ -104,13 +103,12 @@
         </aside>
 
         <div class="clicker-area">
-          <p class="clicker-hint">Click to earn money</p>
-          <div class="clicker-btn-wrap" id="clickerBtnWrap">
+          <div class="clicker-card" id="clickerBtnWrap">
             <button type="button" class="clicker-btn" id="clickerBtn">
               <div class="clicker-coin">
-                <span class="clicker-coin-symbol">$</span>
+                <span class="clicker-coin-symbol" aria-hidden="true">$</span>
               </div>
-              <span class="clicker-label">per click</span>
+              <p class="clicker-desc">Click to earn <span id="clickerPerClick">$1</span> per click. Money will be added every <span id="clickerIntervalSec">10</span> seconds.</p>
             </button>
           </div>
           <div class="clicker-floats" id="clickerFloats" aria-hidden="true"></div>
@@ -310,6 +308,7 @@
             <button type="button" class="leaderboard-tab active" data-tab="clicks">Clicks</button>
             <button type="button" class="leaderboard-tab" data-tab="wins">Total Wins</button>
             <button type="button" class="leaderboard-tab" data-tab="biggest-win">Biggest Win</button>
+            <button type="button" class="leaderboard-tab" data-tab="networth">Networth</button>
             <button type="button" class="leaderboard-tab" data-tab="xp">XP</button>
             <button type="button" class="leaderboard-tab" data-tab="level">Level</button>
           </div>
@@ -322,17 +321,20 @@
       <!-- Profile page -->
       <section id="page-profile" class="page page-profile hidden">
         <div class="profile-container">
+          <div id="profileOwnerCrown" class="profile-owner-crown hidden" aria-hidden="true" title="Owner">👑</div>
           <h2 class="profile-title">Profile</h2>
           <div class="profile-content">
             <img id="profileAvatar" class="profile-avatar" src="" alt="Avatar">
-            <p class="profile-name" id="profileName">User</p>
+            <div class="profile-name-row">
+              <p class="profile-name" id="profileName">User</p>
+              <div id="profileOwnerTag" class="profile-owner-tag hidden">Owner</div>
+            </div>
             <div class="rank-badge rank-badge--profile rank-tier rank-tier-noob rank-div-5" id="profileRankBadge">
               <span class="rank-badge-main" id="profileRankLabel">Noob V</span>
               <span class="rank-badge-level" id="profileRankLevelBadge">Lv 1</span>
             </div>
-            <p class="profile-email" id="profileEmail">email@example.com</p>
             <div class="profile-stats">
-              <div class="profile-stat">
+              <div class="profile-stat" id="profileBalanceStat">
                 <span class="stat-label">Balance</span>
                 <span class="stat-value" id="profileBalance">$0</span>
               </div>
@@ -370,14 +372,14 @@
         <button type="button" class="auth-tab" data-tab="signup">Sign Up</button>
       </div>
       <div id="authError" class="auth-error hidden"></div>
-      <form id="authForm">
+      <form id="authForm" novalidate>
         <div class="form-group" id="usernameGroup" style="display: none;">
           <label for="username">Username</label>
           <input type="text" id="username" name="username" required>
         </div>
         <div class="form-group">
-          <label for="email">Email</label>
-          <input type="email" id="email" name="email" required>
+          <label for="email">Email or username</label>
+          <input type="text" id="email" name="email" required placeholder="e.g. mikael@betyr.no">
         </div>
         <div class="form-group">
           <label for="password">Password</label>

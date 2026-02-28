@@ -14,7 +14,6 @@
   const pageSlotGame = document.getElementById('page-slot-game');
   const navLinks = document.querySelectorAll('.nav-link');
   const clickerBtn = document.getElementById('clickerBtn');
-  const clickerAmountEl = document.getElementById('clickerAmount');
   const riskLevelCurrent = document.getElementById('riskLevelCurrent');
   const buyMedium = document.getElementById('buyMedium');
   const buyHigh = document.getElementById('buyHigh');
@@ -104,7 +103,7 @@
   const pageProfile = document.getElementById('page-profile');
   const pageLeaderboard = document.getElementById('page-leaderboard');
 
-  function showPage(pageId) {
+  function showPage(pageId, profileUsername) {
     if (pageHome) pageHome.classList.toggle('hidden', pageId !== 'home');
     if (pagePlinko) pagePlinko.classList.toggle('hidden', pageId !== 'plinko');
     if (pageRoulette) pageRoulette.classList.toggle('hidden', pageId !== 'roulette');
@@ -137,6 +136,9 @@
     }
     if (pageId === 'profile') {
       updateBalance();
+      if (window.Auth && window.Auth.showProfile) {
+        window.Auth.showProfile(profileUsername);
+      }
     }
     if (pageId === 'leaderboard') {
       if (window.Leaderboard) {
@@ -162,8 +164,11 @@
   function onHashChange() {
     const hash = (window.location.hash || '#home').slice(1);
     const validPages = ['home', 'plinko', 'roulette', 'slots', 'slot-game', 'profile', 'leaderboard'];
-    const page = validPages.includes(hash) ? hash : 'home';
-    showPage(page);
+    let page = validPages.includes(hash) ? hash : 'home';
+    if (hash.startsWith('profile/')) {
+      page = 'profile';
+    }
+    showPage(page, hash.startsWith('profile/') ? decodeURIComponent(hash.slice(hash.indexOf('/') + 1)) : (page === 'profile' ? null : undefined));
     
     // Small delay to ensure page is visible before initializing
     setTimeout(() => {
@@ -406,8 +411,9 @@
   if (clickerBtn) {
     clickerBtn.addEventListener('click', onClickerClick);
   }
-  if (clickerAmountEl) {
-    clickerAmountEl.textContent = '+$' + Game.clickEarning;
+  const clickerIntervalSecEl = document.getElementById('clickerIntervalSec');
+  if (clickerIntervalSecEl) {
+    clickerIntervalSecEl.textContent = CLICK_SEND_INTERVAL_MS / 1000;
   }
 
   updateBalance();
