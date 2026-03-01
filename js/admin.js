@@ -24,8 +24,8 @@
 
   function getMyRole() {
     const user = window.Auth && window.Auth.user;
-    const r = (user && user.role) ? user.role.toLowerCase() : '';
-    return ['owner', 'admin', 'mod', 'member'].includes(r) ? r : 'member';
+    const r = (user && user.role != null) ? String(user.role).toLowerCase() : '';
+    return ['owner', 'admin', 'mod', 'member'].includes(r) ? r : '';
   }
 
   function getAssignableRoles() {
@@ -76,7 +76,8 @@
     btn.textContent = label ? label.label : 'Admin';
     btn.className = 'btn-admin-header btn-admin-header--role btn-admin-header--' + myRole;
     const logsBtn = document.getElementById('logsBtn');
-    if (logsBtn) logsBtn.classList.toggle('hidden', myRole !== 'owner');
+    const isOwner = (window.Auth && window.Auth.user && (window.Auth.user.isOwner || window.Auth.user.role === 'owner'));
+    if (logsBtn) logsBtn.classList.toggle('hidden', !isOwner);
   }
 
   const ROLES = [
@@ -105,6 +106,10 @@
       moneyInput: document.getElementById('adminMoneyInput'),
       xpBtn: document.getElementById('adminXpBtn'),
       moneyBtn: document.getElementById('adminMoneyBtn'),
+      muteMinutes: document.getElementById('adminMuteMinutes'),
+      muteBtn: document.getElementById('adminMuteBtn'),
+      unmuteBtn: document.getElementById('adminUnmuteBtn'),
+      mutedUntil: document.getElementById('adminMutedUntil'),
     };
   }
 
@@ -251,7 +256,45 @@
       <div class="admin-stat"><span class="admin-stat-label">Biggest Win</span><span class="admin-stat-value">${formatDollars(user.biggestWinAmount || 0)} ${user.biggestWinMultiplier ? user.biggestWinMultiplier + '×' : ''}</span></div>
     `;
     const detailActions = detail.querySelector('.admin-detail-actions');
-    if (detailActions) detailActions.style.display = getMyRole() === 'mod' ? 'none' : '';
+    if (detailActions) detailActions.style.display = '';
+    const adjustRows = detail.querySelectorAll('.admin-adjust-row');
+    adjustRows.forEach((el) => { el.style.display = getMyRole() === 'mod' ? 'none' : ''; });
+    const { muteMinutes, muteBtn, unmuteBtn, mutedUntil } = getModalEls();
+    if (muteMinutes) muteMinutes.value = '';
+    if (mutedUntil) {
+      const until = user.chatMutedUntil != null ? Number(user.chatMutedUntil) : 0;
+      if (until > Date.now()) {
+        mutedUntil.textContent = 'Muted until ' + new Date(until).toLocaleString('nb-NO', { dateStyle: 'short', timeStyle: 'short' });
+        mutedUntil.classList.remove('hidden');
+      } else {
+        mutedUntil.textContent = '';
+        mutedUntil.classList.add('hidden');
+      }
+    }
+    if (muteBtn) muteBtn.onclick = () => applyMute(user.username, true);
+    if (unmuteBtn) unmuteBtn.onclick = () => applyMute(user.username, false);
+  }
+
+  async function applyMute(username, isMute) {
+    const { muteMinutes } = getModalEls();
+    try {
+      const body = isMute
+        ? { minutes: Math.max(1, parseInt(muteMinutes && muteMinutes.value, 10) || 60) }
+        : { unmute: true };
+      const res = await fetch(API + '/admin/users/' + encodeURIComponent(username) + '/mute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed');
+      }
+      if (muteMinutes) muteMinutes.value = '';
+      await loadUserDetail(username);
+    } catch (e) {
+      alert(e.message || 'Mute failed');
+    }
   }
 
   function showList() {
@@ -305,6 +348,9 @@
         const type = entry.adjustType === 'xp' ? 'XP' : 'Money';
         const val = entry.value != null ? (entry.value >= 0 ? '+' + entry.value : entry.value) : '?';
         return time + ' — ' + actor + ' adjusted ' + target + "'s " + type + ': ' + val;
+      case 'chat_mute':
+        const meta = entry.meta || {};
+        return time + ' — ' + actor + ' ' + (meta.until ? 'muted ' + target + ' until ' + new Date(meta.until).toLocaleString('nb-NO') : 'unmuted ' + target);
       default:
         return time + ' — ' + (entry.type || 'event');
     }

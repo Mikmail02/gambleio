@@ -45,6 +45,15 @@ const users = new Map();
 const sessions = new Map();
 const plinkoStats = { totalBalls: 0, landings: Array(19).fill(0) };
 let adminLogs = [];
+const chatMessages = [];
+const CHAT_MAX = 200;
+const CHAT_DELAY_MS = 2000;
+const CHAT_BURST_COUNT = 5;
+const CHAT_BURST_WINDOW_MS = 15000;
+const CHAT_RATE_MUTE_MS = 15000;
+const chatLastSend = {};
+const chatRecentSends = {};
+const chatRateLimitMutedUntil = {};
 
 function loadData() {
   if (useDb) return;
@@ -148,9 +157,6 @@ async function addAdminLog(entry) {
   }
 }
 
-// Pre-made owner – full profile, always exists after server start (email from env or placeholder)
-const OWNER_EMAIL = process.env.OWNER_EMAIL || 'owner@example.com';
-const OWNER_PASSWORD = process.env.OWNER_PASSWORD || 'owner123';
 const PLINKO_RISK_COSTS = { medium: 50000, high: 500000, extreme: 5000000 };
 const TRACKED_GAME_SOURCES = ['click', 'plinko', 'roulette', 'slots'];
 
@@ -169,54 +175,6 @@ function emptyXpBySource() {
 function normalizeGameSource(source) {
   const s = String(source || '').toLowerCase().trim();
   return TRACKED_GAME_SOURCES.includes(s) ? s : null;
-}
-
-async function ensureMikmailUser() {
-  const key = OWNER_EMAIL.toLowerCase().trim();
-  let user = useDb ? await db.getUserByUsername(key) : users.get(key);
-  const fullUser = {
-    username: key,
-    profileSlug: getProfileSlug(key),
-    password: bcrypt.hashSync(OWNER_PASSWORD, 10),
-    displayName: 'Owner',
-    balance: 10000,
-    totalGamblingWins: 0,
-    totalClickEarnings: 0,
-    totalBets: 0,
-    level: 1,
-    xp: 0,
-    totalClicks: 0,
-    totalWinsCount: 0,
-    biggestWinAmount: 0,
-    biggestWinMultiplier: 1,
-    biggestWinMeta: { game: null, betAmount: 0, multiplier: 1, timestamp: 0 },
-    totalProfitWins: 0,
-    analyticsStartedAt: Date.now(),
-    gameNet: emptyGameNet(),
-    gamePlayCounts: emptyGamePlayCounts(),
-    xpBySource: emptyXpBySource(),
-    isOwner: true,
-    isAdmin: true,
-    role: 'owner',
-    createdAt: Date.now(),
-  };
-  ensureFields(fullUser);
-  if (!user) {
-    if (!useDb) users.set(key, fullUser);
-    await saveUser(fullUser);
-    console.log('[Gambleio] Owner user created. Set OWNER_EMAIL and OWNER_PASSWORD in production.');
-  } else {
-    user.profileSlug = getProfileSlug(key);
-    user.password = fullUser.password;
-    user.displayName = fullUser.displayName;
-    user.isOwner = true;
-    user.isAdmin = true;
-    user.role = 'owner';
-    ensureFields(user);
-    user.level = getLevelFromXp(user.xp);
-    if (!useDb) users.set(key, user);
-    await saveUser(user);
-  }
 }
 
 function generateToken() {
@@ -283,8 +241,8 @@ function ensureFields(user) {
   if (user.createdAt === undefined) user.createdAt = Date.now();
   if (user.analyticsStartedAt === undefined) user.analyticsStartedAt = Date.now();
   if (user.isAdmin === undefined) user.isAdmin = !!user.isOwner;
-  if (user.role === undefined) user.role = user.isOwner ? 'owner' : (user.isAdmin ? 'admin' : 'member');
-  if (user.role !== null && !['member', 'mod', 'admin', 'owner'].includes(user.role)) user.role = 'member';
+  if (user.role === undefined) user.role = user.isOwner ? 'owner' : (user.isAdmin ? 'admin' : null);
+  if (user.role !== null && !['member', 'mod', 'admin', 'owner'].includes(user.role)) user.role = null;
   if (user.totalProfitWins === undefined) user.totalProfitWins = 0;
   if (!user.gameNet || typeof user.gameNet !== 'object') {
     user.gameNet = emptyGameNet();
@@ -332,6 +290,7 @@ function ensureFields(user) {
     };
   }
   if (!user.plinkoRiskLevel) user.plinkoRiskLevel = 'low';
+  if (user.chatMutedUntil === undefined) user.chatMutedUntil = null;
   if (!user.plinkoRiskUnlocked || typeof user.plinkoRiskUnlocked !== 'object') {
     user.plinkoRiskUnlocked = { medium: false, high: false, extreme: false };
   } else {
@@ -346,12 +305,14 @@ function ensureFields(user) {
 
 function publicUser(u) {
   ensureProfileSlug(u);
+  const role = (u.role != null && ['member', 'mod', 'admin', 'owner'].includes(u.role)) ? u.role : null;
   return {
     username: u.username,
     profileSlug: u.profileSlug || getProfileSlug(u.username),
     displayName: u.displayName || u.username,
-    isOwner: !!u.isOwner,
-    isAdmin: !!(u.isOwner || u.isAdmin),
+    isOwner: !!(u.isOwner || u.role === 'owner'),
+    isAdmin: !!(u.isOwner || u.isAdmin || u.role === 'owner' || u.role === 'admin'),
+    role,
     balance: u.balance,
     totalGamblingWins: u.totalGamblingWins,
     totalClickEarnings: u.totalClickEarnings,
@@ -370,7 +331,8 @@ function publicUser(u) {
     xpBySource: u.xpBySource || emptyXpBySource(),
     plinkoRiskLevel: u.plinkoRiskLevel || 'low',
     plinkoRiskUnlocked: u.plinkoRiskUnlocked || { medium: false, high: false, extreme: false },
-    role: u.role === null ? null : (['member', 'mod', 'admin', 'owner'].includes(u.role) ? u.role : 'member'),
+    chatMutedUntil: u.chatMutedUntil != null ? u.chatMutedUntil : null,
+    createdAt: u.createdAt != null ? u.createdAt : null,
   };
 }
 
@@ -393,7 +355,7 @@ function publicProfile(u) {
     profileSlug: u.profileSlug || getProfileSlug(u.username),
     displayName: u.displayName || u.username,
     isOwner: !!u.isOwner,
-    role: u.role === null ? null : (['member', 'mod', 'admin', 'owner'].includes(u.role) ? u.role : 'member'),
+    role: (u.role != null && ['member', 'mod', 'admin', 'owner'].includes(u.role)) ? u.role : null,
     totalGamblingWins: u.totalGamblingWins,
     totalClickEarnings: u.totalClickEarnings,
     totalBets: u.totalBets || 0,
@@ -409,6 +371,7 @@ function publicProfile(u) {
     gameNet: u.gameNet || emptyGameNet(),
     gamePlayCounts: u.gamePlayCounts || emptyGamePlayCounts(),
     xpBySource: u.xpBySource || emptyXpBySource(),
+    createdAt: u.createdAt != null ? u.createdAt : null,
   };
 }
 
@@ -515,7 +478,7 @@ function requireAdmin(req, res, next) {
   getUserFromSession(token).then((user) => {
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
     ensureFields(user);
-    const canAdmin = user.isOwner || user.isAdmin || user.role === 'mod';
+    const canAdmin = user.isOwner || user.isAdmin || user.role === 'mod' || user.role === 'owner';
     if (!canAdmin) return res.status(403).json({ error: 'Forbidden' });
     req.adminUser = user;
     next();
@@ -527,7 +490,7 @@ function requireOwner(req, res, next) {
   getUserFromSession(token).then((user) => {
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
     ensureFields(user);
-    if (!user.isOwner) return res.status(403).json({ error: 'Forbidden' });
+    if (!(user.isOwner || user.role === 'owner')) return res.status(403).json({ error: 'Forbidden' });
     req.adminUser = user;
     next();
   }).catch(next);
@@ -552,10 +515,46 @@ function adminSafeUser(u) {
     biggestWinMultiplier: u.biggestWinMultiplier || 1,
     isOwner: !!u.isOwner,
     isAdmin: !!(u.isOwner || u.isAdmin),
-    role: u.role === null || u.role === undefined ? null : (['member', 'mod', 'admin', 'owner'].includes(u.role) ? u.role : 'member'),
+    role: (u.role != null && ['member', 'mod', 'admin', 'owner'].includes(u.role)) ? u.role : null,
     createdAt: u.createdAt || null,
+    chatMutedUntil: u.chatMutedUntil != null ? u.chatMutedUntil : null,
   };
 }
+
+app.post('/api/admin/users/:username/mute', requireAdmin, async (req, res) => {
+  try {
+    const key = (req.params.username || '').toLowerCase().trim();
+    const user = await getUserByKeyOrSlug(key);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    ensureFields(user);
+    const body = req.body || {};
+    if (body.unmute === true || (body.minutes !== undefined && Number(body.minutes) === 0)) {
+      user.chatMutedUntil = null;
+    } else {
+      let until = body.until != null ? Number(body.until) : null;
+      if (until == null && body.minutes != null) {
+        const min = Number(body.minutes);
+        if (!Number.isFinite(min) || min < 0) return res.status(400).json({ error: 'Invalid minutes' });
+        until = min > 0 ? Date.now() + min * 60 * 1000 : null;
+      }
+      if (until != null) user.chatMutedUntil = until;
+    }
+    if (!useDb) users.set(user.username, user);
+    await saveUser(user);
+    await addAdminLog({
+      type: 'chat_mute',
+      actorUsername: req.adminUser.username,
+      actorDisplayName: req.adminUser.displayName,
+      targetUsername: user.username,
+      targetDisplayName: user.displayName,
+      meta: user.chatMutedUntil != null ? { until: user.chatMutedUntil, minutes: body.minutes } : { unmute: true },
+    });
+    res.json({ chatMutedUntil: user.chatMutedUntil });
+  } catch (e) {
+    console.error('Mute error:', e);
+    res.status(500).json({ error: 'Failed to update mute' });
+  }
+});
 
 app.post('/api/admin/users/:username/role', requireAdmin, async (req, res) => {
   try {
@@ -564,7 +563,7 @@ app.post('/api/admin/users/:username/role', requireAdmin, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
     const role = (req.body.role || '').toLowerCase().trim();
     if (!['member', 'mod', 'admin', 'owner'].includes(role)) return res.status(400).json({ error: 'Invalid role. Use member, mod, admin, or owner.' });
-    if (role === 'owner' && !req.adminUser.isOwner) return res.status(403).json({ error: 'Only owner can assign owner role' });
+    if (role === 'owner' && !(req.adminUser.isOwner || req.adminUser.role === 'owner')) return res.status(403).json({ error: 'Only owner can assign owner role' });
     ensureFields(user);
     user.role = role;
     user.isOwner = role === 'owner';
@@ -664,6 +663,76 @@ app.get('/api/user/stats', async (req, res) => {
   ensureFields(user);
   user.level = getLevelFromXp(user.xp);
   res.json(publicUser(user));
+});
+
+// ===== CHAT =====
+// Mute and rate limits are enforced only on the server. Clients cannot bypass via API, console or any request.
+app.get('/api/chat', (req, res) => {
+  res.json({ messages: chatMessages.slice(-CHAT_MAX) });
+});
+
+app.post('/api/chat', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  const now = Date.now();
+  const key = user.username;
+
+  if (user.chatMutedUntil != null && user.chatMutedUntil > now) {
+    return res.status(403).json({
+      error: 'Muted until [date][time]',
+      mutedUntil: user.chatMutedUntil,
+      code: 'CHAT_MUTED',
+    });
+  }
+  if (chatRateLimitMutedUntil[key] != null && chatRateLimitMutedUntil[key] > now) {
+    const secs = Math.ceil((chatRateLimitMutedUntil[key] - now) / 1000);
+    return res.status(403).json({
+      error: 'You are sending messages too fast - Muted for ' + secs + 's',
+      mutedUntil: chatRateLimitMutedUntil[key],
+      code: 'CHAT_RATE_MUTED',
+    });
+  }
+  const last = chatLastSend[key];
+  if (last != null && now - last < CHAT_DELAY_MS) {
+    const waitSec = Math.ceil((CHAT_DELAY_MS - (now - last)) / 1000);
+    const retryAfterMs = Math.max(100, (CHAT_DELAY_MS - (now - last)));
+    return res.status(429).json({
+      error: 'Please wait ' + waitSec + ' second(s) between messages.',
+      code: 'CHAT_DELAY',
+      retryAfterMs,
+    });
+  }
+  let recent = chatRecentSends[key] || [];
+  recent = recent.filter((t) => t > now - CHAT_BURST_WINDOW_MS);
+  if (recent.length >= CHAT_BURST_COUNT) {
+    chatRateLimitMutedUntil[key] = now + CHAT_RATE_MUTE_MS;
+    return res.status(403).json({
+      error: 'You are sending messages too fast - Muted for 15s',
+      mutedUntil: chatRateLimitMutedUntil[key],
+      code: 'CHAT_RATE_MUTED',
+    });
+  }
+
+  const text = (req.body?.text || '').toString().trim();
+  if (!text || text.length > 500) return res.status(400).json({ error: 'Melding må være 1–500 tegn' });
+
+  chatLastSend[key] = now;
+  recent.push(now);
+  chatRecentSends[key] = recent;
+
+  const role = (user.role && ['member', 'mod', 'admin', 'owner'].includes(user.role)) ? user.role : null;
+  const msg = {
+    username: user.username,
+    displayName: user.displayName || user.username,
+    role,
+    text,
+    time: now,
+  };
+  chatMessages.push(msg);
+  if (chatMessages.length > CHAT_MAX) chatMessages.shift();
+  res.json({ message: msg });
 });
 
 // Only sync non-delta fields: xp, level, biggestWin
@@ -1298,15 +1367,12 @@ async function start() {
       plinkoStats.totalBalls = ps.totalBalls ?? 0;
       plinkoStats.landings = Array.isArray(ps.landings) ? ps.landings : Array(19).fill(0);
       while (plinkoStats.landings.length < 19) plinkoStats.landings.push(0);
-      await ensureMikmailUser();
     } catch (e) {
       console.error('Database startup failed:', e.message || e);
       console.error('Stack:', e.stack);
       console.error('Sjekk at scripts/init-db.sql er kjort i Supabase og at DATABASE_URL er riktig i Render.');
       throw e;
     }
-  } else {
-    await ensureMikmailUser();
   }
   app.listen(PORT, () => {
     console.log(`Gambleio server running on http://localhost:${PORT}`);

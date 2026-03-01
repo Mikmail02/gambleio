@@ -26,7 +26,7 @@
       try {
         currentUser = JSON.parse(userStr);
         if (currentUser.role === undefined) {
-          currentUser.role = currentUser.isOwner ? 'owner' : (currentUser.isAdmin ? 'admin' : 'member');
+          currentUser.role = currentUser.isOwner ? 'owner' : (currentUser.isAdmin ? 'admin' : null);
         }
         if (window.Auth) window.Auth.user = currentUser;
         updateUI();
@@ -134,6 +134,12 @@
       profileAvatar.style.display = currentUser.photoURL ? 'block' : 'none';
     }
     updateProfileStats();
+    const profileCreatedAtEl = document.getElementById('profileCreatedAt');
+    if (profileCreatedAtEl && currentUser) {
+      profileCreatedAtEl.textContent = currentUser.createdAt != null
+        ? new Date(currentUser.createdAt).toLocaleString('nb-NO', { dateStyle: 'short', timeStyle: 'short' })
+        : '—';
+    }
     if (logoutBtnProfile) {
       logoutBtnProfile.style.display = viewingOwnProfile ? 'block' : 'none';
     }
@@ -185,6 +191,12 @@
     if (profileRankLevel) profileRankLevel.textContent = `Lv ${user.level || 1}`;
     if (profileTotalBets) profileTotalBets.textContent = formatNum(user.totalBets || 0);
     if (profileTotalWon) profileTotalWon.textContent = formatDollars(user.totalGamblingWins || 0);
+    const profileCreatedAt = document.getElementById('profileCreatedAt');
+    if (profileCreatedAt) {
+      profileCreatedAt.textContent = user.createdAt != null
+        ? new Date(user.createdAt).toLocaleString('nb-NO', { dateStyle: 'short', timeStyle: 'short' })
+        : '—';
+    }
 
     if (window.Game && window.Game.getRankInfoForXp && profileBadge) {
       const rank = Game.getRankInfoForXp(user.xp);
@@ -386,7 +398,8 @@
           profileSlug: data.user?.profileSlug,
           isOwner: !!data.user?.isOwner,
           isAdmin: !!(data.user?.isAdmin || data.user?.isOwner),
-          role: ['member', 'mod', 'admin', 'owner'].includes(data.user?.role) ? data.user.role : 'member',
+          role: (data.user?.role != null && ['member', 'mod', 'admin', 'owner'].includes(data.user.role)) ? data.user.role : null,
+          createdAt: data.user?.createdAt != null ? data.user.createdAt : null,
         };
         saveUser(currentUser);
         if (window.Auth) window.Auth.user = currentUser;
@@ -467,7 +480,8 @@
           profileSlug: data.user?.profileSlug,
           isOwner: !!data.user?.isOwner,
           isAdmin: !!(data.user?.isAdmin || data.user?.isOwner),
-          role: ['member', 'mod', 'admin', 'owner'].includes(data.user?.role) ? data.user.role : 'member',
+          role: (data.user?.role != null && ['member', 'mod', 'admin', 'owner'].includes(data.user.role)) ? data.user.role : null,
+          createdAt: data.user?.createdAt != null ? data.user.createdAt : null,
         };
         saveUser(currentUser);
         if (window.Auth) window.Auth.user = currentUser;
@@ -530,6 +544,7 @@
           if (data.role !== undefined) currentUser.role = data.role;
           if (data.isAdmin !== undefined) currentUser.isAdmin = data.isAdmin;
           if (data.isOwner !== undefined) currentUser.isOwner = data.isOwner;
+          if (data.createdAt !== undefined) currentUser.createdAt = data.createdAt;
           saveUser(currentUser);
           if (window.Auth) window.Auth.user = currentUser;
         }

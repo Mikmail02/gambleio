@@ -12,6 +12,30 @@
 </head>
 <body>
   <div class="app">
+    <!-- Chat panel (left) -->
+    <div class="chat-panel-wrap chat-panel-wrap--closed" id="chatPanelWrap" aria-label="Chat">
+      <div class="chat-panel">
+        <div class="chat-panel-header">
+          <h2 class="chat-panel-title">Chat</h2>
+          <button type="button" class="chat-panel-close" id="chatPanelClose" title="Lukk chat" aria-label="Lukk chat">&times;</button>
+        </div>
+        <div class="chat-messages" id="chatMessages" role="log" aria-live="polite">
+          <!-- messages injected by js/chat.js -->
+        </div>
+        <div class="chat-input-wrap">
+          <div class="chat-mute-msg hidden" id="chatMuteMsg" role="status">
+            <span class="chat-mute-msg-text" id="chatMuteMsgText"></span>
+            <button type="button" class="chat-mute-msg-dismiss" id="chatMuteMsgDismiss" aria-label="Lukk melding" title="Lukk">×</button>
+          </div>
+          <div class="chat-input-row">
+            <input type="text" class="chat-input" id="chatInput" placeholder="Skriv melding..." maxlength="500" aria-label="Chatmelding">
+            <button type="button" class="chat-send" id="chatSend" aria-label="Send">Send</button>
+          </div>
+        </div>
+      </div>
+      <button type="button" class="chat-toggle" id="chatToggle" title="Åpne chat" aria-label="Åpne chat">💬</button>
+    </div>
+    <div class="app-body">
     <header class="header">
       <h1 class="logo">Gambleio</h1>
       <nav class="nav">
@@ -378,12 +402,17 @@
                 <span class="stat-label">Total Won</span>
                 <span class="stat-value stat-value-win" id="profileTotalWon">$0</span>
               </div>
+              <div class="profile-stat">
+                <span class="stat-label">Created at</span>
+                <span class="stat-value" id="profileCreatedAt">—</span>
+              </div>
             </div>
             <button type="button" class="btn-logout-profile" id="logoutBtnProfile" style="display: none;">Logout</button>
           </div>
         </div>
       </section>
     </main>
+    </div><!-- .app-body -->
   </div>
 
   <!-- Admin Panel Modal (owner/admin only) -->
@@ -421,6 +450,13 @@
               <label>Money</label>
               <input type="text" id="adminMoneyInput" placeholder="e.g. 1000 or -500" class="admin-adjust-input">
               <button type="button" class="btn-admin-adjust" id="adminMoneyBtn">Apply</button>
+            </div>
+            <div class="admin-mute-row">
+              <label>Chat mute</label>
+              <input type="number" id="adminMuteMinutes" placeholder="Minutes (0 = unmute)" class="admin-adjust-input" min="0" step="1">
+              <button type="button" class="btn-admin-adjust btn-admin-mute" id="adminMuteBtn">Mute</button>
+              <button type="button" class="btn-admin-adjust btn-admin-unmute" id="adminUnmuteBtn">Unmute</button>
+              <span class="admin-muted-until" id="adminMutedUntil"></span>
             </div>
           </div>
         </div>
@@ -496,6 +532,7 @@
 
   <script src="js/auth.js"></script>
   <script src="js/admin.js"></script>
+  <script src="js/chat.js"></script>
   <script src="js/game.js"></script>
   <script src="js/stats.js"></script>
   <script src="js/leaderboard.js"></script>

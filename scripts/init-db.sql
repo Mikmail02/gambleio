@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS users (
   xp_by_source JSONB DEFAULT '{}',
   plinko_risk_level VARCHAR(50) DEFAULT 'low',
   plinko_risk_unlocked JSONB DEFAULT '{}',
-  biggest_win_meta JSONB DEFAULT '{}'
+  biggest_win_meta JSONB DEFAULT '{}',
+  chat_muted_until BIGINT
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -61,3 +62,6 @@ CREATE TABLE IF NOT EXISTS plinko_stats (
 
 INSERT INTO plinko_stats (id, total_balls, landings) VALUES (1, 0, '[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]')
 ON CONFLICT (id) DO NOTHING;
+
+-- Add chat_muted_until if table already existed without it
+ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_muted_until BIGINT;
