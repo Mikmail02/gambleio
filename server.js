@@ -1292,12 +1292,19 @@ app.get('/api/roulette/all-bets', (req, res) => {
 async function start() {
   loadData();
   if (useDb) {
-    await db.ensureTables();
-    const ps = await db.getPlinkoStats();
-    plinkoStats.totalBalls = ps.totalBalls ?? 0;
-    plinkoStats.landings = Array.isArray(ps.landings) ? ps.landings : Array(19).fill(0);
-    while (plinkoStats.landings.length < 19) plinkoStats.landings.push(0);
-    await ensureMikmailUser();
+    try {
+      await db.ensureTables();
+      const ps = await db.getPlinkoStats();
+      plinkoStats.totalBalls = ps.totalBalls ?? 0;
+      plinkoStats.landings = Array.isArray(ps.landings) ? ps.landings : Array(19).fill(0);
+      while (plinkoStats.landings.length < 19) plinkoStats.landings.push(0);
+      await ensureMikmailUser();
+    } catch (e) {
+      console.error('Database startup failed:', e.message || e);
+      console.error('Stack:', e.stack);
+      console.error('Sjekk at scripts/init-db.sql er kjort i Supabase og at DATABASE_URL er riktig i Render.');
+      throw e;
+    }
   } else {
     await ensureMikmailUser();
   }
@@ -1310,6 +1317,7 @@ async function start() {
   });
 }
 start().catch((e) => {
-  console.error('Startup failed:', e);
+  console.error('Startup failed:', e.message || e);
+  if (e.stack) console.error(e.stack);
   process.exit(1);
 });

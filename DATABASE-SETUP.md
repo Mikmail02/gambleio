@@ -43,6 +43,14 @@ DATABASE_URL=postgresql://postgres.xxx:yyy@aws-0-eu-central-1.pooler.supabase.co
 **På server / hosting (Railway, Render, etc.):**  
 Sett `DATABASE_URL` i miljøvariabler i dashboardet til tjenesten. Lim inn samme connection string.
 
+### Render (steg for steg)
+
+1. **Supabase:** Kjør `scripts/init-db.sql` i SQL Editor **før** du deployer (ellers får du "Deploy failed").
+2. **Render:** Dashboard → ditt Web Service → **Environment**.
+3. Legg til variabel: **Key:** `DATABASE_URL`, **Value:** lim inn Supabase connection string (URI fra Supabase → Project Settings → Database).
+4. Bruk **Transaction** (port 6543) eller **Session** (port 5432) – begge fungerer.
+5. Lagre og **Manual Deploy** (eller push til repo). Når deploy er grønn, skal nye registreringer vises i Supabase-tabellen **users**.
+
 ---
 
 ## 4. Start serveren
@@ -81,8 +89,10 @@ Ved oppstart skal du se noe som:
 
 | Problem | Løsning |
 |--------|--------|
+| **Deploy failed / Exited with status 1** på Render | Åpne **Logs** i Render. Se etter «Startup failed» eller «Database startup failed». Vanligvis betyr det at tabellene mangler: kjør **hele** `scripts/init-db.sql` i Supabase SQL Editor, deretter ny deploy. Eller at `DATABASE_URL` mangler/er feil i Render → Environment. |
 | "Database tables may not exist" | Kjør `scripts/init-db.sql` i Supabase SQL Editor. |
+| "relation \"users\" does not exist" (eller plinko_stats) | Du har ikke kjørt schema. Kjør `scripts/init-db.sql` i Supabase → SQL Editor. |
 | "Connection refused" / timeout | Sjekk at `DATABASE_URL` er riktig og at IP ikke er blokkert (Supabase: Settings → Database → Connection pooling / Network). |
-| Ingen rader i `users` | Sjekk at `DATABASE_URL` er satt når du starter serveren; registrer en bruker på nytt etter at DB er koblet på. |
+| Ingen rader i `users` etter registrering | 1) Sjekk at deploy faktisk er grønn (ikke «Exited with status 1»). 2) I Render → Environment: sjekk at `DATABASE_URL` er satt. 3) I Logs ved oppstart: skal stå «Storage: database (DATABASE_URL)». 4) Registrer en ny bruker etter at DB er koblet på. |
 
 Etter dette vil alle nye brukere og statistikk lagres i databasen, og deployer vil ikke slette eksisterende data.

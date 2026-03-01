@@ -12,7 +12,7 @@ function getPool() {
     if (!url) throw new Error('DATABASE_URL is required for database mode');
     pool = new Pool({
       connectionString: url,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: true } : false,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
     });
   }
   return pool;
@@ -166,15 +166,21 @@ async function deleteSession(token) {
 }
 
 async function getPlinkoStats() {
-  const res = await getPool().query('SELECT total_balls, landings FROM plinko_stats WHERE id = 1');
-  const row = res.rows[0];
-  if (!row) return { totalBalls: 0, landings: Array(19).fill(0) };
-  const landings = Array.isArray(row.landings) ? row.landings : (typeof row.landings === 'object' ? Object.values(row.landings) : []);
-  while (landings.length < 19) landings.push(0);
-  return {
-    totalBalls: Number(row.total_balls ?? 0),
-    landings: landings.slice(0, 19).map((n) => Number(n) || 0),
-  };
+  const defaults = { totalBalls: 0, landings: Array(19).fill(0) };
+  try {
+    const res = await getPool().query('SELECT total_balls, landings FROM plinko_stats WHERE id = 1');
+    const row = res.rows[0];
+    if (!row) return defaults;
+    const landings = Array.isArray(row.landings) ? row.landings : (typeof row.landings === 'object' ? Object.values(row.landings) : []);
+    while (landings.length < 19) landings.push(0);
+    return {
+      totalBalls: Number(row.total_balls ?? 0),
+      landings: landings.slice(0, 19).map((n) => Number(n) || 0),
+    };
+  } catch (err) {
+    console.warn('getPlinkoStats failed (kjør scripts/init-db.sql hvis tabeller mangler):', err.message);
+    return defaults;
+  }
 }
 
 async function savePlinkoStats(data) {
