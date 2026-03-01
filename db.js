@@ -10,9 +10,10 @@ function getPool() {
   if (!pool) {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error('DATABASE_URL is required for database mode');
+    // Tillat selvsignert cert (f.eks. Supabase pooler fra Render) – passord lagres uansett kun som hash
     pool = new Pool({
       connectionString: url,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      ssl: { rejectUnauthorized: false },
     });
   }
   return pool;
