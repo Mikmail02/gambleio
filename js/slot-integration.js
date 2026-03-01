@@ -305,6 +305,8 @@
       this.alpha = alpha;
       this.angle = 0;
       this.stopAt = 0;
+      this.stopIndex = 0;
+      this.symbolCount = symbols ? symbols.length : 0;
       const root = this.root = createElement([SlotMachineReel.C_REEL, SlotMachineReel.C_IS_STOP]);
       this.style = root.style;
       root.style.willChange = 'transform';
@@ -347,8 +349,9 @@
 
     stop(speed, deltaAlpha) {
       const angle = (360 - this.angle - deltaAlpha) % 360;
-      const index = Math.ceil(angle / this.alpha);
-      const stopAt = index * this.alpha;
+      const rawIndex = Math.ceil(angle / this.alpha);
+      this.stopIndex = this.symbolCount ? rawIndex % this.symbolCount : 0;
+      const stopAt = this.stopIndex * this.alpha;
       const animationName = `stop-${this.index}`;
       const animationDuration = stopAtAnimation(
         animationName,
@@ -361,7 +364,15 @@
       this.stopAt = stopAt;
       this.root.style.setProperty('animation', `${animationName} ${animationDuration}ms ease-out forwards`);
       this.root.classList.add(SlotMachineReel.C_IS_STOP);
-      return (this.root.children[index * this.shadowCount] || this.root.children[0]).innerText;
+      return (this.root.children[this.stopIndex * this.shadowCount] || this.root.children[0]).innerText;
+    }
+
+    getSymbolAtRow(rowOffset) {
+      if (!this.symbolCount) return '';
+      const idx = ((this.stopIndex + rowOffset) % this.symbolCount + this.symbolCount) % this.symbolCount;
+      const el = this.root.children[idx * this.shadowCount];
+      if (!el) return '';
+      return (el.innerText || el.textContent || '').trim();
     }
   }
 
@@ -600,6 +611,9 @@
       }
       if (window.SlotIntegration) {
         window.SlotIntegration.setIsSpinning(false);
+        if (window.SlotIntegration.updateRowIndicators) {
+          window.SlotIntegration.updateRowIndicators(this);
+        }
       }
     }
 
@@ -651,15 +665,15 @@
       SMSoundService.stop();
     }
 
-    checkPrize() {
-      const { currentCombination, reelCount, symbols } = this;
+    checkPrizeForCombination(combination, symbols) {
+      const reelCount = combination.length;
       const occurrencesCount = {};
       let maxOccurrences = 0;
       let lastSymbol = '';
       let maxSymbol = '';
 
       for (let i = 0; i < reelCount; ++i) {
-        const symbol = currentCombination[i];
+        const symbol = combination[i];
         const occurrences = occurrencesCount[symbol] = (lastSymbol === symbol ? occurrencesCount[symbol] + 1 : 1);
         lastSymbol = symbol;
         if (occurrences > maxOccurrences) {
@@ -677,6 +691,30 @@
       if (maxOccurrences >= 5) return 1000 + 9000 * figureWeight;
       if (maxOccurrences >= 4) return 100 + 900 * figureWeight;
       return 10 + 40 * figureWeight;
+    }
+
+    checkPrize() {
+      const { reelCount, symbols, reels, currentCombination } = this;
+      const rows = (window.SlotIntegration && window.SlotIntegration.getCurrentRows) ? window.SlotIntegration.getCurrentRows() : 1;
+      let totalMultiplier = 0;
+      this.lastWinningRows = [];
+
+      for (let rowOffset = 0; rowOffset < rows; ++rowOffset) {
+        let combination;
+        if (rowOffset === 0 && currentCombination.length === reelCount) {
+          combination = currentCombination;
+        } else {
+          combination = reels.slice(0, reelCount).map((r) => r.getSymbolAtRow(rowOffset));
+        }
+        if (combination.some((s) => !s)) continue;
+        const prize = this.checkPrizeForCombination(combination, symbols);
+        if (prize != null) {
+          totalMultiplier += prize;
+          this.lastWinningRows.push(rowOffset);
+        }
+      }
+
+      return totalMultiplier > 0 ? totalMultiplier : null;
     }
 
     handleResize() {
@@ -967,9 +1005,12 @@
   let instructionsModal = null;
   let payTableModal = null;
   let currentBet = 10;
+  let currentRows = 1;
   let isSpinning = false;
   const SLOT_BET_MIN = 0;
   const SLOT_BET_MAX = 2000;
+  const SLOT_ROWS_MIN = 1;
+  const SLOT_ROWS_MAX = 12;
 
   function createBetValues() {
     const values = [0];
@@ -1005,13 +1046,25 @@
     return formatDollars(value);
   }
 
+  function getTotalBet() {
+    return currentBet * currentRows;
+  }
+
   function updateBetUi() {
     const betInput = document.getElementById('slotBet');
     const betValueBtn = document.getElementById('slotBetValueBtn');
     const popupGrid = document.getElementById('slotBetPopupGrid');
+    const rowsValueEl = document.getElementById('slotRowsValue');
 
     if (betInput) betInput.value = String(currentBet);
-    if (betValueBtn) betValueBtn.textContent = formatBetValue(currentBet);
+    const displayBet = currentRows > 1 ? getTotalBet() : currentBet;
+    if (betValueBtn) {
+      betValueBtn.textContent = formatBetValue(displayBet);
+      betValueBtn.classList.toggle('slot-bet-multiplied', currentRows > 1);
+    }
+
+    if (rowsValueEl) rowsValueEl.textContent = String(currentRows);
+    updateRowIndicators(null);
 
     if (popupGrid) {
       const options = popupGrid.querySelectorAll('.slot-bet-option');
@@ -1105,6 +1158,46 @@
     setCurrentBetValue(currentBet);
   }
 
+  function clampRows(value) {
+    return Math.min(SLOT_ROWS_MAX, Math.max(SLOT_ROWS_MIN, Math.round(value) || 1));
+  }
+
+  function setCurrentRows(value) {
+    currentRows = clampRows(value);
+    updateBetUi();
+  }
+
+  function updateRowIndicators(slotMachine) {
+    const container = document.getElementById('slotRowsIndicators');
+    if (!container) return;
+    container.innerHTML = '';
+    const rows = currentRows;
+    container.classList.toggle('has-rows', rows > 1);
+    for (let i = 0; i < SLOT_ROWS_MAX; i++) {
+      const dot = document.createElement('span');
+      dot.className = 'slot-rows-dot';
+      if (i < rows) {
+        dot.classList.add('is-active');
+        if (slotMachine && slotMachine.lastWinningRows && slotMachine.lastWinningRows.includes(i)) {
+          dot.classList.add('is-win');
+        }
+      }
+      container.appendChild(dot);
+    }
+  }
+
+  function setupRowsControls() {
+    const rowsDown = document.getElementById('slotRowsDown');
+    const rowsUp = document.getElementById('slotRowsUp');
+    const rowsValueEl = document.getElementById('slotRowsValue');
+    if (!rowsDown || !rowsUp || !rowsValueEl) return;
+
+    rowsDown.onclick = () => { setCurrentRows(currentRows - 1); updateRowIndicators(null); };
+    rowsUp.onclick = () => { setCurrentRows(currentRows + 1); updateRowIndicators(null); };
+    updateBetUi();
+    updateRowIndicators(null);
+  }
+
   function formatDollars(n) {
     return '$' + new Intl.NumberFormat('en', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
   }
@@ -1127,7 +1220,7 @@
   }
 
   async function handleUseCoin() {
-    const bet = window.SlotIntegration ? window.SlotIntegration.getCurrentBet() : currentBet;
+    const bet = getTotalBet();
     if (typeof Game === 'undefined' || !Game.canBet(bet)) {
       alert('Insufficient balance');
       throw new Error('Insufficient balance');
@@ -1144,9 +1237,9 @@
     refreshSlotGameInfo();
   }
 
-  async function handleGetPrice(multiplier) {
+  async function handleGetPrice(multiplier, betOverride) {
     if (multiplier <= 0 || !isFinite(multiplier)) return;
-    const bet = window.SlotIntegration ? window.SlotIntegration.getCurrentBet() : currentBet;
+    const bet = betOverride != null ? betOverride : currentBet;
     const winAmount = bet * multiplier;
     if (window.Stats && window.Stats.win) {
       await window.Stats.win(winAmount, multiplier, bet);
@@ -1346,6 +1439,7 @@
     }
 
     setupBetControls();
+    setupRowsControls();
     refreshSlotGameInfo();
 
     // New symbol order each time you open/refresh the slot page (like the original game)
@@ -1354,10 +1448,11 @@
     // Initialize slot machine - elements must exist in HTML
     setTimeout(() => {
       try {
+        const handleGetPriceWrapper = (prize) => handleGetPrice(prize, currentBet);
         slotMachine = new SlotMachine(
           slotGameArea,
           handleUseCoin,
-          handleGetPrice,
+          handleGetPriceWrapper,
           5, // 5 reels
           sessionSymbols,
           false, // not paused
@@ -1447,7 +1542,8 @@
           if (window.SlotIntegration) {
             window.SlotIntegration.setCurrentBet(currentBet);
           }
-          if (!Game.canBet(currentBet)) {
+          const totalBet = getTotalBet();
+          if (!Game.canBet(totalBet)) {
             alert('Insufficient balance');
             return;
           }
@@ -1482,9 +1578,13 @@
       }
       return currentBet;
     },
+    getTotalBet: () => getTotalBet(),
+    getCurrentRows: () => currentRows,
     setCurrentBet: (bet) => {
       setCurrentBetValue(bet);
     },
+    setCurrentRows: (rows) => setCurrentRows(rows),
+    updateRowIndicators: (sm) => updateRowIndicators(sm),
     setIsSpinning: (spinning) => { isSpinning = spinning; },
     refreshSlotGameInfo
   };

@@ -31,8 +31,10 @@ app.use((req, res, next) => {
 
 app.use(express.static(__dirname));
 
-// --- File-based persistence ---
-// Use DATA_DIR env for persistent storage on deploy (e.g. /data or mounted volume)
+// --- Storage: database (when DATABASE_URL) or file-based (local dev) ---
+const useDb = !!process.env.DATABASE_URL;
+const db = useDb ? require('./db') : null;
+
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
@@ -41,11 +43,11 @@ const ADMIN_LOGS_FILE = path.join(DATA_DIR, 'admin-logs.json');
 
 const users = new Map();
 const sessions = new Map();
-
 const plinkoStats = { totalBalls: 0, landings: Array(19).fill(0) };
 let adminLogs = [];
 
 function loadData() {
+  if (useDb) return;
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     if (fs.existsSync(USERS_FILE)) {
@@ -82,7 +84,15 @@ function loadData() {
   }
 }
 
-function savePlinkoStats() {
+async function savePlinkoStats() {
+  if (useDb) {
+    try {
+      await db.savePlinkoStats(plinkoStats);
+    } catch (e) {
+      console.error('Failed to save plinko stats:', e.message);
+    }
+    return;
+  }
   try {
     fs.writeFileSync(PLINKO_STATS_FILE, JSON.stringify(plinkoStats, null, 2));
   } catch (e) {
@@ -90,7 +100,7 @@ function savePlinkoStats() {
   }
 }
 
-function saveUsers() {
+function saveUsersSync() {
   try {
     fs.writeFileSync(USERS_FILE, JSON.stringify(Object.fromEntries(users), null, 2));
   } catch (e) {
@@ -98,7 +108,20 @@ function saveUsers() {
   }
 }
 
-function saveSessions() {
+async function saveUser(user) {
+  if (useDb) {
+    try {
+      await db.saveUser(user);
+    } catch (e) {
+      console.error('Failed to save user:', e.message);
+    }
+    return;
+  }
+  users.set(user.username, user);
+  saveUsersSync();
+}
+
+function saveSessionsSync() {
   try {
     fs.writeFileSync(SESSIONS_FILE, JSON.stringify(Object.fromEntries(sessions), null, 2));
   } catch (e) {
@@ -106,25 +129,28 @@ function saveSessions() {
   }
 }
 
-function saveAdminLogs() {
+async function addAdminLog(entry) {
+  const e = { ...entry, timestamp: entry.timestamp || Date.now() };
+  if (useDb) {
+    try {
+      await db.addAdminLog(e);
+    } catch (err) {
+      console.error('Failed to add admin log:', err.message);
+    }
+    return;
+  }
+  adminLogs.push(e);
+  if (adminLogs.length > 2000) adminLogs = adminLogs.slice(-2000);
   try {
     fs.writeFileSync(ADMIN_LOGS_FILE, JSON.stringify(adminLogs.slice(-2000), null, 2));
-  } catch (e) {
-    console.error('Failed to save admin logs:', e.message);
+  } catch (err) {
+    console.error('Failed to save admin logs:', err.message);
   }
 }
 
-function addAdminLog(entry) {
-  adminLogs.push({ ...entry, timestamp: entry.timestamp || Date.now() });
-  if (adminLogs.length > 2000) adminLogs = adminLogs.slice(-2000);
-  saveAdminLogs();
-}
-
-loadData();
-
-// Pre-made Mikmail owner – full profile, always exists after server start
-const MIKMAIL_EMAIL = 'mikael@betyr.no';
-const MIKMAIL_PASSWORD = 'owner123';
+// Pre-made owner – full profile, always exists after server start (email from env or placeholder)
+const OWNER_EMAIL = process.env.OWNER_EMAIL || 'owner@example.com';
+const OWNER_PASSWORD = process.env.OWNER_PASSWORD || 'owner123';
 const PLINKO_RISK_COSTS = { medium: 50000, high: 500000, extreme: 5000000 };
 const TRACKED_GAME_SOURCES = ['click', 'plinko', 'roulette', 'slots'];
 
@@ -145,14 +171,14 @@ function normalizeGameSource(source) {
   return TRACKED_GAME_SOURCES.includes(s) ? s : null;
 }
 
-function ensureMikmailUser() {
-  const key = MIKMAIL_EMAIL.toLowerCase().trim();
-  let user = users.get(key);
+async function ensureMikmailUser() {
+  const key = OWNER_EMAIL.toLowerCase().trim();
+  let user = useDb ? await db.getUserByUsername(key) : users.get(key);
   const fullUser = {
     username: key,
     profileSlug: getProfileSlug(key),
-    password: bcrypt.hashSync(MIKMAIL_PASSWORD, 10),
-    displayName: 'Mikmail',
+    password: bcrypt.hashSync(OWNER_PASSWORD, 10),
+    displayName: 'Owner',
     balance: 10000,
     totalGamblingWins: 0,
     totalClickEarnings: 0,
@@ -176,33 +202,65 @@ function ensureMikmailUser() {
   };
   ensureFields(fullUser);
   if (!user) {
-    users.set(key, fullUser);
-    saveUsers();
-    console.log(`[Gambleio] Mikmail owner created. Login: ${MIKMAIL_EMAIL} / ${MIKMAIL_PASSWORD}`);
+    if (!useDb) users.set(key, fullUser);
+    await saveUser(fullUser);
+    console.log('[Gambleio] Owner user created. Set OWNER_EMAIL and OWNER_PASSWORD in production.');
   } else {
     user.profileSlug = getProfileSlug(key);
     user.password = fullUser.password;
-    user.displayName = 'Mikmail';
+    user.displayName = fullUser.displayName;
     user.isOwner = true;
     user.isAdmin = true;
     user.role = 'owner';
     ensureFields(user);
     user.level = getLevelFromXp(user.xp);
-    users.set(key, user);
-    saveUsers();
+    if (!useDb) users.set(key, user);
+    await saveUser(user);
   }
 }
-ensureMikmailUser();
 
 function generateToken() {
   return Math.random().toString(36).substring(2) + Date.now().toString(36);
 }
 
-function getUserFromSession(token) {
+async function getUserFromSession(token) {
   if (!token) return null;
+  if (useDb) {
+    const userKey = await db.getSession(token);
+    if (!userKey) return null;
+    return await db.getUserByUsername(userKey);
+  }
   const userId = sessions.get(token);
   if (!userId) return null;
   return users.get(userId);
+}
+
+async function getUserId(key) {
+  const k = (key || '').toLowerCase().trim();
+  if (!k) return null;
+  if (useDb) return await db.getUserByUsername(k);
+  return users.get(k) || null;
+}
+
+async function getUserByKeyOrSlug(key) {
+  if (useDb) {
+    const u = await db.getUserByUsername(key);
+    if (u) return u;
+    return await db.getUserByProfileSlug(key);
+  }
+  const u = users.get((key || '').toLowerCase().trim());
+  if (u) return u;
+  return Array.from(users.values()).find((u) => (u.profileSlug || '').toLowerCase() === (key || '').toLowerCase()) || null;
+}
+
+async function userExists(key) {
+  if (useDb) return await db.userExists(key);
+  return users.has((key || '').toLowerCase().trim());
+}
+
+async function getAllUsersList() {
+  if (useDb) return await db.getAllUsers();
+  return Array.from(users.values());
 }
 
 function getLevelFromXp(xp) {
@@ -356,88 +414,97 @@ function publicProfile(u) {
 
 // ===== AUTH =====
 
-app.post('/api/auth/register', (req, res) => {
-  const { username, password, displayName } = req.body;
-  const userKey = (username || '').toLowerCase().trim();
-  if (!userKey || !password || userKey.length < 3 || password.length < 3) {
-    return res.status(400).json({ error: 'Username and password must be at least 3 characters' });
-  }
-  if (users.has(userKey)) {
-    return res.status(400).json({ error: 'Username already exists' });
-  }
-  const user = {
-    username: userKey,
-    profileSlug: getProfileSlug(userKey),
-    password: bcrypt.hashSync(password, 10),
-    displayName: (displayName || '').trim() || userKey,
-    role: null,
-    balance: 10000,
-    totalGamblingWins: 0,
-    totalClickEarnings: 0,
-    totalBets: 0,
-    level: 1,
-    xp: 0,
-    totalClicks: 0,
-    totalWinsCount: 0,
-    biggestWinAmount: 0,
-    biggestWinMultiplier: 1,
-    biggestWinMeta: { game: null, betAmount: 0, multiplier: 1, timestamp: 0 },
-    totalProfitWins: 0,
-    analyticsStartedAt: Date.now(),
-    gameNet: emptyGameNet(),
-    gamePlayCounts: emptyGamePlayCounts(),
-    xpBySource: emptyXpBySource(),
-    plinkoRiskLevel: 'low',
-    plinkoRiskUnlocked: { medium: false, high: false, extreme: false },
-    createdAt: Date.now(),
-  };
-  users.set(userKey, user);
-  saveUsers();
-  addAdminLog({ type: 'user_registered', targetUsername: userKey, targetDisplayName: user.displayName });
-  const token = generateToken();
-  sessions.set(token, userKey);
-  saveSessions();
-  res.json({ token, user: publicUser(user) });
-});
-
-app.post('/api/auth/login', (req, res) => {
-  const { username, password } = req.body;
-  const userKey = (username || '').toLowerCase().trim();
-  const user = users.get(userKey);
-  if (!user) {
-    return res.status(401).json({ error: 'User not found' });
-  }
-  let passwordMatch = false;
-  let isBcryptHash = false;
+app.post('/api/auth/register', async (req, res) => {
   try {
-    isBcryptHash = typeof user.password === 'string' && user.password.startsWith('$2');
-    passwordMatch = isBcryptHash
-      ? bcrypt.compareSync(password, user.password)
-      : user.password === password;
+    const { username, password, displayName } = req.body;
+    const userKey = (username || '').toLowerCase().trim();
+    if (!userKey || !password || userKey.length < 3 || password.length < 3) {
+      return res.status(400).json({ error: 'Username and password must be at least 3 characters' });
+    }
+    if (await userExists(userKey)) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+    const user = {
+      username: userKey,
+      profileSlug: getProfileSlug(userKey),
+      password: bcrypt.hashSync(password, 10),
+      displayName: (displayName || '').trim() || userKey,
+      role: null,
+      balance: 10000,
+      totalGamblingWins: 0,
+      totalClickEarnings: 0,
+      totalBets: 0,
+      level: 1,
+      xp: 0,
+      totalClicks: 0,
+      totalWinsCount: 0,
+      biggestWinAmount: 0,
+      biggestWinMultiplier: 1,
+      biggestWinMeta: { game: null, betAmount: 0, multiplier: 1, timestamp: 0 },
+      totalProfitWins: 0,
+      analyticsStartedAt: Date.now(),
+      gameNet: emptyGameNet(),
+      gamePlayCounts: emptyGamePlayCounts(),
+      xpBySource: emptyXpBySource(),
+      plinkoRiskLevel: 'low',
+      plinkoRiskUnlocked: { medium: false, high: false, extreme: false },
+      createdAt: Date.now(),
+    };
+    if (!useDb) users.set(userKey, user);
+    await saveUser(user);
+    await addAdminLog({ type: 'user_registered', targetUsername: userKey, targetDisplayName: user.displayName });
+    const token = generateToken();
+    if (useDb) await db.setSession(token, userKey);
+    else { sessions.set(token, userKey); saveSessionsSync(); }
+    res.json({ token, user: publicUser(user) });
   } catch (e) {
-    console.error('Login password check error:', e.message);
-    return res.status(500).json({ error: 'Login error. Please try again.' });
+    console.error('Register error:', e);
+    res.status(500).json({ error: 'Registration failed' });
   }
-  if (!passwordMatch) {
-    return res.status(401).json({ error: 'Wrong password' });
-  }
-  if (!isBcryptHash) {
-    user.password = bcrypt.hashSync(password, 10);
-    users.set(user.username, user);
-    saveUsers();
-  }
-  ensureFields(user);
-  const token = generateToken();
-  sessions.set(token, userKey);
-  saveSessions();
-  res.json({ token, user: publicUser(user) });
 });
 
-app.post('/api/auth/logout', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const userKey = (username || '').toLowerCase().trim();
+    const user = await getUserId(userKey);
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+    let passwordMatch = false;
+    let isBcryptHash = false;
+    try {
+      isBcryptHash = typeof user.password === 'string' && user.password.startsWith('$2');
+      passwordMatch = isBcryptHash
+        ? bcrypt.compareSync(password, user.password)
+        : user.password === password;
+    } catch (e) {
+      console.error('Login password check error:', e.message);
+      return res.status(500).json({ error: 'Login error. Please try again.' });
+    }
+    if (!passwordMatch) {
+      return res.status(401).json({ error: 'Wrong password' });
+    }
+    if (!isBcryptHash) {
+      user.password = bcrypt.hashSync(password, 10);
+      await saveUser(user);
+    }
+    ensureFields(user);
+    const token = generateToken();
+    if (useDb) await db.setSession(token, userKey);
+    else { sessions.set(token, userKey); saveSessionsSync(); }
+    res.json({ token, user: publicUser(user) });
+  } catch (e) {
+    console.error('Login error:', e);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+app.post('/api/auth/logout', async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (token) {
-    sessions.delete(token);
-    saveSessions();
+    if (useDb) await db.deleteSession(token);
+    else { sessions.delete(token); saveSessionsSync(); }
   }
   res.json({ success: true });
 });
@@ -445,23 +512,25 @@ app.post('/api/auth/logout', (req, res) => {
 // ----- Admin (owner, admin, or mod) -----
 function requireAdmin(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = getUserFromSession(token);
-  if (!user) return res.status(401).json({ error: 'Not authenticated' });
-  ensureFields(user);
-  const canAdmin = user.isOwner || user.isAdmin || user.role === 'mod';
-  if (!canAdmin) return res.status(403).json({ error: 'Forbidden' });
-  req.adminUser = user;
-  next();
+  getUserFromSession(token).then((user) => {
+    if (!user) return res.status(401).json({ error: 'Not authenticated' });
+    ensureFields(user);
+    const canAdmin = user.isOwner || user.isAdmin || user.role === 'mod';
+    if (!canAdmin) return res.status(403).json({ error: 'Forbidden' });
+    req.adminUser = user;
+    next();
+  }).catch(next);
 }
 
 function requireOwner(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = getUserFromSession(token);
-  if (!user) return res.status(401).json({ error: 'Not authenticated' });
-  ensureFields(user);
-  if (!user.isOwner) return res.status(403).json({ error: 'Forbidden' });
-  req.adminUser = user;
-  next();
+  getUserFromSession(token).then((user) => {
+    if (!user) return res.status(401).json({ error: 'Not authenticated' });
+    ensureFields(user);
+    if (!user.isOwner) return res.status(403).json({ error: 'Forbidden' });
+    req.adminUser = user;
+    next();
+  }).catch(next);
 }
 
 function adminSafeUser(u) {
@@ -488,79 +557,98 @@ function adminSafeUser(u) {
   };
 }
 
-app.post('/api/admin/users/:username/role', requireAdmin, (req, res) => {
-  const key = (req.params.username || '').toLowerCase().trim();
-  const user = users.get(key) || Array.from(users.values()).find((u) => (u.profileSlug || '').toLowerCase() === key);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  const role = (req.body.role || '').toLowerCase().trim();
-  if (!['member', 'mod', 'admin', 'owner'].includes(role)) return res.status(400).json({ error: 'Invalid role. Use member, mod, admin, or owner.' });
-  if (role === 'owner' && !req.adminUser.isOwner) return res.status(403).json({ error: 'Only owner can assign owner role' });
-  ensureFields(user);
-  user.role = role;
-  user.isOwner = role === 'owner';
-  user.isAdmin = role === 'admin' || role === 'owner';
-  users.set(user.username, user);
-  saveUsers();
-  addAdminLog({ type: 'role_assigned', actorUsername: req.adminUser.username, actorDisplayName: req.adminUser.displayName, targetUsername: user.username, targetDisplayName: user.displayName, role });
-  res.json(adminSafeUser(user));
+app.post('/api/admin/users/:username/role', requireAdmin, async (req, res) => {
+  try {
+    const key = (req.params.username || '').toLowerCase().trim();
+    const user = await getUserByKeyOrSlug(key);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const role = (req.body.role || '').toLowerCase().trim();
+    if (!['member', 'mod', 'admin', 'owner'].includes(role)) return res.status(400).json({ error: 'Invalid role. Use member, mod, admin, or owner.' });
+    if (role === 'owner' && !req.adminUser.isOwner) return res.status(403).json({ error: 'Only owner can assign owner role' });
+    ensureFields(user);
+    user.role = role;
+    user.isOwner = role === 'owner';
+    user.isAdmin = role === 'admin' || role === 'owner';
+    if (!useDb) users.set(user.username, user);
+    await saveUser(user);
+    await addAdminLog({ type: 'role_assigned', actorUsername: req.adminUser.username, actorDisplayName: req.adminUser.displayName, targetUsername: user.username, targetDisplayName: user.displayName, role });
+    res.json(adminSafeUser(user));
+  } catch (e) {
+    console.error('Role assign error:', e);
+    res.status(500).json({ error: 'Failed to set role' });
+  }
 });
 
-app.get('/api/admin/users', requireAdmin, (req, res) => {
-  const list = Array.from(users.values()).map((u) => adminSafeUser(u));
-  res.json(list);
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+  try {
+    const list = (await getAllUsersList()).map((u) => adminSafeUser(u));
+    res.json(list);
+  } catch (e) {
+    console.error('Admin users list error:', e);
+    res.status(500).json({ error: 'Failed to load users' });
+  }
 });
 
-app.get('/api/admin/users/:username', requireAdmin, (req, res) => {
-  const key = (req.params.username || '').toLowerCase().trim();
-  const user = users.get(key) || Array.from(users.values()).find((u) => (u.profileSlug || '').toLowerCase() === key);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  res.json(adminSafeUser(user));
+app.get('/api/admin/users/:username', requireAdmin, async (req, res) => {
+  try {
+    const key = (req.params.username || '').toLowerCase().trim();
+    const user = await getUserByKeyOrSlug(key);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(adminSafeUser(user));
+  } catch (e) {
+    console.error('Admin user detail error:', e);
+    res.status(500).json({ error: 'Failed to load user' });
+  }
 });
 
-app.post('/api/admin/users/:username/adjust', requireAdmin, (req, res) => {
+app.post('/api/admin/users/:username/adjust', requireAdmin, async (req, res) => {
   if (req.adminUser.role === 'mod') return res.status(403).json({ error: 'Only Admin or Owner can adjust XP or money' });
-  const key = (req.params.username || '').toLowerCase().trim();
-  const user = users.get(key) || Array.from(users.values()).find((u) => (u.profileSlug || '').toLowerCase() === key);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  ensureFields(user);
-  const { type, value } = req.body;
-  const num = typeof value === 'number' ? value : parseInt(String(value || '').trim(), 10);
-  if (!Number.isFinite(num)) return res.status(400).json({ error: 'Invalid value' });
-  if (type === 'xp') {
-    user.xp = Math.max(0, (user.xp || 0) + num);
-    user.level = getLevelFromXp(user.xp);
-    users.set(user.username, user);
-    saveUsers();
-    addAdminLog({ type: 'adjust', actorUsername: req.adminUser.username, actorDisplayName: req.adminUser.displayName, targetUsername: user.username, targetDisplayName: user.displayName, adjustType: 'xp', value: num });
-    return res.json({ username: user.username, xp: user.xp, level: user.level });
+  try {
+    const key = (req.params.username || '').toLowerCase().trim();
+    const user = await getUserByKeyOrSlug(key);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    ensureFields(user);
+    const { type, value } = req.body;
+    const num = typeof value === 'number' ? value : parseInt(String(value || '').trim(), 10);
+    if (!Number.isFinite(num)) return res.status(400).json({ error: 'Invalid value' });
+    if (type === 'xp') {
+      user.xp = Math.max(0, (user.xp || 0) + num);
+      user.level = getLevelFromXp(user.xp);
+      if (!useDb) users.set(user.username, user);
+      await saveUser(user);
+      await addAdminLog({ type: 'adjust', actorUsername: req.adminUser.username, actorDisplayName: req.adminUser.displayName, targetUsername: user.username, targetDisplayName: user.displayName, adjustType: 'xp', value: num });
+      return res.json({ username: user.username, xp: user.xp, level: user.level });
+    }
+    if (type === 'money') {
+      user.balance = Math.max(0, (user.balance ?? 0) + num);
+      if (!useDb) users.set(user.username, user);
+      await saveUser(user);
+      await addAdminLog({ type: 'adjust', actorUsername: req.adminUser.username, actorDisplayName: req.adminUser.displayName, targetUsername: user.username, targetDisplayName: user.displayName, adjustType: 'money', value: num });
+      return res.json({ username: user.username, balance: user.balance });
+    }
+    return res.status(400).json({ error: 'Invalid type. Use "xp" or "money".' });
+  } catch (e) {
+    console.error('Adjust error:', e);
+    res.status(500).json({ error: 'Failed to adjust' });
   }
-  if (type === 'money') {
-    user.balance = Math.max(0, (user.balance ?? 0) + num);
-    users.set(user.username, user);
-    saveUsers();
-    addAdminLog({ type: 'adjust', actorUsername: req.adminUser.username, actorDisplayName: req.adminUser.displayName, targetUsername: user.username, targetDisplayName: user.displayName, adjustType: 'money', value: num });
-    return res.json({ username: user.username, balance: user.balance });
-  }
-  return res.status(400).json({ error: 'Invalid type. Use "xp" or "money".' });
 });
 
-app.get('/api/admin/logs', requireOwner, (req, res) => {
-  const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 500), 1000);
-  const list = adminLogs.slice(-limit).reverse();
-  res.json(list);
+app.get('/api/admin/logs', requireOwner, async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 500), 1000);
+    const list = useDb ? await db.getAdminLogs(limit) : adminLogs.slice(-limit).reverse();
+    res.json(list);
+  } catch (e) {
+    console.error('Admin logs error:', e);
+    res.status(500).json({ error: 'Failed to load logs' });
+  }
 });
 
 // Public profile (no balance, no email) – for viewing other users. Lookup by username or profileSlug.
-app.get('/api/user/:slug/profile', (req, res) => {
+app.get('/api/user/:slug/profile', async (req, res) => {
   const slug = (req.params.slug || '').trim();
   if (!slug) return res.status(400).json({ error: 'Profile identifier required' });
-  let user = users.get(slug.toLowerCase());
-  if (!user) {
-    user = Array.from(users.values()).find(u => {
-      ensureProfileSlug(u);
-      return (u.profileSlug || getProfileSlug(u.username)) === slug;
-    });
-  }
+  const user = await getUserByKeyOrSlug(slug);
   if (!user) return res.status(404).json({ error: 'User not found' });
   ensureFields(user);
   user.level = getLevelFromXp(user.xp);
@@ -569,9 +657,9 @@ app.get('/api/user/:slug/profile', (req, res) => {
 
 // ===== STATS =====
 
-app.get('/api/user/stats', (req, res) => {
+app.get('/api/user/stats', async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = getUserFromSession(token);
+  const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
   user.level = getLevelFromXp(user.xp);
@@ -579,9 +667,9 @@ app.get('/api/user/stats', (req, res) => {
 });
 
 // Only sync non-delta fields: xp, level, biggestWin
-app.post('/api/user/update-stats', (req, res) => {
+app.post('/api/user/update-stats', async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = getUserFromSession(token);
+  const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
   const { level, xp, biggestWinAmount, biggestWinMultiplier } = req.body;
@@ -591,23 +679,23 @@ app.post('/api/user/update-stats', (req, res) => {
     user.level = getLevelFromXp(xp);
     const newLevel = user.level;
     if (newLevel > oldLevel) {
-      addAdminLog({ type: 'level_up', targetUsername: user.username, targetDisplayName: user.displayName, newLevel, previousLevel: oldLevel });
+      await addAdminLog({ type: 'level_up', targetUsername: user.username, targetDisplayName: user.displayName, newLevel, previousLevel: oldLevel });
     }
   } else if (level !== undefined) user.level = level;
   if (biggestWinAmount !== undefined && biggestWinAmount > user.biggestWinAmount) {
     user.biggestWinAmount = biggestWinAmount;
     user.biggestWinMultiplier = biggestWinMultiplier || 1;
   }
-  users.set(user.username, user);
-  saveUsers();
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
   res.json({ success: true });
 });
 
 // ===== DELTA ENDPOINTS =====
 
-app.post('/api/user/place-bet', (req, res) => {
+app.post('/api/user/place-bet', async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = getUserFromSession(token);
+  const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
   const amount = Number(req.body.amount);
@@ -622,14 +710,14 @@ app.post('/api/user/place-bet', (req, res) => {
     user.gamePlayCounts[source] += 1;
     user.xpBySource[source] += 3;
   }
-  users.set(user.username, user);
-  saveUsers();
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
   res.json({ balance: user.balance, totalBets: user.totalBets });
 });
 
-app.post('/api/user/win', (req, res) => {
+app.post('/api/user/win', async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = getUserFromSession(token);
+  const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
   const amount = Number(req.body.amount);
@@ -661,8 +749,8 @@ app.post('/api/user/win', (req, res) => {
       };
     }
   }
-  users.set(user.username, user);
-  saveUsers();
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
   res.json({
     balance: user.balance,
     totalGamblingWins: user.totalGamblingWins,
@@ -673,23 +761,23 @@ app.post('/api/user/win', (req, res) => {
 });
 
 // Refund: adds to balance only (no win tracking)
-app.post('/api/user/refund', (req, res) => {
+app.post('/api/user/refund', async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = getUserFromSession(token);
+  const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   const amount = Number(req.body.amount);
   if (!Number.isFinite(amount) || amount < 0) {
     return res.status(400).json({ error: 'Invalid refund amount' });
   }
   user.balance += amount;
-  users.set(user.username, user);
-  saveUsers();
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
   res.json({ balance: user.balance });
 });
 
-app.post('/api/plinko/risk-level', (req, res) => {
+app.post('/api/plinko/risk-level', async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = getUserFromSession(token);
+  const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
 
@@ -721,8 +809,8 @@ app.post('/api/plinko/risk-level', (req, res) => {
     user.plinkoRiskLevel = level;
   }
 
-  users.set(user.username, user);
-  saveUsers();
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
   res.json({
     balance: user.balance,
     plinkoRiskLevel: user.plinkoRiskLevel,
@@ -730,9 +818,9 @@ app.post('/api/plinko/risk-level', (req, res) => {
   });
 });
 
-app.post('/api/user/click-earnings', (req, res) => {
+app.post('/api/user/click-earnings', async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = getUserFromSession(token);
+  const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
   const amount = Number(req.body.amount);
@@ -748,8 +836,8 @@ app.post('/api/user/click-earnings', (req, res) => {
   user.gameNet.click += capped;
   user.gamePlayCounts.click += cappedClicks;
   user.xpBySource.click += cappedClicks * 3;
-  users.set(user.username, user);
-  saveUsers();
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
   res.json({ balance: user.balance, totalClickEarnings: user.totalClickEarnings, totalClicks: user.totalClicks });
 });
 
@@ -759,8 +847,9 @@ function validLeaderboardType(type) {
   return ['clicks', 'wins', 'biggest-win', 'networth', 'xp', 'level'].includes(type);
 }
 
-function buildLeaderboardRows(type) {
-  const allUsers = Array.from(users.values()).map(u => {
+async function buildLeaderboardRows(type) {
+  const list = await getAllUsersList();
+  const allUsers = list.map(u => {
     ensureFields(u);
     ensureProfileSlug(u);
     const xp = u.xp || 0;
@@ -813,21 +902,21 @@ function getTopGamesFromCounts(gamePlayCounts) {
   return entries.slice(0, 3).map(([key]) => gameLabel(key));
 }
 
-app.get('/api/leaderboard/:type', (req, res) => {
+app.get('/api/leaderboard/:type', async (req, res) => {
   const { type } = req.params;
   if (!validLeaderboardType(type)) {
     return res.status(400).json({ error: 'Invalid leaderboard type' });
   }
-  const sorted = buildLeaderboardRows(type);
+  const sorted = await buildLeaderboardRows(type);
   res.json(sorted.slice(0, 100));
 });
 
-app.get('/api/leaderboard/:type/user/:slug', (req, res) => {
+app.get('/api/leaderboard/:type/user/:slug', async (req, res) => {
   const { type, slug } = req.params;
   if (!validLeaderboardType(type)) {
     return res.status(400).json({ error: 'Invalid leaderboard type' });
   }
-  const sorted = buildLeaderboardRows(type);
+  const sorted = await buildLeaderboardRows(type);
   const normalizedSlug = String(slug || '').toLowerCase().trim();
   const idx = sorted.findIndex((u) =>
     (u.profileSlug || '').toLowerCase() === normalizedSlug ||
@@ -872,16 +961,16 @@ app.get('/api/leaderboard/:type/user/:slug', (req, res) => {
   });
 });
 
-app.post('/api/plinko-land', (req, res) => {
+app.post('/api/plinko-land', async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = getUserFromSession(token);
+  const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   const { slotIndex, bet, multiplier } = req.body;
   const si = typeof slotIndex === 'number' ? Math.floor(slotIndex) : -1;
   const idx = si >= 0 && si <= 17 ? si : 18;
   plinkoStats.totalBalls += 1;
   plinkoStats.landings[idx] = (plinkoStats.landings[idx] || 0) + 1;
-  savePlinkoStats();
+  await savePlinkoStats();
   res.json({ ok: true });
 });
 
@@ -923,15 +1012,31 @@ app.get('/api/admin/plinko-stats', (req, res) => {
 });
 
 // Admin: reset all data (for beta end, etc). Requires ADMIN_RESET_KEY env.
-app.post('/api/admin/reset', (req, res) => {
+app.post('/api/admin/reset', async (req, res) => {
   const key = req.body?.key || req.headers['x-admin-key'];
   if (!process.env.ADMIN_RESET_KEY || key !== process.env.ADMIN_RESET_KEY) {
     return res.status(403).json({ error: 'Forbidden' });
   }
-  users.clear();
-  sessions.clear();
-  saveUsers();
-  saveSessions();
+  if (useDb) {
+    try {
+      const client = await db.getPool().connect();
+      await client.query('DELETE FROM sessions');
+      await client.query('DELETE FROM users');
+      await client.query('DELETE FROM admin_logs');
+      await client.query('UPDATE plinko_stats SET total_balls = 0, landings = $1 WHERE id = 1', [JSON.stringify(Array(19).fill(0))]);
+      client.release();
+      plinkoStats.totalBalls = 0;
+      plinkoStats.landings = Array(19).fill(0);
+    } catch (e) {
+      console.error('Admin reset DB error:', e);
+      return res.status(500).json({ error: 'Reset failed' });
+    }
+  } else {
+    users.clear();
+    sessions.clear();
+    saveUsersSync();
+    saveSessionsSync();
+  }
   console.log('Admin reset: all data cleared');
   res.json({ success: true });
 });
@@ -960,7 +1065,7 @@ function rouletteTick() {
     rouletteState.phase = 'spinning';
     rouletteState.phaseEndTime = now + ROULETTE_SPINNING_MS;
   } else if (rouletteState.phase === 'spinning') {
-    resolveAllRouletteBets();
+    resolveAllRouletteBets().catch((e) => console.error('resolveAllRouletteBets error:', e));
     rouletteState.phase = 'result';
     rouletteState.phaseEndTime = now + ROULETTE_RESULT_MS;
   } else if (rouletteState.phase === 'result') {
@@ -1025,10 +1130,10 @@ function hasStrictRouletteConflict(existingBets, incomingKey) {
   return false;
 }
 
-function resolveAllRouletteBets() {
+async function resolveAllRouletteBets() {
   const win = rouletteState.winNumber;
   for (const [username, userBets] of rouletteState.bets) {
-    const user = users.get(username);
+    const user = useDb ? await db.getUserByUsername(username) : users.get(username);
     if (!user) continue;
     ensureFields(user);
     let totalWin = 0;
@@ -1069,7 +1174,8 @@ function resolveAllRouletteBets() {
           };
         }
       }
-      users.set(username, user);
+      if (!useDb) users.set(username, user);
+      await saveUser(user);
       rouletteState.recentWinners.unshift({
         username: user.displayName || username,
         amount: totalWin,
@@ -1082,15 +1188,14 @@ function resolveAllRouletteBets() {
   if (rouletteState.recentWinners.length > 20) {
     rouletteState.recentWinners = rouletteState.recentWinners.slice(0, 20);
   }
-  saveUsers();
 }
 
 setInterval(rouletteTick, 500);
 
-app.get('/api/roulette/round', (req, res) => {
+app.get('/api/roulette/round', async (req, res) => {
   rouletteTick();
   const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = getUserFromSession(token);
+  const user = await getUserFromSession(token);
   const resp = {
     roundId: rouletteState.roundId,
     phase: rouletteState.phase,
@@ -1106,9 +1211,9 @@ app.get('/api/roulette/round', (req, res) => {
   res.json(resp);
 });
 
-app.post('/api/roulette/bet', (req, res) => {
+app.post('/api/roulette/bet', async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = getUserFromSession(token);
+  const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
   rouletteTick();
@@ -1135,15 +1240,15 @@ app.post('/api/roulette/bet', (req, res) => {
   user.gameNet.roulette -= amt;
   user.gamePlayCounts.roulette += 1;
   user.xpBySource.roulette += 3;
-  users.set(user.username, user);
-  saveUsers();
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
   userBets.push({ key, amount: amt });
   res.json({ balance: user.balance, totalBets: user.totalBets });
 });
 
-app.post('/api/roulette/clear-bets', (req, res) => {
+app.post('/api/roulette/clear-bets', async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = getUserFromSession(token);
+  const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
   rouletteTick();
@@ -1156,8 +1261,8 @@ app.post('/api/roulette/clear-bets', (req, res) => {
   if (refundTotal > 0) {
     user.balance += refundTotal;
     user.gameNet.roulette += refundTotal;
-    users.set(user.username, user);
-    saveUsers();
+    if (!useDb) users.set(user.username, user);
+    await saveUser(user);
   }
   rouletteState.bets.delete(user.username);
   res.json({ balance: user.balance, refunded: refundTotal });
@@ -1184,9 +1289,27 @@ app.get('/api/roulette/all-bets', (req, res) => {
   })).sort((a, b) => b.total - a.total));
 });
 
-app.listen(PORT, () => {
-  console.log(`Gambleio server running on http://localhost:${PORT}`);
-  if (DATA_DIR !== path.join(__dirname, 'data')) {
-    console.log(`Data dir: ${DATA_DIR}`);
+async function start() {
+  loadData();
+  if (useDb) {
+    await db.ensureTables();
+    const ps = await db.getPlinkoStats();
+    plinkoStats.totalBalls = ps.totalBalls ?? 0;
+    plinkoStats.landings = Array.isArray(ps.landings) ? ps.landings : Array(19).fill(0);
+    while (plinkoStats.landings.length < 19) plinkoStats.landings.push(0);
+    await ensureMikmailUser();
+  } else {
+    await ensureMikmailUser();
   }
+  app.listen(PORT, () => {
+    console.log(`Gambleio server running on http://localhost:${PORT}`);
+    if (!useDb && DATA_DIR !== path.join(__dirname, 'data')) {
+      console.log(`Data dir: ${DATA_DIR}`);
+    }
+    if (useDb) console.log('Storage: database (DATABASE_URL)');
+  });
+}
+start().catch((e) => {
+  console.error('Startup failed:', e);
+  process.exit(1);
 });

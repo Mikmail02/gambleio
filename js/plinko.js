@@ -21,17 +21,17 @@
   const SPAWN_ZONE_HEIGHT = 36;
   const BALL_FORCE_RESOLVE_MS = 20000;
   const SPAWN_POINTS_PER_SLOT = 3;
-  const SPAWN_POINT_JITTER = 1.8;
+  const SPAWN_POINT_JITTER = 1.4;
   const SPAWN_POINT_WEIGHTS = [0.22, 0.56, 0.22];
-  const SPAWN_TARGET_SPREAD = 1.35;
-  const SPAWN_EDGE_POINT_OFFSET = 2.6;
-  const SPAWN_EDGE_POINT_CHANCE = 0.003;
+  const SPAWN_TARGET_SPREAD = 0.92;
+  const SPAWN_EDGE_POINT_OFFSET = 1.4;
   const SPAWN_WALL_SAFE_MARGIN = 6;
-  const SPAWN_NON_EDGE_WALL_MARGIN = 30;
-  const SPAWN_LANE_NUDGE_SCALE = 0.2;
-  const SPAWN_EDGE_TARGET_WEIGHT_SCALE = 0.04;
-  const SPAWN_NEAR_EDGE_TARGET_WEIGHT_SCALE = 0.45;
-  const SPAWN_CENTER_TARGET_WEIGHT_SCALE = 1.12;
+  const SPAWN_NON_EDGE_WALL_MARGIN = 40;
+  const SPAWN_LANE_NUDGE_SCALE = 0.14;
+  const SPAWN_EDGE_TARGET_WEIGHT_SCALE = 0.012;
+  const SPAWN_NEAR_EDGE_TARGET_WEIGHT_SCALE = 0.28;
+  const SPAWN_CENTER_TARGET_WEIGHT_SCALE = 1.2;
+  const EDGE_SPAWN_CHANCE_BY_RISK = { low: 0.005, medium: 0.0025, high: 0.00125, extreme: 0.0003 };
 
   let balls = [];
   let lastDropTime = 0;
@@ -296,11 +296,13 @@
     }
 
     if (isEdgeTarget) {
+      const riskLevel = (typeof Game !== 'undefined' && Game.getPlinkoRiskLevel) ? Game.getPlinkoRiskLevel() : 'low';
+      const edgeChance = EDGE_SPAWN_CHANCE_BY_RISK[riskLevel] != null ? EDGE_SPAWN_CHANCE_BY_RISK[riskLevel] : EDGE_SPAWN_CHANCE_BY_RISK.low;
       const edgeCenter = Math.max(
         safeCenterMin,
         Math.min(safeCenterMax, clampedBaseCenter + Math.sign(normalizedSlot) * SPAWN_EDGE_POINT_OFFSET)
       );
-      candidates.push({ center: edgeCenter, weight: SPAWN_EDGE_POINT_CHANCE });
+      candidates.push({ center: edgeCenter, weight: edgeChance });
     }
 
     const selected = candidates[sampleWeightedIndex(candidates.map((c) => c.weight))] || candidates[1] || candidates[0];
