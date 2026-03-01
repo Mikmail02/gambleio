@@ -65,3 +65,6 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Add chat_muted_until if table already existed without it
 ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_muted_until BIGINT;
+
+-- Chat rules acceptance (one-time popup)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_rules_accepted BOOLEAN DEFAULT FALSE;

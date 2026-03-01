@@ -112,9 +112,8 @@
     const hash = (window.location && window.location.hash) || '';
     if (hash === '#profile') return true;
     if (hash.startsWith('#profile/') && currentUser) {
-      const slug = hash.slice(hash.indexOf('/') + 1);
-      return (currentUser.username || '').toLowerCase() === slug.toLowerCase() ||
-             (currentUser.profileSlug || '').toLowerCase() === slug.toLowerCase();
+      const slug = (hash.slice(hash.indexOf('/') + 1) || '').trim();
+      return (currentUser.profileSlug || '').toLowerCase() === slug.toLowerCase();
     }
     return false;
   }
@@ -126,7 +125,8 @@
     const profileAvatar = document.getElementById('profileAvatar');
     const logoutBtnProfile = document.getElementById('logoutBtnProfile');
     const hash = (window.location && window.location.hash) || '';
-    const viewingOwnProfile = hash === '#profile' || (hash.startsWith('#profile/') && currentUser && hash.slice(9).toLowerCase() === (currentUser.username || '').toLowerCase());
+    const slugFromHash = hash.startsWith('#profile/') ? (hash.slice(9) || '').trim() : '';
+    const viewingOwnProfile = hash === '#profile' || (currentUser && slugFromHash && (currentUser.profileSlug || '').toLowerCase() === slugFromHash.toLowerCase());
 
     if (profileName) profileName.textContent = currentUser.displayName || currentUser.username || 'User';
     if (profileAvatar) {
@@ -137,7 +137,7 @@
     const profileCreatedAtEl = document.getElementById('profileCreatedAt');
     if (profileCreatedAtEl && currentUser) {
       profileCreatedAtEl.textContent = currentUser.createdAt != null
-        ? new Date(currentUser.createdAt).toLocaleString('nb-NO', { dateStyle: 'short', timeStyle: 'short' })
+        ? new Date(currentUser.createdAt).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })
         : '—';
     }
     if (logoutBtnProfile) {
@@ -194,7 +194,7 @@
     const profileCreatedAt = document.getElementById('profileCreatedAt');
     if (profileCreatedAt) {
       profileCreatedAt.textContent = user.createdAt != null
-        ? new Date(user.createdAt).toLocaleString('nb-NO', { dateStyle: 'short', timeStyle: 'short' })
+        ? new Date(user.createdAt).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })
         : '—';
     }
 
@@ -225,12 +225,7 @@
 
   async function showProfile(profileUsername) {
     const navProfile = document.getElementById('navProfile');
-    if (navProfile) {
-      const display = profileUsername
-        ? (profileUsername.charAt(0).toUpperCase() + profileUsername.slice(1).toLowerCase())
-        : (currentUser ? (currentUser.displayName || currentUser.username || 'Profile') : 'Profile');
-      navProfile.textContent = display;
-    }
+    if (navProfile) navProfile.textContent = 'Profile';
 
     if (!profileUsername) {
       if (currentUser) {
@@ -245,8 +240,7 @@
       return;
     }
 
-    const currentSlug = (currentUser && (currentUser.profileSlug || currentUser.username)) || '';
-    if (currentUser && (currentSlug.toLowerCase() === profileUsername.toLowerCase() || (currentUser.username || '').toLowerCase() === profileUsername.toLowerCase())) {
+    if (currentUser && (currentUser.profileSlug || '').toLowerCase() === (profileUsername || '').toLowerCase()) {
       updateProfileUI();
       return;
     }

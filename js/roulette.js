@@ -264,14 +264,19 @@
       showPopup('Not enough balance');
       return;
     }
+    Game.balance -= selectedChipValue;
+    if (balanceUpdateCallback) balanceUpdateCallback();
     const result = await placeBetApi(key, selectedChipValue);
     if (!result) {
+      Game.balance += selectedChipValue;
+      if (balanceUpdateCallback) balanceUpdateCallback();
       showPopup('Bet failed');
       return;
     }
+    Game.balance = result.balance;
+    if (balanceUpdateCallback) balanceUpdateCallback();
     localBets[key] = (localBets[key] || 0) + selectedChipValue;
     lastBets = JSON.parse(JSON.stringify(localBets));
-    if (balanceUpdateCallback) balanceUpdateCallback();
     updateBetDisplay();
   }
 

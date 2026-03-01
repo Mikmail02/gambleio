@@ -15,9 +15,28 @@
     <!-- Chat panel (left) -->
     <div class="chat-panel-wrap chat-panel-wrap--closed" id="chatPanelWrap" aria-label="Chat">
       <div class="chat-panel">
+        <div id="chatRulesOverlay" class="chat-rules-overlay hidden" aria-hidden="true">
+          <div class="chat-rules-popup">
+            <button type="button" class="chat-rules-close" id="chatRulesClose" aria-label="Close">×</button>
+            <h3 class="chat-rules-title">Chat rules</h3>
+            <ul class="chat-rules-list">
+              <li><span class="chat-rules-bullet"></span>No Spamming</li>
+              <li><span class="chat-rules-bullet"></span>Only English</li>
+              <li><span class="chat-rules-bullet"></span>No Racist Slurs</li>
+              <li><span class="chat-rules-bullet"></span>Do Not Send External Links</li>
+              <li><span class="chat-rules-bullet"></span>Do Not Advertise</li>
+              <li><span class="chat-rules-bullet"></span>Show Respect To Others</li>
+            </ul>
+            <div class="chat-rules-actions">
+              <button type="button" class="chat-rules-accept-btn chat-rules-accept-btn--locked" id="chatRulesAcceptBtn" disabled>
+                <span class="chat-rules-accept-label" id="chatRulesAcceptLabel">Accept (3s)</span>
+              </button>
+            </div>
+          </div>
+        </div>
         <div class="chat-panel-header">
           <h2 class="chat-panel-title">Chat</h2>
-          <button type="button" class="chat-panel-close" id="chatPanelClose" title="Lukk chat" aria-label="Lukk chat">&times;</button>
+          <button type="button" class="chat-panel-close" id="chatPanelClose" title="Close chat" aria-label="Close chat">&times;</button>
         </div>
         <div class="chat-messages" id="chatMessages" role="log" aria-live="polite">
           <!-- messages injected by js/chat.js -->
@@ -25,19 +44,22 @@
         <div class="chat-input-wrap">
           <div class="chat-mute-msg hidden" id="chatMuteMsg" role="status">
             <span class="chat-mute-msg-text" id="chatMuteMsgText"></span>
-            <button type="button" class="chat-mute-msg-dismiss" id="chatMuteMsgDismiss" aria-label="Lukk melding" title="Lukk">×</button>
+            <button type="button" class="chat-mute-msg-dismiss" id="chatMuteMsgDismiss" aria-label="Dismiss message" title="Close">×</button>
           </div>
           <div class="chat-input-row">
-            <input type="text" class="chat-input" id="chatInput" placeholder="Skriv melding..." maxlength="500" aria-label="Chatmelding">
+            <input type="text" class="chat-input" id="chatInput" placeholder="Type a message..." maxlength="500" aria-label="Chat message">
             <button type="button" class="chat-send" id="chatSend" aria-label="Send">Send</button>
           </div>
         </div>
       </div>
-      <button type="button" class="chat-toggle" id="chatToggle" title="Åpne chat" aria-label="Åpne chat">💬</button>
+      <button type="button" class="chat-toggle" id="chatToggle" title="Open chat" aria-label="Open chat">💬</button>
     </div>
     <div class="app-body">
     <header class="header">
-      <h1 class="logo">Gambleio</h1>
+      <h1 class="logo">
+        <span class="logo-icon" aria-hidden="true"></span>
+        <span class="logo-text" data-text="Gambleio">Gambleio</span>
+      </h1>
       <nav class="nav">
         <a href="#home" class="nav-link active" data-page="home">Home</a>
         <a href="#plinko" class="nav-link" data-page="plinko">Plinko</a>
@@ -458,8 +480,26 @@
               <button type="button" class="btn-admin-adjust btn-admin-unmute" id="adminUnmuteBtn">Unmute</button>
               <span class="admin-muted-until" id="adminMutedUntil"></span>
             </div>
+            <div class="admin-chat-logs-row">
+              <button type="button" class="btn-admin-adjust btn-admin-chat-logs" id="adminChatLogsBtn">Chat logs</button>
+            </div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat logs modal (mod/admin/owner) -->
+  <div id="chatLogsModal" class="modal admin-modal hidden" aria-hidden="true">
+    <div class="admin-modal-backdrop" id="chatLogsModalBackdrop"></div>
+    <div class="admin-modal-content logs-modal-content">
+      <div class="admin-modal-head">
+        <h2 class="admin-modal-title" id="chatLogsModalTitle">Chat logs</h2>
+        <button type="button" class="modal-close" id="chatLogsModalClose" aria-label="Close">×</button>
+      </div>
+      <div class="logs-modal-body">
+        <div class="admin-loading" id="chatLogsLoading">Loading…</div>
+        <ul class="logs-list" id="chatLogsList"></ul>
       </div>
     </div>
   </div>

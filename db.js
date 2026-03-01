@@ -49,6 +49,7 @@ function rowToUser(row) {
     plinkoRiskUnlocked: row.plinko_risk_unlocked && typeof row.plinko_risk_unlocked === 'object' ? row.plinko_risk_unlocked : { medium: false, high: false, extreme: false },
     biggestWinMeta: row.biggest_win_meta && typeof row.biggest_win_meta === 'object' ? row.biggest_win_meta : { game: null, betAmount: 0, multiplier: 1, timestamp: 0 },
     chatMutedUntil: row.chat_muted_until != null ? Number(row.chat_muted_until) : null,
+    chatRulesAccepted: !!row.chat_rules_accepted,
   };
 }
 
@@ -78,9 +79,9 @@ async function saveUser(user) {
       username, profile_slug, password_hash, display_name, role, balance, xp, level,
       total_clicks, total_bets, total_gambling_wins, total_wins_count, biggest_win_amount, biggest_win_multiplier,
       total_click_earnings, total_profit_wins, is_owner, is_admin, created_at, analytics_started_at,
-      game_net, game_play_counts, xp_by_source, plinko_risk_level, plinko_risk_unlocked, biggest_win_meta, chat_muted_until
+      game_net, game_play_counts, xp_by_source, plinko_risk_level, plinko_risk_unlocked, biggest_win_meta, chat_muted_until, chat_rules_accepted
     ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28
     ) ON CONFLICT (username) DO UPDATE SET
       profile_slug = EXCLUDED.profile_slug,
       password_hash = EXCLUDED.password_hash,
@@ -106,7 +107,8 @@ async function saveUser(user) {
       plinko_risk_level = EXCLUDED.plinko_risk_level,
       plinko_risk_unlocked = EXCLUDED.plinko_risk_unlocked,
       biggest_win_meta = EXCLUDED.biggest_win_meta,
-      chat_muted_until = EXCLUDED.chat_muted_until`,
+      chat_muted_until = EXCLUDED.chat_muted_until,
+      chat_rules_accepted = EXCLUDED.chat_rules_accepted`,
     [
       u.username,
       u.profileSlug || null,
@@ -135,6 +137,7 @@ async function saveUser(user) {
       JSON.stringify(plinkoRiskUnlocked),
       JSON.stringify(biggestWinMeta),
       u.chatMutedUntil != null ? u.chatMutedUntil : null,
+      !!u.chatRulesAccepted,
     ]
   );
 }

@@ -110,6 +110,13 @@
       muteBtn: document.getElementById('adminMuteBtn'),
       unmuteBtn: document.getElementById('adminUnmuteBtn'),
       mutedUntil: document.getElementById('adminMutedUntil'),
+      chatLogsBtn: document.getElementById('adminChatLogsBtn'),
+      chatLogsModal: document.getElementById('chatLogsModal'),
+      chatLogsModalClose: document.getElementById('chatLogsModalClose'),
+      chatLogsModalBackdrop: document.getElementById('chatLogsModalBackdrop'),
+      chatLogsList: document.getElementById('chatLogsList'),
+      chatLogsLoading: document.getElementById('chatLogsLoading'),
+      chatLogsModalTitle: document.getElementById('chatLogsModalTitle'),
     };
   }
 
@@ -160,9 +167,11 @@
       li.className = 'admin-user-item';
       const r = u.role == null || u.role === '' ? null : String(u.role).toLowerCase();
       const roleBadge = r && ROLE_LABELS[r] ? '<span class="admin-list-role-tag admin-role-tag--' + r + '">' + escapeHtml(ROLE_LABELS[r]) + '</span>' : '';
+      const id = (u.profileSlug || '').trim();
       li.innerHTML = `
         <span class="admin-user-name-cell">
           <span class="admin-user-name">${escapeHtml(u.displayName || u.username)}</span>
+          ${id ? '<span class="admin-user-id" title="User ID">' + escapeHtml(id) + '</span>' : ''}
           ${roleBadge}
         </span>
         <span class="admin-user-meta">Lv ${u.level} · ${formatDollars(u.balance)}</span>
@@ -264,7 +273,7 @@
     if (mutedUntil) {
       const until = user.chatMutedUntil != null ? Number(user.chatMutedUntil) : 0;
       if (until > Date.now()) {
-        mutedUntil.textContent = 'Muted until ' + new Date(until).toLocaleString('nb-NO', { dateStyle: 'short', timeStyle: 'short' });
+        mutedUntil.textContent = 'Muted until ' + new Date(until).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' });
         mutedUntil.classList.remove('hidden');
       } else {
         mutedUntil.textContent = '';
@@ -273,6 +282,54 @@
     }
     if (muteBtn) muteBtn.onclick = () => applyMute(user.username, true);
     if (unmuteBtn) unmuteBtn.onclick = () => applyMute(user.username, false);
+    const { chatLogsBtn, chatLogsModalTitle } = getModalEls();
+    if (chatLogsBtn) {
+      chatLogsBtn.onclick = () => openChatLogsModal(user.username, user.displayName || user.username);
+    }
+    if (chatLogsModalTitle) {
+      chatLogsModalTitle.textContent = 'Chat logs';
+    }
+  }
+
+  async function openChatLogsModal(username, displayName) {
+    const { chatLogsModal, chatLogsList, chatLogsLoading, chatLogsModalTitle, chatLogsModalClose, chatLogsModalBackdrop } = getModalEls();
+    if (!chatLogsModal || !username) return;
+    chatLogsModal.classList.remove('hidden');
+    chatLogsModal.setAttribute('aria-hidden', 'false');
+    if (chatLogsModalTitle) chatLogsModalTitle.textContent = 'Chat logs: ' + (displayName || username);
+    if (chatLogsList) chatLogsList.innerHTML = '';
+    if (chatLogsLoading) chatLogsLoading.classList.remove('hidden');
+    try {
+      const res = await fetch(API + '/admin/users/' + encodeURIComponent(username) + '/chat-logs', { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error('Failed to load');
+      const data = await res.json().catch(() => ({}));
+      if (chatLogsLoading) chatLogsLoading.classList.add('hidden');
+      const messages = data.messages || [];
+      if (!chatLogsList) return;
+      if (messages.length === 0) {
+        chatLogsList.innerHTML = '<li class="logs-empty">No chat messages from this user.</li>';
+      } else {
+        messages.forEach((m) => {
+          const li = document.createElement('li');
+          li.className = 'logs-entry';
+          const ts = m.time != null ? Number(m.time) : NaN;
+          const time = Number.isFinite(ts) ? new Date(ts).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+          li.textContent = time + ' — ' + (m.text || '');
+          chatLogsList.appendChild(li);
+        });
+      }
+    } catch (e) {
+      if (chatLogsLoading) chatLogsLoading.classList.add('hidden');
+      if (chatLogsList) chatLogsList.innerHTML = '<li class="admin-error">' + (e.message || 'Failed to load chat logs') + '</li>';
+    }
+    const close = () => {
+      chatLogsModal.classList.add('hidden');
+      chatLogsModal.setAttribute('aria-hidden', 'true');
+      if (chatLogsModalClose) chatLogsModalClose.removeEventListener('click', close);
+      if (chatLogsModalBackdrop) chatLogsModalBackdrop.removeEventListener('click', close);
+    };
+    if (chatLogsModalClose) chatLogsModalClose.addEventListener('click', close);
+    if (chatLogsModalBackdrop) chatLogsModalBackdrop.addEventListener('click', close);
   }
 
   async function applyMute(username, isMute) {
@@ -334,7 +391,8 @@
   }
 
   function formatLogEntry(entry) {
-    const time = entry.timestamp ? new Date(entry.timestamp).toLocaleString('nb-NO', { dateStyle: 'short', timeStyle: 'medium' }) : '—';
+    const ts = entry.timestamp != null ? Number(entry.timestamp) : NaN;
+    const time = Number.isFinite(ts) ? new Date(ts).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'medium' }) : '—';
     const actor = entry.actorDisplayName || entry.actorUsername || 'System';
     const target = entry.targetDisplayName || entry.targetUsername || '—';
     switch (entry.type) {
@@ -350,7 +408,7 @@
         return time + ' — ' + actor + ' adjusted ' + target + "'s " + type + ': ' + val;
       case 'chat_mute':
         const meta = entry.meta || {};
-        return time + ' — ' + actor + ' ' + (meta.until ? 'muted ' + target + ' until ' + new Date(meta.until).toLocaleString('nb-NO') : 'unmuted ' + target);
+        return time + ' — ' + actor + ' ' + (meta.until ? 'muted ' + target + ' until ' + new Date(meta.until).toLocaleString('en-US') : 'unmuted ' + target);
       default:
         return time + ' — ' + (entry.type || 'event');
     }
@@ -435,6 +493,10 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to set role');
       showDetail(data);
+      const idx = allUsers.findIndex((u) => (u.username || '').toLowerCase() === (data.username || '').toLowerCase());
+      if (idx >= 0) {
+        allUsers[idx] = { ...allUsers[idx], role: data.role, isAdmin: data.isAdmin, isOwner: data.isOwner };
+      }
     } catch (e) {
       alert(e.message || 'Failed to set role');
     }
@@ -512,7 +574,9 @@
         }
         const filtered = allUsers.filter((u) => {
           const name = (u.displayName || u.username || '').toLowerCase();
-          return name.includes(q) || (u.username || '').toLowerCase().includes(q);
+          const username = (u.username || '').toLowerCase();
+          const id = (u.profileSlug || '').toLowerCase();
+          return name.includes(q) || username.includes(q) || id.includes(q);
         });
         renderUserList(filtered);
       });

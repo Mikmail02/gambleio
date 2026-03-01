@@ -393,6 +393,7 @@
     }
     pendingClickAmount += Game.clickEarning;
     pendingClickCount += 1;
+    Game.balance += Game.clickEarning;
     if (Game.rewardClickXP) Game.rewardClickXP();
     const floatsEl = document.getElementById('clickerFloats');
     if (floatsEl) {
@@ -421,21 +422,31 @@
     }
   }, 1000);
 
-  setInterval(async () => {
+  async function flushPendingClickEarnings() {
     if (pendingClickAmount <= 0) return;
     const toSend = pendingClickAmount;
     const countToSend = pendingClickCount;
     pendingClickAmount = 0;
     pendingClickCount = 0;
     if (window.Stats && window.Stats.sendClickEarnings) {
-      await window.Stats.sendClickEarnings(toSend, countToSend);
+      const result = await window.Stats.sendClickEarnings(toSend, countToSend);
+      if (result == null) {
+        pendingClickAmount += toSend;
+        pendingClickCount += countToSend;
+        Game.balance -= toSend;
+      }
       updateBalance();
     } else {
-      Game.balance += toSend;
       Game.totalClickEarnings = (Game.totalClickEarnings || 0);
       updateBalance();
     }
-  }, CLICK_SEND_INTERVAL_MS);
+  }
+
+  setInterval(flushPendingClickEarnings, CLICK_SEND_INTERVAL_MS);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushPendingClickEarnings();
+  });
 
   let autoClickerActive = false;
   let autoClickerInterval = null;
@@ -508,19 +519,16 @@
   }
 
   document.querySelectorAll('.btn-risk').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       if (!window.Auth || !window.Auth.requireAuth(() => {})) return;
       const risk = btn.getAttribute('data-risk');
       if (risk === 'low') {
-        Game.setPlinkoRiskLevel('low');
-        updateRiskLevelUI();
-        if (window.Plinko && window.Plinko.updateMultipliers) {
-          window.Plinko.updateMultipliers();
+        if (window.Stats && window.Stats.setPlinkoRiskLevel) {
+          const result = await window.Stats.setPlinkoRiskLevel('low');
+          if (result && result.error) return;
+        } else {
+          Game.setPlinkoRiskLevel('low');
         }
-        return;
-      }
-      if (Game.plinkoRiskUnlocked[risk]) {
-        Game.setPlinkoRiskLevel(risk);
         updateBalance();
         updateRiskLevelUI();
         if (window.Plinko && window.Plinko.updateMultipliers) {
@@ -528,7 +536,32 @@
         }
         return;
       }
-      if (Game.canUnlockPlinkoRisk(risk)) {
+      if (Game.plinkoRiskUnlocked[risk]) {
+        if (window.Stats && window.Stats.setPlinkoRiskLevel) {
+          const result = await window.Stats.setPlinkoRiskLevel(risk);
+          if (result && result.error) return;
+        } else {
+          Game.setPlinkoRiskLevel(risk);
+        }
+        updateBalance();
+        updateRiskLevelUI();
+        if (window.Plinko && window.Plinko.updateMultipliers) {
+          window.Plinko.updateMultipliers();
+        }
+        return;
+      }
+      if (Game.canUnlockPlinkoRisk(risk) && window.Stats && window.Stats.setPlinkoRiskLevel) {
+        const result = await window.Stats.setPlinkoRiskLevel(risk);
+        if (result && !result.error) {
+          updateBalance();
+          updateRiskLevelUI();
+          if (window.Plinko && window.Plinko.updateMultipliers) {
+            window.Plinko.updateMultipliers();
+          }
+        } else if (result && result.error) {
+          if (typeof alert === 'function') alert(result.error);
+        }
+      } else if (Game.canUnlockPlinkoRisk(risk)) {
         if (Game.unlockPlinkoRisk(risk)) {
           updateBalance();
           updateRiskLevelUI();

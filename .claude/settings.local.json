@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cmd /c:*)"
+      "Bash(cmd /c:*)",
+      "Bash(ls -la /c/Users/mikae/Documents/Projects/Gambleio/*.js)",
+      "Bash(python -c \"import sys,json; data=json.load\\(sys.stdin\\); print\\(data[0][''text'']\\)\")"
     ]
   }
 }

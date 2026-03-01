@@ -47,6 +47,8 @@ const plinkoStats = { totalBalls: 0, landings: Array(19).fill(0) };
 let adminLogs = [];
 const chatMessages = [];
 const CHAT_MAX = 200;
+const levelUpLogDedupe = new Map();
+const LEVEL_UP_DEDUPE_MS = 30000;
 const CHAT_DELAY_MS = 2000;
 const CHAT_BURST_COUNT = 5;
 const CHAT_BURST_WINDOW_MS = 15000;
@@ -65,7 +67,7 @@ function loadData() {
         const key = (k || '').toLowerCase().trim();
         if (key && v) {
           v.username = v.username || key;
-          if (!v.profileSlug) v.profileSlug = getProfileSlug(v.username);
+          ensureProfileSlug(v);
           users.set(key, v);
         }
       }
@@ -291,6 +293,7 @@ function ensureFields(user) {
   }
   if (!user.plinkoRiskLevel) user.plinkoRiskLevel = 'low';
   if (user.chatMutedUntil === undefined) user.chatMutedUntil = null;
+  if (user.chatRulesAccepted === undefined) user.chatRulesAccepted = false;
   if (!user.plinkoRiskUnlocked || typeof user.plinkoRiskUnlocked !== 'object') {
     user.plinkoRiskUnlocked = { medium: false, high: false, extreme: false };
   } else {
@@ -308,7 +311,7 @@ function publicUser(u) {
   const role = (u.role != null && ['member', 'mod', 'admin', 'owner'].includes(u.role)) ? u.role : null;
   return {
     username: u.username,
-    profileSlug: u.profileSlug || getProfileSlug(u.username),
+    profileSlug: u.profileSlug,
     displayName: u.displayName || u.username,
     isOwner: !!(u.isOwner || u.role === 'owner'),
     isAdmin: !!(u.isOwner || u.isAdmin || u.role === 'owner' || u.role === 'admin'),
@@ -332,27 +335,43 @@ function publicUser(u) {
     plinkoRiskLevel: u.plinkoRiskLevel || 'low',
     plinkoRiskUnlocked: u.plinkoRiskUnlocked || { medium: false, high: false, extreme: false },
     chatMutedUntil: u.chatMutedUntil != null ? u.chatMutedUntil : null,
+    chatRulesAccepted: !!u.chatRulesAccepted,
     createdAt: u.createdAt != null ? u.createdAt : null,
   };
 }
 
-function getProfileSlug(username) {
-  if (!username || typeof username !== 'string') return '';
-  if (!username.includes('@')) return username.toLowerCase();
-  return 'u' + crypto.createHash('sha256').update(username.toLowerCase()).digest('hex').slice(0, 12);
+/** Generate a unique profile id for URLs (never use email). Always use this for new users. */
+async function generateUniqueProfileSlug() {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const slug = 'u' + crypto.randomBytes(6).toString('hex');
+    if (useDb) {
+      const existing = await db.getUserByProfileSlug(slug);
+      if (!existing) return slug;
+    } else {
+      const exists = Array.from(users.values()).some((u) => (u.profileSlug || '').toLowerCase() === slug.toLowerCase());
+      if (!exists) return slug;
+    }
+  }
+  return 'u' + crypto.randomBytes(6).toString('hex');
 }
 
+/** Ensure user has a safe profile slug (no email in URL). Fixes legacy users. Returns true if slug was changed. */
 function ensureProfileSlug(user) {
-  if (!user.profileSlug) {
-    user.profileSlug = getProfileSlug(user.username);
+  const unsafe = !user.profileSlug ||
+    (typeof user.profileSlug === 'string' && user.profileSlug.includes('@')) ||
+    (typeof user.username === 'string' && user.username.includes('@') && (user.profileSlug || '').toLowerCase() === (user.username || '').toLowerCase());
+  if (unsafe) {
+    user.profileSlug = 'u' + crypto.randomBytes(6).toString('hex');
+    return true;
   }
+  return false;
 }
 
 function publicProfile(u) {
   ensureProfileSlug(u);
   return {
     username: u.username,
-    profileSlug: u.profileSlug || getProfileSlug(u.username),
+    profileSlug: u.profileSlug,
     displayName: u.displayName || u.username,
     isOwner: !!u.isOwner,
     role: (u.role != null && ['member', 'mod', 'admin', 'owner'].includes(u.role)) ? u.role : null,
@@ -387,9 +406,10 @@ app.post('/api/auth/register', async (req, res) => {
     if (await userExists(userKey)) {
       return res.status(400).json({ error: 'Username already exists' });
     }
+    const profileSlug = await generateUniqueProfileSlug();
     const user = {
       username: userKey,
-      profileSlug: getProfileSlug(userKey),
+      profileSlug,
       password: bcrypt.hashSync(password, 10),
       displayName: (displayName || '').trim() || userKey,
       role: null,
@@ -475,14 +495,16 @@ app.post('/api/auth/logout', async (req, res) => {
 // ----- Admin (owner, admin, or mod) -----
 function requireAdmin(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  getUserFromSession(token).then((user) => {
-    if (!user) return res.status(401).json({ error: 'Not authenticated' });
-    ensureFields(user);
-    const canAdmin = user.isOwner || user.isAdmin || user.role === 'mod' || user.role === 'owner';
-    if (!canAdmin) return res.status(403).json({ error: 'Forbidden' });
-    req.adminUser = user;
-    next();
-  }).catch(next);
+  getUserFromSession(token)
+    .then((user) => {
+      if (!user) return res.status(401).json({ error: 'Not authenticated' });
+      ensureFields(user);
+      const canAdmin = user.isOwner || user.isAdmin || user.role === 'mod' || user.role === 'owner';
+      if (!canAdmin) return res.status(403).json({ error: 'Forbidden' });
+      req.adminUser = user;
+      next();
+    })
+    .catch(next);
 }
 
 function requireOwner(req, res, next) {
@@ -502,7 +524,7 @@ function adminSafeUser(u) {
   const level = getLevelFromXp(u.xp || 0);
   return {
     username: u.username,
-    profileSlug: u.profileSlug || getProfileSlug(u.username),
+    profileSlug: u.profileSlug,
     displayName: u.displayName || u.username,
     balance: u.balance ?? 0,
     level,
@@ -593,10 +615,31 @@ app.get('/api/admin/users/:username', requireAdmin, async (req, res) => {
     const key = (req.params.username || '').toLowerCase().trim();
     const user = await getUserByKeyOrSlug(key);
     if (!user) return res.status(404).json({ error: 'User not found' });
+    if (ensureProfileSlug(user)) {
+      if (!useDb) users.set(user.username, user);
+      await saveUser(user);
+    }
     res.json(adminSafeUser(user));
   } catch (e) {
     console.error('Admin user detail error:', e);
     res.status(500).json({ error: 'Failed to load user' });
+  }
+});
+
+app.get('/api/admin/users/:username/chat-logs', requireAdmin, async (req, res) => {
+  try {
+    const key = (req.params.username || '').toLowerCase().trim();
+    const user = await getUserByKeyOrSlug(key);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const targetUsername = (user.username || '').toLowerCase();
+    const logs = chatMessages
+      .filter((m) => (m.username || '').toLowerCase() === targetUsername)
+      .map((m) => ({ text: m.text, time: m.time, displayName: m.displayName, role: m.role }))
+      .slice(-500);
+    res.json({ messages: logs.reverse() });
+  } catch (e) {
+    console.error('Admin chat logs error:', e);
+    res.status(500).json({ error: 'Failed to load chat logs' });
   }
 });
 
@@ -650,6 +693,10 @@ app.get('/api/user/:slug/profile', async (req, res) => {
   const user = await getUserByKeyOrSlug(slug);
   if (!user) return res.status(404).json({ error: 'User not found' });
   ensureFields(user);
+  if (ensureProfileSlug(user)) {
+    if (!useDb) users.set(user.username, user);
+    await saveUser(user);
+  }
   user.level = getLevelFromXp(user.xp);
   res.json(publicProfile(user));
 });
@@ -665,10 +712,23 @@ app.get('/api/user/stats', async (req, res) => {
   res.json(publicUser(user));
 });
 
+// Accept chat rules (one-time; stored per user)
+app.post('/api/user/chat-rules-accept', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  user.chatRulesAccepted = true;
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
+  res.json({ chatRulesAccepted: true });
+});
+
 // ===== CHAT =====
 // Mute and rate limits are enforced only on the server. Clients cannot bypass via API, console or any request.
+const CHAT_API_LIMIT = 100;
 app.get('/api/chat', (req, res) => {
-  res.json({ messages: chatMessages.slice(-CHAT_MAX) });
+  res.json({ messages: chatMessages.slice(-CHAT_API_LIMIT) });
 });
 
 app.post('/api/chat', async (req, res) => {
@@ -716,16 +776,18 @@ app.post('/api/chat', async (req, res) => {
   }
 
   const text = (req.body?.text || '').toString().trim();
-  if (!text || text.length > 500) return res.status(400).json({ error: 'Melding må være 1–500 tegn' });
+  if (!text || text.length > 500) return res.status(400).json({ error: 'Message must be 1–500 characters' });
 
   chatLastSend[key] = now;
   recent.push(now);
   chatRecentSends[key] = recent;
 
+  ensureProfileSlug(user);
   const role = (user.role && ['member', 'mod', 'admin', 'owner'].includes(user.role)) ? user.role : null;
   const msg = {
     username: user.username,
     displayName: user.displayName || user.username,
+    profileSlug: user.profileSlug || null,
     role,
     text,
     time: now,
@@ -748,7 +810,13 @@ app.post('/api/user/update-stats', async (req, res) => {
     user.level = getLevelFromXp(xp);
     const newLevel = user.level;
     if (newLevel > oldLevel) {
-      await addAdminLog({ type: 'level_up', targetUsername: user.username, targetDisplayName: user.displayName, newLevel, previousLevel: oldLevel });
+      const key = `${user.username}:${newLevel}`;
+      const last = levelUpLogDedupe.get(key) || 0;
+      const now = Date.now();
+      if (now - last >= LEVEL_UP_DEDUPE_MS) {
+        levelUpLogDedupe.set(key, now);
+        await addAdminLog({ type: 'level_up', targetUsername: user.username, targetDisplayName: user.displayName, newLevel, previousLevel: oldLevel });
+      }
     }
   } else if (level !== undefined) user.level = level;
   if (biggestWinAmount !== undefined && biggestWinAmount > user.biggestWinAmount) {
@@ -925,7 +993,7 @@ async function buildLeaderboardRows(type) {
     const level = getLevelFromXp(xp);
     return {
       username: u.username,
-      profileSlug: u.profileSlug || getProfileSlug(u.username),
+      profileSlug: u.profileSlug,
       displayName: u.displayName || u.username,
       isOwner: !!u.isOwner,
       balance: u.balance ?? 0,
