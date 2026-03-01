@@ -13,6 +13,22 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
+// Redirect www to root domain so gambleio.com is the canonical URL (production only)
+const ROOT_DOMAIN = process.env.ROOT_DOMAIN || 'gambleio.com';
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV !== 'production') return next();
+  const host = (req.get('host') || '').toLowerCase();
+  if (host.startsWith('www.')) {
+    const root = host.replace(/^www\./, '');
+    if (root === ROOT_DOMAIN.toLowerCase()) {
+      const url = 'https://' + ROOT_DOMAIN + (req.originalUrl || '/');
+      return res.redirect(301, url);
+    }
+  }
+  next();
+});
+
 app.use(express.static(__dirname));
 
 // --- File-based persistence ---
@@ -21,11 +37,13 @@ const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : pat
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 const PLINKO_STATS_FILE = path.join(DATA_DIR, 'plinko-stats.json');
+const ADMIN_LOGS_FILE = path.join(DATA_DIR, 'admin-logs.json');
 
 const users = new Map();
 const sessions = new Map();
 
 const plinkoStats = { totalBalls: 0, landings: Array(19).fill(0) };
+let adminLogs = [];
 
 function loadData() {
   try {
@@ -54,6 +72,11 @@ function loadData() {
       while (plinkoStats.landings.length < 19) plinkoStats.landings.push(0);
       console.log(`Loaded plinko stats: ${plinkoStats.totalBalls} balls`);
     }
+    if (fs.existsSync(ADMIN_LOGS_FILE)) {
+      const arr = JSON.parse(fs.readFileSync(ADMIN_LOGS_FILE, 'utf8'));
+      adminLogs = Array.isArray(arr) ? arr : [];
+      console.log(`Loaded ${adminLogs.length} admin logs`);
+    }
   } catch (e) {
     console.warn('Could not load data, starting fresh:', e.message);
   }
@@ -81,6 +104,20 @@ function saveSessions() {
   } catch (e) {
     console.error('Failed to save sessions:', e.message);
   }
+}
+
+function saveAdminLogs() {
+  try {
+    fs.writeFileSync(ADMIN_LOGS_FILE, JSON.stringify(adminLogs.slice(-2000), null, 2));
+  } catch (e) {
+    console.error('Failed to save admin logs:', e.message);
+  }
+}
+
+function addAdminLog(entry) {
+  adminLogs.push({ ...entry, timestamp: entry.timestamp || Date.now() });
+  if (adminLogs.length > 2000) adminLogs = adminLogs.slice(-2000);
+  saveAdminLogs();
 }
 
 loadData();
@@ -133,6 +170,8 @@ function ensureMikmailUser() {
     gamePlayCounts: emptyGamePlayCounts(),
     xpBySource: emptyXpBySource(),
     isOwner: true,
+    isAdmin: true,
+    role: 'owner',
     createdAt: Date.now(),
   };
   ensureFields(fullUser);
@@ -145,6 +184,8 @@ function ensureMikmailUser() {
     user.password = fullUser.password;
     user.displayName = 'Mikmail';
     user.isOwner = true;
+    user.isAdmin = true;
+    user.role = 'owner';
     ensureFields(user);
     user.level = getLevelFromXp(user.xp);
     users.set(key, user);
@@ -183,6 +224,9 @@ function ensureFields(user) {
   if (user.balance === undefined) user.balance = 0;
   if (user.createdAt === undefined) user.createdAt = Date.now();
   if (user.analyticsStartedAt === undefined) user.analyticsStartedAt = Date.now();
+  if (user.isAdmin === undefined) user.isAdmin = !!user.isOwner;
+  if (user.role === undefined) user.role = user.isOwner ? 'owner' : (user.isAdmin ? 'admin' : 'member');
+  if (user.role !== null && !['member', 'mod', 'admin', 'owner'].includes(user.role)) user.role = 'member';
   if (user.totalProfitWins === undefined) user.totalProfitWins = 0;
   if (!user.gameNet || typeof user.gameNet !== 'object') {
     user.gameNet = emptyGameNet();
@@ -249,6 +293,7 @@ function publicUser(u) {
     profileSlug: u.profileSlug || getProfileSlug(u.username),
     displayName: u.displayName || u.username,
     isOwner: !!u.isOwner,
+    isAdmin: !!(u.isOwner || u.isAdmin),
     balance: u.balance,
     totalGamblingWins: u.totalGamblingWins,
     totalClickEarnings: u.totalClickEarnings,
@@ -267,6 +312,7 @@ function publicUser(u) {
     xpBySource: u.xpBySource || emptyXpBySource(),
     plinkoRiskLevel: u.plinkoRiskLevel || 'low',
     plinkoRiskUnlocked: u.plinkoRiskUnlocked || { medium: false, high: false, extreme: false },
+    role: u.role === null ? null : (['member', 'mod', 'admin', 'owner'].includes(u.role) ? u.role : 'member'),
   };
 }
 
@@ -289,6 +335,7 @@ function publicProfile(u) {
     profileSlug: u.profileSlug || getProfileSlug(u.username),
     displayName: u.displayName || u.username,
     isOwner: !!u.isOwner,
+    role: u.role === null ? null : (['member', 'mod', 'admin', 'owner'].includes(u.role) ? u.role : 'member'),
     totalGamblingWins: u.totalGamblingWins,
     totalClickEarnings: u.totalClickEarnings,
     totalBets: u.totalBets || 0,
@@ -323,6 +370,7 @@ app.post('/api/auth/register', (req, res) => {
     profileSlug: getProfileSlug(userKey),
     password: bcrypt.hashSync(password, 10),
     displayName: (displayName || '').trim() || userKey,
+    role: null,
     balance: 10000,
     totalGamblingWins: 0,
     totalClickEarnings: 0,
@@ -345,6 +393,7 @@ app.post('/api/auth/register', (req, res) => {
   };
   users.set(userKey, user);
   saveUsers();
+  addAdminLog({ type: 'user_registered', targetUsername: userKey, targetDisplayName: user.displayName });
   const token = generateToken();
   sessions.set(token, userKey);
   saveSessions();
@@ -393,6 +442,114 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
+// ----- Admin (owner, admin, or mod) -----
+function requireAdmin(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  const canAdmin = user.isOwner || user.isAdmin || user.role === 'mod';
+  if (!canAdmin) return res.status(403).json({ error: 'Forbidden' });
+  req.adminUser = user;
+  next();
+}
+
+function requireOwner(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  if (!user.isOwner) return res.status(403).json({ error: 'Forbidden' });
+  req.adminUser = user;
+  next();
+}
+
+function adminSafeUser(u) {
+  ensureFields(u);
+  ensureProfileSlug(u);
+  const level = getLevelFromXp(u.xp || 0);
+  return {
+    username: u.username,
+    profileSlug: u.profileSlug || getProfileSlug(u.username),
+    displayName: u.displayName || u.username,
+    balance: u.balance ?? 0,
+    level,
+    xp: u.xp || 0,
+    totalClicks: u.totalClicks || 0,
+    totalBets: u.totalBets || 0,
+    totalGamblingWins: u.totalGamblingWins || 0,
+    totalWinsCount: u.totalWinsCount || 0,
+    biggestWinAmount: u.biggestWinAmount || 0,
+    biggestWinMultiplier: u.biggestWinMultiplier || 1,
+    isOwner: !!u.isOwner,
+    isAdmin: !!(u.isOwner || u.isAdmin),
+    role: u.role === null || u.role === undefined ? null : (['member', 'mod', 'admin', 'owner'].includes(u.role) ? u.role : 'member'),
+    createdAt: u.createdAt || null,
+  };
+}
+
+app.post('/api/admin/users/:username/role', requireAdmin, (req, res) => {
+  const key = (req.params.username || '').toLowerCase().trim();
+  const user = users.get(key) || Array.from(users.values()).find((u) => (u.profileSlug || '').toLowerCase() === key);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const role = (req.body.role || '').toLowerCase().trim();
+  if (!['member', 'mod', 'admin', 'owner'].includes(role)) return res.status(400).json({ error: 'Invalid role. Use member, mod, admin, or owner.' });
+  if (role === 'owner' && !req.adminUser.isOwner) return res.status(403).json({ error: 'Only owner can assign owner role' });
+  ensureFields(user);
+  user.role = role;
+  user.isOwner = role === 'owner';
+  user.isAdmin = role === 'admin' || role === 'owner';
+  users.set(user.username, user);
+  saveUsers();
+  addAdminLog({ type: 'role_assigned', actorUsername: req.adminUser.username, actorDisplayName: req.adminUser.displayName, targetUsername: user.username, targetDisplayName: user.displayName, role });
+  res.json(adminSafeUser(user));
+});
+
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+  const list = Array.from(users.values()).map((u) => adminSafeUser(u));
+  res.json(list);
+});
+
+app.get('/api/admin/users/:username', requireAdmin, (req, res) => {
+  const key = (req.params.username || '').toLowerCase().trim();
+  const user = users.get(key) || Array.from(users.values()).find((u) => (u.profileSlug || '').toLowerCase() === key);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json(adminSafeUser(user));
+});
+
+app.post('/api/admin/users/:username/adjust', requireAdmin, (req, res) => {
+  if (req.adminUser.role === 'mod') return res.status(403).json({ error: 'Only Admin or Owner can adjust XP or money' });
+  const key = (req.params.username || '').toLowerCase().trim();
+  const user = users.get(key) || Array.from(users.values()).find((u) => (u.profileSlug || '').toLowerCase() === key);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  ensureFields(user);
+  const { type, value } = req.body;
+  const num = typeof value === 'number' ? value : parseInt(String(value || '').trim(), 10);
+  if (!Number.isFinite(num)) return res.status(400).json({ error: 'Invalid value' });
+  if (type === 'xp') {
+    user.xp = Math.max(0, (user.xp || 0) + num);
+    user.level = getLevelFromXp(user.xp);
+    users.set(user.username, user);
+    saveUsers();
+    addAdminLog({ type: 'adjust', actorUsername: req.adminUser.username, actorDisplayName: req.adminUser.displayName, targetUsername: user.username, targetDisplayName: user.displayName, adjustType: 'xp', value: num });
+    return res.json({ username: user.username, xp: user.xp, level: user.level });
+  }
+  if (type === 'money') {
+    user.balance = Math.max(0, (user.balance ?? 0) + num);
+    users.set(user.username, user);
+    saveUsers();
+    addAdminLog({ type: 'adjust', actorUsername: req.adminUser.username, actorDisplayName: req.adminUser.displayName, targetUsername: user.username, targetDisplayName: user.displayName, adjustType: 'money', value: num });
+    return res.json({ username: user.username, balance: user.balance });
+  }
+  return res.status(400).json({ error: 'Invalid type. Use "xp" or "money".' });
+});
+
+app.get('/api/admin/logs', requireOwner, (req, res) => {
+  const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 500), 1000);
+  const list = adminLogs.slice(-limit).reverse();
+  res.json(list);
+});
+
 // Public profile (no balance, no email) – for viewing other users. Lookup by username or profileSlug.
 app.get('/api/user/:slug/profile', (req, res) => {
   const slug = (req.params.slug || '').trim();
@@ -429,8 +586,13 @@ app.post('/api/user/update-stats', (req, res) => {
   ensureFields(user);
   const { level, xp, biggestWinAmount, biggestWinMultiplier } = req.body;
   if (xp !== undefined) {
+    const oldLevel = getLevelFromXp(user.xp || 0);
     user.xp = xp;
     user.level = getLevelFromXp(xp);
+    const newLevel = user.level;
+    if (newLevel > oldLevel) {
+      addAdminLog({ type: 'level_up', targetUsername: user.username, targetDisplayName: user.displayName, newLevel, previousLevel: oldLevel });
+    }
   } else if (level !== undefined) user.level = level;
   if (biggestWinAmount !== undefined && biggestWinAmount > user.biggestWinAmount) {
     user.biggestWinAmount = biggestWinAmount;

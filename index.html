@@ -23,6 +23,8 @@
         <a href="#profile" class="nav-link" data-page="profile" id="navProfile">Profile</a>
       </nav>
       <div class="header-right">
+        <button type="button" class="btn-logs-header hidden" id="logsBtn" title="Logs" aria-label="Logs">Logs</button>
+        <button type="button" class="btn-admin-header btn-admin-header--role hidden" id="adminBtn" title="Admin panel" aria-label="Admin">Admin</button>
         <div id="userInfo" class="user-info hidden">
           <img id="userAvatar" class="user-avatar" src="" alt="Avatar">
           <div class="user-details">
@@ -124,16 +126,6 @@
       <!-- Plinko -->
       <section id="page-plinko" class="page page-plinko hidden">
         <aside class="controls">
-          <div class="control-group">
-            <div class="plinko-mode-toggle" id="plinkoControlToggle">
-              <button type="button" class="plinko-mode-btn is-active" id="plinkoModeManual">Manual</button>
-              <button type="button" class="plinko-mode-btn" id="plinkoModeAutomatic">Automatic</button>
-            </div>
-          </div>
-          <div class="control-group hidden" id="plinkoAutoBetsGroup">
-            <label for="plinkoAutoBets">Auto bets (blank = infinite)</label>
-            <input type="number" id="plinkoAutoBets" min="1" step="1" placeholder="e.g. 100">
-          </div>
           <div class="control-group risk-level-group">
             <p class="risk-level-title">Risk level</p>
             <p class="risk-level-current" id="riskLevelCurrent">Low</p>
@@ -143,6 +135,16 @@
               <button type="button" class="btn-risk" data-risk="high" id="buyHigh">High <span class="risk-cost" id="costHigh"></span></button>
               <button type="button" class="btn-risk" data-risk="extreme" id="buyExtreme">Extreme <span class="risk-cost" id="costExtreme"></span></button>
             </div>
+          </div>
+          <div class="control-group">
+            <div class="plinko-mode-toggle" id="plinkoControlToggle">
+              <button type="button" class="plinko-mode-btn is-active" id="plinkoModeManual">Manual</button>
+              <button type="button" class="plinko-mode-btn" id="plinkoModeAutomatic">Automatic</button>
+            </div>
+          </div>
+          <div class="control-group hidden" id="plinkoAutoBetsGroup">
+            <label for="plinkoAutoBets">Auto bets (blank = infinite)</label>
+            <input type="number" id="plinkoAutoBets" min="1" step="1" placeholder="e.g. 100">
           </div>
           <div class="control-group">
             <label for="bet">Bet per ball ($)</label>
@@ -349,7 +351,7 @@
             <img id="profileAvatar" class="profile-avatar" src="" alt="Avatar">
             <div class="profile-name-row">
               <p class="profile-name" id="profileName">User</p>
-              <div id="profileOwnerTag" class="profile-owner-tag hidden">Owner</div>
+              <span id="profileRoleTag" class="profile-role-tag profile-role-tag--member" aria-hidden="false">Member</span>
             </div>
             <div class="rank-badge rank-badge--profile rank-tier rank-tier-noob rank-div-5" id="profileRankBadge">
               <span class="rank-badge-main" id="profileRankLabel">Noob V</span>
@@ -384,6 +386,86 @@
     </main>
   </div>
 
+  <!-- Admin Panel Modal (owner/admin only) -->
+  <div id="adminModal" class="modal admin-modal hidden" aria-hidden="true">
+    <div class="admin-modal-backdrop" id="adminModalBackdrop"></div>
+    <div class="admin-modal-content">
+      <div class="admin-modal-head">
+        <h2 class="admin-modal-title">Admin</h2>
+        <button type="button" class="admin-modal-close" id="adminModalClose" aria-label="Close">×</button>
+      </div>
+      <div class="admin-modal-body">
+        <div class="admin-panel-list" id="adminPanelList">
+          <input type="text" id="adminUserSearch" class="admin-user-search" placeholder="Search users…" aria-label="Search users">
+          <div id="adminUserList">
+            <div class="admin-loading" id="adminListLoading">Loading users…</div>
+          </div>
+        </div>
+        <div class="admin-panel-detail hidden" id="adminUserDetail">
+          <div class="admin-detail-head">
+            <button type="button" class="admin-detail-back" id="adminDetailBack">← Back</button>
+            <div class="admin-detail-name-row">
+              <h3 class="admin-detail-name" id="adminDetailName">—</h3>
+              <span class="admin-detail-current-role" id="adminDetailCurrentRole"></span>
+            </div>
+            <div class="admin-detail-roles" id="adminDetailRoles"></div>
+          </div>
+          <div class="admin-detail-stats" id="adminDetailStats"></div>
+          <div class="admin-detail-actions">
+            <div class="admin-adjust-row">
+              <label>XP</label>
+              <input type="text" id="adminXpInput" placeholder="e.g. 500 or -100" class="admin-adjust-input">
+              <button type="button" class="btn-admin-adjust" id="adminXpBtn">Apply</button>
+            </div>
+            <div class="admin-adjust-row">
+              <label>Money</label>
+              <input type="text" id="adminMoneyInput" placeholder="e.g. 1000 or -500" class="admin-adjust-input">
+              <button type="button" class="btn-admin-adjust" id="adminMoneyBtn">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Logs modal (owner only) -->
+  <div id="logsModal" class="modal admin-modal hidden" aria-hidden="true">
+    <div class="admin-modal-backdrop" id="logsModalBackdrop"></div>
+    <div class="admin-modal-content logs-modal-content">
+      <div class="admin-modal-head">
+        <h2 class="admin-modal-title">Logs</h2>
+        <button type="button" class="admin-modal-close" id="logsModalClose" aria-label="Close">×</button>
+      </div>
+      <div class="logs-modal-body">
+        <div class="admin-loading" id="logsLoading">Loading logs…</div>
+        <ul class="logs-list" id="logsList"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- No access modal (admin panel) -->
+  <div id="noAccessModal" class="modal admin-modal role-confirm-modal hidden" aria-hidden="true">
+    <div class="admin-modal-backdrop" id="noAccessBackdrop"></div>
+    <div class="admin-modal-content role-confirm-content">
+      <p class="role-confirm-message" id="noAccessMessage">No access: You don't have access to modify this user.</p>
+      <div class="role-confirm-actions">
+        <button type="button" class="btn-role-confirm-ok" id="noAccessOk">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Role confirm modal (used by admin panel) -->
+  <div id="roleConfirmModal" class="modal admin-modal role-confirm-modal hidden" aria-hidden="true">
+    <div class="admin-modal-backdrop" id="roleConfirmBackdrop"></div>
+    <div class="admin-modal-content role-confirm-content">
+      <p class="role-confirm-message" id="roleConfirmMessage">Do you want to give this user the role?</p>
+      <div class="role-confirm-actions">
+        <button type="button" class="btn-role-confirm-cancel" id="roleConfirmCancel">Cancel</button>
+        <button type="button" class="btn-role-confirm-ok" id="roleConfirmOk">Confirm</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Login Modal -->
   <div id="loginModal" class="modal hidden">
     <div class="modal-content auth-modal">
@@ -413,6 +495,7 @@
   </div>
 
   <script src="js/auth.js"></script>
+  <script src="js/admin.js"></script>
   <script src="js/game.js"></script>
   <script src="js/stats.js"></script>
   <script src="js/leaderboard.js"></script>

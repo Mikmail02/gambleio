@@ -1170,6 +1170,488 @@ body {
   color: var(--text);
 }
 
+/* Admin header button – shows role (Owner / Admin / Mod), only for those roles */
+.btn-admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 0.6rem;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+.btn-admin-header--owner {
+  border: 1px solid rgba(239,68,68,0.5);
+  background: linear-gradient(135deg, rgba(239,68,68,0.22), rgba(220,38,38,0.14));
+  color: rgba(239,68,68,0.98);
+  box-shadow: 0 2px 10px rgba(239,68,68,0.25);
+}
+.btn-admin-header--owner:hover {
+  border-color: rgba(239,68,68,0.7);
+  box-shadow: 0 4px 14px rgba(239,68,68,0.4);
+}
+.btn-admin-header--admin {
+  border: 1px solid rgba(245,197,66,0.45);
+  background: linear-gradient(135deg, rgba(245,197,66,0.22), rgba(230,170,100,0.14));
+  color: rgba(245,197,66,0.98);
+  box-shadow: 0 2px 8px rgba(245,197,66,0.2);
+}
+.btn-admin-header--admin:hover {
+  border-color: rgba(245,197,66,0.6);
+  box-shadow: 0 3px 12px rgba(245,197,66,0.35);
+}
+.btn-admin-header--mod {
+  border: 1px solid rgba(0,199,179,0.45);
+  background: linear-gradient(135deg, rgba(0,212,200,0.22), rgba(0,180,170,0.14));
+  color: rgba(0,199,179,0.98);
+  box-shadow: 0 2px 8px rgba(0,199,179,0.18);
+}
+.btn-admin-header--mod:hover {
+  border-color: rgba(0,199,179,0.6);
+  box-shadow: 0 3px 12px rgba(0,199,179,0.3);
+}
+.btn-admin-header.hidden {
+  display: none !important;
+}
+
+/* Logs button (owner only) – matches owner style */
+.btn-logs-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 0.6rem;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  border: 1px solid rgba(239,68,68,0.5);
+  background: linear-gradient(135deg, rgba(239,68,68,0.22), rgba(220,38,38,0.14));
+  color: rgba(239,68,68,0.98);
+  box-shadow: 0 2px 10px rgba(239,68,68,0.25);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.btn-logs-header:hover {
+  border-color: rgba(239,68,68,0.7);
+  box-shadow: 0 4px 14px rgba(239,68,68,0.4);
+}
+.btn-logs-header.hidden {
+  display: none !important;
+}
+
+/* Admin modal popup */
+.admin-modal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+}
+.admin-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+}
+.admin-modal-content {
+  position: relative;
+  width: 92%;
+  max-width: 480px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(160deg, rgba(22,28,38,0.98), rgba(16,20,28,0.98));
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,212,170,0.08);
+  overflow: hidden;
+}
+.admin-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+}
+.admin-modal-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+.admin-modal-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.admin-modal-close:hover {
+  background: rgba(255,255,255,0.12);
+  color: var(--text);
+}
+
+/* Role confirm modal (matches admin modal) */
+.role-confirm-modal .role-confirm-content {
+  position: relative;
+  width: 92%;
+  max-width: 380px;
+  padding: 1.5rem 1.25rem;
+  background: linear-gradient(160deg, rgba(22,28,38,0.98), rgba(16,20,28,0.98));
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,212,170,0.08);
+}
+.role-confirm-message {
+  margin: 0 0 1.25rem;
+  font-size: 1rem;
+  color: var(--text);
+  line-height: 1.45;
+}
+.role-confirm-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+.btn-role-confirm-cancel,
+.btn-role-confirm-ok {
+  padding: 0.5rem 1.1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.btn-role-confirm-cancel {
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.06);
+  color: var(--text-muted);
+}
+.btn-role-confirm-cancel:hover {
+  background: rgba(255,255,255,0.1);
+  color: var(--text);
+}
+.btn-role-confirm-ok {
+  border: 1px solid rgba(0,212,170,0.4);
+  background: rgba(0,212,170,0.15);
+  color: var(--accent);
+}
+.btn-role-confirm-ok:hover {
+  background: rgba(0,212,170,0.25);
+}
+
+.admin-modal-body {
+  padding: 1rem;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Logs modal */
+.logs-modal-content {
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.logs-modal-body {
+  padding: 1rem;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 200px;
+  position: relative;
+}
+.logs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.logs-entry {
+  font-size: 0.85rem;
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+  background: rgba(255,255,255,0.04);
+  border-radius: 8px;
+  border-left: 3px solid var(--accent);
+}
+.logs-empty {
+  color: var(--text-muted);
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.admin-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 200px;
+}
+.admin-user-search {
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.95rem;
+  background: var(--bg-input);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  color: var(--text);
+  transition: border-color 0.2s;
+}
+.admin-user-search::placeholder {
+  color: var(--text-muted);
+}
+.admin-user-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.admin-panel-detail {
+  min-height: 200px;
+}
+.admin-panel-detail.hidden {
+  display: none !important;
+}
+#adminUserList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.admin-user-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.admin-user-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--bg-input);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.admin-user-item:hover {
+  border-color: rgba(0,212,170,0.35);
+  background: rgba(0,212,170,0.06);
+}
+.admin-user-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.admin-user-name {
+  font-weight: 600;
+  color: var(--text);
+}
+.admin-list-role-tag {
+  font-size: 0.65rem;
+  padding: 0.2rem 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.admin-user-meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.admin-detail-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.25rem;
+}
+.admin-detail-current-role {
+  font-size: 0.7rem;
+  padding: 0.25rem 0.55rem;
+}
+.admin-detail-current-role.hidden {
+  display: none !important;
+}
+.admin-loading,
+.admin-empty,
+.admin-error {
+  text-align: center;
+  padding: 1.5rem;
+  color: var(--text-muted);
+}
+.admin-error {
+  color: var(--danger);
+}
+.admin-detail-head {
+  margin-bottom: 1rem;
+}
+.admin-detail-back {
+  padding: 0.35rem 0;
+  margin-bottom: 0.5rem;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.admin-detail-back:hover {
+  color: var(--text);
+}
+.admin-detail-name {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+.admin-detail-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.admin-role-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.2s, filter 0.2s;
+}
+.admin-role-tag:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
+}
+.admin-role-tag.is-current {
+  box-shadow: 0 0 0 2px currentColor;
+}
+/* Member – fancy green */
+.admin-role-tag--member {
+  color: rgba(72,187,120,0.98);
+  background: linear-gradient(135deg, rgba(72,187,120,0.2), rgba(56,161,105,0.12));
+  border-color: rgba(72,187,120,0.4);
+  box-shadow: 0 1px 6px rgba(72,187,120,0.15);
+}
+.admin-role-tag--member:hover { box-shadow: 0 2px 10px rgba(72,187,120,0.25); }
+/* Mod – fancy turquoise */
+.admin-role-tag--mod {
+  color: rgba(0,199,179,0.98);
+  background: linear-gradient(135deg, rgba(0,212,200,0.22), rgba(0,180,170,0.14));
+  border-color: rgba(0,199,179,0.45);
+  box-shadow: 0 2px 8px rgba(0,199,179,0.18);
+}
+.admin-role-tag--mod:hover { box-shadow: 0 3px 12px rgba(0,199,179,0.3); }
+.admin-role-tag--mod.is-current { box-shadow: 0 0 0 2px rgba(0,199,179,0.8); }
+/* Admin – fancy gold */
+.admin-role-tag--admin {
+  color: rgba(245,197,66,0.98);
+  background: linear-gradient(135deg, rgba(245,197,66,0.22), rgba(230,170,100,0.14));
+  border-color: rgba(245,197,66,0.45);
+  box-shadow: 0 2px 8px rgba(245,197,66,0.2);
+}
+.admin-role-tag--admin:hover { box-shadow: 0 3px 12px rgba(245,197,66,0.35); }
+.admin-role-tag--admin.is-current { box-shadow: 0 0 0 2px rgba(245,197,66,0.9); }
+/* Owner – fancy red */
+.admin-role-tag--owner {
+  color: rgba(239,68,68,0.98);
+  background: linear-gradient(135deg, rgba(239,68,68,0.22), rgba(220,38,38,0.14));
+  border-color: rgba(239,68,68,0.5);
+  box-shadow: 0 2px 10px rgba(239,68,68,0.25);
+}
+.admin-role-tag--owner:hover { box-shadow: 0 4px 14px rgba(239,68,68,0.4); }
+.admin-role-tag--owner.is-current { box-shadow: 0 0 0 2px rgba(239,68,68,0.9); }
+.admin-detail-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 1.5rem;
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  background: var(--bg-input);
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.admin-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.admin-stat-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.admin-stat-value {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 1rem;
+}
+.admin-detail-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.admin-adjust-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.admin-adjust-row label {
+  min-width: 52px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.admin-adjust-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 0.5rem 0.65rem;
+  background: var(--bg-input);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+.admin-adjust-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.btn-admin-adjust {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: rgba(0,212,170,0.15);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.btn-admin-adjust:hover {
+  background: rgba(0,212,170,0.25);
+  color: var(--text);
+}
+
 .modal-content h2 {
   margin-bottom: 1.5rem;
   font-size: 1.5rem;
@@ -1636,7 +2118,7 @@ body {
   border: 1px solid rgba(255,255,255,0.11);
   box-shadow: 0 18px 48px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .profile-container::before {
@@ -1651,12 +2133,13 @@ body {
 /* Owner crown – hangs on corner of profile */
 .profile-owner-crown {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  font-size: 2.2rem;
+  top: -14px;
+  right: -14px;
+  font-size: 2.4rem;
   line-height: 1;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
-  z-index: 2;
+  transform: rotate(-18deg);
+  filter: drop-shadow(0 3px 6px rgba(0,0,0,0.5)) drop-shadow(0 0 12px rgba(245,197,66,0.25));
+  z-index: 3;
   animation: crown-shine 3s ease-in-out infinite;
 }
 
@@ -1665,28 +2148,52 @@ body {
 }
 
 @keyframes crown-shine {
-  0%, 100% { filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); opacity: 1; }
-  50% { filter: drop-shadow(0 0 12px rgba(245,197,66,0.6)); opacity: 0.95; }
+  0%, 100% { filter: drop-shadow(0 3px 6px rgba(0,0,0,0.5)) drop-shadow(0 0 12px rgba(245,197,66,0.25)); opacity: 1; }
+  50% { filter: drop-shadow(0 3px 6px rgba(0,0,0,0.5)) drop-shadow(0 0 16px rgba(245,197,66,0.5)); opacity: 0.95; }
 }
 
-/* Owner tag – clean badge below name */
-.profile-owner-tag {
+/* Profile role tag – Member / Mod / Admin / Owner, fancy by level */
+.profile-role-tag {
   display: inline-flex;
   align-items: center;
-  padding: 0.2rem 0.65rem;
-  font-size: 0.65rem;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.7rem;
   font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(245, 197, 66, 0.98);
-  background: linear-gradient(135deg, rgba(245,197,66,0.18), rgba(230,170,100,0.12));
-  border: 1px solid rgba(245,197,66,0.35);
-  border-radius: 4px;
-  box-shadow: 0 1px 6px rgba(245,197,66,0.12);
+  border-radius: 6px;
+  border: 1px solid transparent;
 }
-
-.profile-owner-tag.hidden {
+.profile-role-tag.hidden {
   display: none !important;
+}
+/* Member – green */
+.profile-role-tag--member {
+  color: rgba(72,187,120,0.98);
+  background: linear-gradient(135deg, rgba(72,187,120,0.2), rgba(56,161,105,0.12));
+  border-color: rgba(72,187,120,0.4);
+  box-shadow: 0 1px 6px rgba(72,187,120,0.15);
+}
+/* Mod – turquoise, fancier */
+.profile-role-tag--mod {
+  color: rgba(0,199,179,0.98);
+  background: linear-gradient(135deg, rgba(0,212,200,0.22), rgba(0,180,170,0.14));
+  border-color: rgba(0,199,179,0.45);
+  box-shadow: 0 2px 8px rgba(0,199,179,0.18);
+}
+/* Admin – gold, fancier */
+.profile-role-tag--admin {
+  color: rgba(245,197,66,0.98);
+  background: linear-gradient(135deg, rgba(245,197,66,0.22), rgba(230,170,100,0.14));
+  border-color: rgba(245,197,66,0.45);
+  box-shadow: 0 2px 8px rgba(245,197,66,0.2);
+}
+/* Owner – red, most fancy */
+.profile-role-tag--owner {
+  color: rgba(239,68,68,0.98);
+  background: linear-gradient(135deg, rgba(239,68,68,0.22), rgba(220,38,38,0.14));
+  border-color: rgba(239,68,68,0.5);
+  box-shadow: 0 2px 10px rgba(239,68,68,0.25);
 }
 
 .profile-title {

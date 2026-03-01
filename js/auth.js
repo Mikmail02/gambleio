@@ -25,6 +25,9 @@
     if (userStr) {
       try {
         currentUser = JSON.parse(userStr);
+        if (currentUser.role === undefined) {
+          currentUser.role = currentUser.isOwner ? 'owner' : (currentUser.isAdmin ? 'admin' : 'member');
+        }
         if (window.Auth) window.Auth.user = currentUser;
         updateUI();
       } catch (e) {
@@ -100,6 +103,9 @@
       if (loginBtn) loginBtn.classList.remove('hidden');
       if (userInfo) userInfo.classList.add('hidden');
     }
+    if (window.AdminPanel && window.AdminPanel.updateAdminButtonVisibility) {
+      window.AdminPanel.updateAdminButtonVisibility();
+    }
   }
 
   function isViewingOwnProfile() {
@@ -133,10 +139,23 @@
     }
     const balanceStat = document.getElementById('profileBalanceStat');
     if (balanceStat) balanceStat.style.display = viewingOwnProfile ? '' : 'none';
+    const roleTag = document.getElementById('profileRoleTag');
     const crown = document.getElementById('profileOwnerCrown');
-    const ownerTag = document.getElementById('profileOwnerTag');
-    if (crown) crown.classList.toggle('hidden', !(currentUser && currentUser.isOwner));
-    if (ownerTag) ownerTag.classList.toggle('hidden', !(currentUser && currentUser.isOwner));
+    if (roleTag && currentUser) {
+      const role = (currentUser.role == null || currentUser.role === '') ? null : String(currentUser.role).toLowerCase();
+      const showTag = role === 'member' || role === 'mod' || role === 'admin' || role === 'owner';
+      if (showTag && ['member', 'mod', 'admin', 'owner'].includes(role)) {
+        const labels = { member: 'Member', mod: 'Mod', admin: 'Admin', owner: 'Owner' };
+        roleTag.textContent = labels[role];
+        roleTag.className = 'profile-role-tag profile-role-tag--' + role;
+        roleTag.classList.remove('hidden');
+      } else {
+        roleTag.classList.add('hidden');
+      }
+    } else if (roleTag) {
+      roleTag.classList.add('hidden');
+    }
+    if (crown) crown.classList.toggle('hidden', !(currentUser && (currentUser.role === 'owner' || currentUser.isOwner)));
   }
 
   function renderProfileForUser(user) {
@@ -175,10 +194,21 @@
       if (labelEl) labelEl.textContent = rank.label;
       if (levelEl) levelEl.textContent = rank.isMaxRank ? `MAX RANK • Lv ${rank.level}` : `Lv ${rank.level}`;
     }
+    const roleTag = document.getElementById('profileRoleTag');
     const crown = document.getElementById('profileOwnerCrown');
-    const ownerTag = document.getElementById('profileOwnerTag');
-    if (crown) crown.classList.toggle('hidden', !user.isOwner);
-    if (ownerTag) ownerTag.classList.toggle('hidden', !user.isOwner);
+    if (roleTag) {
+      const role = (user.role == null || user.role === '') ? null : String(user.role).toLowerCase();
+      const showTag = role === 'member' || role === 'mod' || role === 'admin' || role === 'owner';
+      if (showTag && ['member', 'mod', 'admin', 'owner'].includes(role)) {
+        const labels = { member: 'Member', mod: 'Mod', admin: 'Admin', owner: 'Owner' };
+        roleTag.textContent = labels[role];
+        roleTag.className = 'profile-role-tag profile-role-tag--' + role;
+        roleTag.classList.remove('hidden');
+      } else {
+        roleTag.classList.add('hidden');
+      }
+    }
+    if (crown) crown.classList.toggle('hidden', !(user.role === 'owner' || user.isOwner));
   }
 
   async function showProfile(profileUsername) {
@@ -198,8 +228,7 @@
         if (profileName) profileName.textContent = 'Log in to view your profile';
         document.getElementById('profileBalanceStat') && (document.getElementById('profileBalanceStat').style.display = 'none');
         document.getElementById('logoutBtnProfile') && (document.getElementById('logoutBtnProfile').style.display = 'none');
-        document.getElementById('profileOwnerCrown')?.classList.add('hidden');
-        document.getElementById('profileOwnerTag')?.classList.add('hidden');
+        document.getElementById('profileRoleTag')?.classList.add('hidden');
       }
       return;
     }
@@ -217,8 +246,7 @@
         if (profileName) profileName.textContent = 'User not found';
         document.getElementById('profileBalanceStat') && (document.getElementById('profileBalanceStat').style.display = 'none');
         document.getElementById('logoutBtnProfile') && (document.getElementById('logoutBtnProfile').style.display = 'none');
-        document.getElementById('profileOwnerCrown')?.classList.add('hidden');
-        document.getElementById('profileOwnerTag')?.classList.add('hidden');
+        document.getElementById('profileRoleTag')?.classList.add('hidden');
         return;
       }
       const user = await res.json();
@@ -357,6 +385,8 @@
           username: emailKey,
           profileSlug: data.user?.profileSlug,
           isOwner: !!data.user?.isOwner,
+          isAdmin: !!(data.user?.isAdmin || data.user?.isOwner),
+          role: ['member', 'mod', 'admin', 'owner'].includes(data.user?.role) ? data.user.role : 'member',
         };
         saveUser(currentUser);
         if (window.Auth) window.Auth.user = currentUser;
@@ -436,6 +466,8 @@
           username: emailKey,
           profileSlug: data.user?.profileSlug,
           isOwner: !!data.user?.isOwner,
+          isAdmin: !!(data.user?.isAdmin || data.user?.isOwner),
+          role: ['member', 'mod', 'admin', 'owner'].includes(data.user?.role) ? data.user.role : 'member',
         };
         saveUser(currentUser);
         if (window.Auth) window.Auth.user = currentUser;
@@ -490,9 +522,18 @@
 
   async function init() {
     loadUser();
-    if (currentUser && getToken() && window.Stats && window.Stats.loadStats) {
+    if (currentUser && getToken()) {
       try {
-        await window.Stats.loadStats();
+        const res = await fetch('/api/user/stats', { headers: getAuthHeaders() });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.role !== undefined) currentUser.role = data.role;
+          if (data.isAdmin !== undefined) currentUser.isAdmin = data.isAdmin;
+          if (data.isOwner !== undefined) currentUser.isOwner = data.isOwner;
+          saveUser(currentUser);
+          if (window.Auth) window.Auth.user = currentUser;
+        }
+        if (window.Stats && window.Stats.loadStats) await window.Stats.loadStats();
       } catch (e) {
         console.warn('Load stats on init:', e.message);
       }
