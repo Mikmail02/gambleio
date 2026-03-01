@@ -5,15 +5,17 @@
  */
 const Stats = {
   apiBase: '/api',
-  syncDebounce: 2000,
+  syncDebounce: 250,
   syncTimer: null,
+  _syncInFlight: false,
+  _syncQueued: false,
   _reAuthInProgress: null,
   GAME_STATS_KEY: 'gambleio_game_stats',
 
   _restoreFromCache() {
     try {
       const raw = localStorage.getItem(this.GAME_STATS_KEY);
-      if (!raw) return;
+      if (!raw) return null;
       const cached = JSON.parse(raw);
       if (cached && typeof cached === 'object') {
         if (cached.xp !== undefined) Game.xp = cached.xp;
@@ -26,10 +28,14 @@ const Stats = {
         if (cached.totalWinsCount !== undefined) Game.totalWinsCount = cached.totalWinsCount;
         if (cached.biggestWinAmount !== undefined) Game.biggestWinAmount = cached.biggestWinAmount;
         if (cached.biggestWinMultiplier !== undefined) Game.biggestWinMultiplier = cached.biggestWinMultiplier;
+        if (cached.plinkoRiskLevel !== undefined) Game.plinkoRiskLevel = cached.plinkoRiskLevel;
+        if (cached.plinkoRiskUnlocked !== undefined) Game.plinkoRiskUnlocked = cached.plinkoRiskUnlocked;
         Game.totalWon = Game.totalGamblingWins ?? 0;
         if (Game.recalculateLevelFromXp) Game.recalculateLevelFromXp();
+        return cached;
       }
     } catch (e) { /* ignore */ }
+    return null;
   },
 
   _saveToCache() {
@@ -45,6 +51,9 @@ const Stats = {
         totalWinsCount: Game.totalWinsCount,
         biggestWinAmount: Game.biggestWinAmount,
         biggestWinMultiplier: Game.biggestWinMultiplier,
+        plinkoRiskLevel: Game.plinkoRiskLevel,
+        plinkoRiskUnlocked: Game.plinkoRiskUnlocked,
+        updatedAt: Date.now(),
       }));
     } catch (e) { /* ignore */ }
   },
@@ -115,6 +124,11 @@ const Stats = {
   },
 
   async _doSync() {
+    if (this._syncInFlight) {
+      this._syncQueued = true;
+      return;
+    }
+    this._syncInFlight = true;
     try {
       const res = await this._fetch(`${this.apiBase}/user/update-stats`, {
         method: 'POST',
@@ -129,31 +143,47 @@ const Stats = {
       if (res && res.ok) this._saveToCache();
     } catch (error) {
       console.error('Failed to sync stats:', error);
+    } finally {
+      this._syncInFlight = false;
+      if (this._syncQueued) {
+        this._syncQueued = false;
+        clearTimeout(this.syncTimer);
+        this.syncTimer = setTimeout(() => this._doSync(), 0);
+      }
     }
   },
 
   async loadStats() {
     if (!window.Auth || !window.Auth.isAuthenticated()) return;
-    this._restoreFromCache();
+    const cached = this._restoreFromCache();
     try {
       const res = await this._fetch(`${this.apiBase}/user/stats`, {
         headers: this._headers(),
       });
       if (!res.ok) return;
       const stats = await res.json();
+      const serverXp = Number(stats.xp ?? 0);
+      const cachedXp = Number(cached?.xp ?? 0);
+      const preferCachedXp = cachedXp > serverXp;
+
       Game.balance = stats.balance ?? Game.balance;
       Game.totalGamblingWins = stats.totalGamblingWins ?? 0;
       Game.totalClickEarnings = stats.totalClickEarnings ?? 0;
       Game.totalBets = stats.totalBets ?? 0;
       Game.totalWon = stats.totalGamblingWins ?? 0;
-      Game.currentLevel = stats.level ?? 1;
-      Game.xp = stats.xp ?? 0;
+      Game.currentLevel = preferCachedXp ? (cached?.level ?? stats.level ?? 1) : (stats.level ?? 1);
+      Game.xp = preferCachedXp ? cachedXp : serverXp;
       Game.totalClicks = stats.totalClicks ?? 0;
       Game.totalWinsCount = stats.totalWinsCount ?? 0;
       Game.biggestWinAmount = stats.biggestWinAmount ?? 0;
       Game.biggestWinMultiplier = stats.biggestWinMultiplier ?? 1;
+      Game.plinkoRiskLevel = stats.plinkoRiskLevel ?? Game.plinkoRiskLevel ?? 'low';
+      Game.plinkoRiskUnlocked = stats.plinkoRiskUnlocked ?? Game.plinkoRiskUnlocked ?? { medium: false, high: false, extreme: false };
       if (Game.recalculateLevelFromXp) Game.recalculateLevelFromXp();
       this._saveToCache();
+      if (preferCachedXp) {
+        this.syncStats();
+      }
     } catch (error) {
       console.error('Failed to load stats:', error);
     }
@@ -248,6 +278,46 @@ const Stats = {
     }
   },
 
+  async setPlinkoRiskLevel(level) {
+    const normalized = String(level || '').toLowerCase().trim();
+    if (!['low', 'medium', 'high', 'extreme'].includes(normalized)) {
+      return { error: 'Invalid risk level' };
+    }
+    if (!window.Auth || !window.Auth.isAuthenticated()) {
+      if (normalized === 'low') {
+        Game.setPlinkoRiskLevel('low');
+        return { ok: true, local: true };
+      }
+      if (Game.plinkoRiskUnlocked[normalized]) {
+        Game.setPlinkoRiskLevel(normalized);
+        return { ok: true, local: true };
+      }
+      if (Game.unlockPlinkoRisk(normalized)) {
+        return { ok: true, local: true };
+      }
+      return { error: 'Unable to unlock risk level' };
+    }
+    try {
+      const res = await this._fetch(`${this.apiBase}/plinko/risk-level`, {
+        method: 'POST',
+        headers: this._headers(),
+        body: JSON.stringify({ level: normalized }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        return { error: err.error || 'Unable to set risk level' };
+      }
+      const data = await res.json();
+      Game.balance = data.balance ?? Game.balance;
+      Game.plinkoRiskLevel = data.plinkoRiskLevel ?? Game.plinkoRiskLevel;
+      Game.plinkoRiskUnlocked = data.plinkoRiskUnlocked ?? Game.plinkoRiskUnlocked;
+      this._saveToCache();
+      return { ok: true, data };
+    } catch (e) {
+      return { error: 'Unable to set risk level' };
+    }
+  },
+
   /** Send accumulated click earnings to server. */
   async sendClickEarnings(amount, clickCount) {
     if (!window.Auth || !window.Auth.isAuthenticated() || !(amount > 0)) return null;
@@ -268,6 +338,24 @@ const Stats = {
       return null;
     }
   },
+
+  onLocalStatsChanged() {
+    this._saveToCache();
+    this.syncStats();
+  },
 };
 
 window.Stats = Stats;
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    Stats._saveToCache();
+    if (window.Auth && window.Auth.isAuthenticated && window.Auth.isAuthenticated()) {
+      Stats.syncStats();
+    }
+  }
+});
+
+window.addEventListener('beforeunload', () => {
+  Stats._saveToCache();
+});

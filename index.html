@@ -124,6 +124,16 @@
       <!-- Plinko -->
       <section id="page-plinko" class="page page-plinko hidden">
         <aside class="controls">
+          <div class="control-group">
+            <div class="plinko-mode-toggle" id="plinkoControlToggle">
+              <button type="button" class="plinko-mode-btn is-active" id="plinkoModeManual">Manual</button>
+              <button type="button" class="plinko-mode-btn" id="plinkoModeAutomatic">Automatic</button>
+            </div>
+          </div>
+          <div class="control-group hidden" id="plinkoAutoBetsGroup">
+            <label for="plinkoAutoBets">Auto bets (blank = infinite)</label>
+            <input type="number" id="plinkoAutoBets" min="1" step="1" placeholder="e.g. 100">
+          </div>
           <div class="control-group risk-level-group">
             <p class="risk-level-title">Risk level</p>
             <p class="risk-level-current" id="riskLevelCurrent">Low</p>
@@ -302,19 +312,31 @@
 
       <!-- Leaderboard page -->
       <section id="page-leaderboard" class="page page-leaderboard hidden">
-        <div class="leaderboard-container">
-          <h2 class="leaderboard-title">Leaderboard</h2>
-          <div class="leaderboard-tabs">
-            <button type="button" class="leaderboard-tab active" data-tab="clicks">Clicks</button>
-            <button type="button" class="leaderboard-tab" data-tab="wins">Total Wins</button>
-            <button type="button" class="leaderboard-tab" data-tab="biggest-win">Biggest Win</button>
-            <button type="button" class="leaderboard-tab" data-tab="networth">Networth</button>
-            <button type="button" class="leaderboard-tab" data-tab="xp">XP</button>
-            <button type="button" class="leaderboard-tab" data-tab="level">Level</button>
+        <div class="leaderboard-stage" id="leaderboardStage">
+          <div class="leaderboard-container">
+            <h2 class="leaderboard-title">Leaderboard</h2>
+            <p class="leaderboard-subtitle">Click to view a detailed version of the placement</p>
+            <div class="leaderboard-tabs">
+              <button type="button" class="leaderboard-tab active" data-tab="clicks">Clicks</button>
+              <button type="button" class="leaderboard-tab" data-tab="wins">Total Wins</button>
+              <button type="button" class="leaderboard-tab" data-tab="biggest-win">Biggest Win</button>
+              <button type="button" class="leaderboard-tab" data-tab="networth">Networth</button>
+              <button type="button" class="leaderboard-tab" data-tab="xp">XP</button>
+              <button type="button" class="leaderboard-tab" data-tab="level">Level</button>
+            </div>
+            <div class="leaderboard-list" id="leaderboardList">
+              <div class="leaderboard-empty">Select a tab to view rankings</div>
+            </div>
           </div>
-          <div class="leaderboard-list" id="leaderboardList">
-            <div class="leaderboard-empty">Select a tab to view rankings</div>
-          </div>
+          <aside class="leaderboard-detail-panel leaderboard-detail-panel--outside" id="leaderboardDetailPanel" aria-live="polite">
+            <div class="leaderboard-detail-head">
+              <h3 class="leaderboard-detail-title" id="leaderboardDetailTitle">Player details</h3>
+              <button type="button" class="leaderboard-detail-close" id="leaderboardDetailClose" aria-label="Close details">×</button>
+            </div>
+            <div class="leaderboard-detail-body" id="leaderboardDetailBody">
+              <div class="leaderboard-detail-empty">Click a leaderboard row to view detailed stats.</div>
+            </div>
+          </aside>
         </div>
       </section>
 

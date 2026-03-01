@@ -21,11 +21,18 @@
   const costMedium = document.getElementById('costMedium');
   const costHigh = document.getElementById('costHigh');
   const costExtreme = document.getElementById('costExtreme');
+  const plinkoModeManualBtn = document.getElementById('plinkoModeManual');
+  const plinkoModeAutomaticBtn = document.getElementById('plinkoModeAutomatic');
+  const plinkoAutoBetsGroup = document.getElementById('plinkoAutoBetsGroup');
+  const plinkoAutoBetsInput = document.getElementById('plinkoAutoBets');
 
   const LAST_MULTIPLIERS_MAX = 10;
+  const PLINKO_AUTO_DROP_DELAY_MS = 200; // 5 balls per second
   let lastMultipliers = [];
   let plinkoSessionBet = 0;
   let plinkoSessionWon = 0;
+  let plinkoControlMode = 'manual';
+  let plinkoAutoRunning = false;
 
   function formatDollars(n) {
     return '$' + new Intl.NumberFormat('en', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
@@ -52,7 +59,62 @@
     const canBet = Game.canBet(bet);
     const activeBalls = window.Plinko && Plinko.getActiveBallCount ? Plinko.getActiveBallCount() : 0;
     const atMax = activeBalls >= (Plinko && Plinko.maxActiveBalls ? Plinko.maxActiveBalls : 25);
-    dropBtn.disabled = !canBet || atMax;
+    dropBtn.disabled = plinkoAutoRunning ? false : (!canBet || atMax);
+    dropBtn.textContent = plinkoAutoRunning ? 'Stop' : (plinkoControlMode === 'automatic' ? 'Start auto' : 'Drop ball');
+  }
+
+  function setPlinkoControlMode(mode) {
+    plinkoControlMode = mode === 'automatic' ? 'automatic' : 'manual';
+    if (plinkoModeManualBtn) plinkoModeManualBtn.classList.toggle('is-active', plinkoControlMode === 'manual');
+    if (plinkoModeAutomaticBtn) plinkoModeAutomaticBtn.classList.toggle('is-active', plinkoControlMode === 'automatic');
+    if (plinkoAutoBetsGroup) plinkoAutoBetsGroup.classList.toggle('hidden', plinkoControlMode !== 'automatic');
+    if (plinkoControlMode !== 'automatic') {
+      stopPlinkoAuto();
+    }
+    updateDropButton();
+  }
+
+  function getAutoTargetCount() {
+    if (!plinkoAutoBetsInput) return Infinity;
+    const raw = String(plinkoAutoBetsInput.value || '').trim();
+    if (!raw) return Infinity;
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n) || n < 1) return null;
+    return Math.max(1, n);
+  }
+
+  function stopPlinkoAuto() {
+    plinkoAutoRunning = false;
+    updateDropButton();
+  }
+
+  async function runPlinkoAuto() {
+    if (plinkoAutoRunning) return;
+    const target = getAutoTargetCount();
+    if (target === null) {
+      alert('Auto bets must be a whole number greater than 0.');
+      return;
+    }
+    plinkoAutoRunning = true;
+    updateDropButton();
+    let dropped = 0;
+    while (plinkoAutoRunning) {
+      if (plinkoControlMode !== 'automatic') break;
+      if (document.hidden) break;
+      if ((window.location.hash || '#home') !== '#plinko') break;
+      if (Number.isFinite(target) && dropped >= target) break;
+      const activeBalls = window.Plinko && window.Plinko.getActiveBallCount ? window.Plinko.getActiveBallCount() : 0;
+      const maxBalls = window.Plinko && window.Plinko.maxActiveBalls ? window.Plinko.maxActiveBalls : 25;
+      if (activeBalls >= maxBalls) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        continue;
+      }
+      const ok = await handleDrop();
+      if (ok) dropped += 1;
+      await new Promise((resolve) => setTimeout(resolve, PLINKO_AUTO_DROP_DELAY_MS));
+    }
+    plinkoAutoRunning = false;
+    updateDropButton();
   }
 
   function setLastResult(text, isWin) {
@@ -116,6 +178,7 @@
       updateDropButton();
       updateRiskLevelUI();
       updatePlinkoSessionPnl();
+      setPlinkoControlMode(plinkoControlMode);
       if (window.Plinko && window.Plinko.updateMultipliers) {
         window.Plinko.updateMultipliers();
       }
@@ -125,6 +188,9 @@
           setTimeout(() => window.Plinko.recenterBoard(), 120);
         });
       }
+    }
+    if (pageId !== 'plinko') {
+      stopPlinkoAuto();
     }
     if (pageId === 'roulette') {
       if (window.Roulette) {
@@ -148,6 +214,8 @@
         });
         window.Leaderboard.switchTab(window.Leaderboard.currentTab);
       }
+    } else if (window.Leaderboard && window.Leaderboard.closeDetail) {
+      window.Leaderboard.closeDetail();
     }
     // Slot game: init when page is shown (either via hash or via showPage('slot-game') from Play button)
     if (pageId === 'slot-game' && window.SlotIntegration && window.SlotIntegration.initialize) {
@@ -207,15 +275,15 @@
 
   async function handleDrop() {
     const bet = Game.getBet();
-    if (!Game.canBet(bet)) return;
+    if (!Game.canBet(bet)) return false;
 
     const placeResult = window.Stats && window.Stats.placeBet
       ? await window.Stats.placeBet(bet)
       : (Game.placeBet(bet) ? { balance: Game.balance } : null);
     if (!placeResult) {
-      if (!window.Auth || !window.Auth.isAuthenticated()) return;
+      if (!window.Auth || !window.Auth.isAuthenticated()) return false;
       alert('Insufficient balance or server error.');
-      return;
+      return false;
     }
     if (!window.Stats || !window.Stats.placeBet) Game.recordBet();
     plinkoSessionBet += bet;
@@ -256,6 +324,7 @@
       updateDropButton();
       if (window.Auth && window.Auth.updateProfileStats) window.Auth.updateProfileStats();
     }
+    return !!added;
   }
 
   function onBetInput() {
@@ -417,10 +486,22 @@
   }
 
   updateBalance();
+  setPlinkoControlMode(plinkoControlMode);
   updateDropButton();
   renderLastMultipliers();
 
-  if (dropBtn) dropBtn.addEventListener('click', handleDrop);
+  if (dropBtn) {
+    dropBtn.addEventListener('click', () => {
+      if (plinkoControlMode === 'automatic') {
+        if (plinkoAutoRunning) stopPlinkoAuto();
+        else runPlinkoAuto();
+        return;
+      }
+      handleDrop();
+    });
+  }
+  if (plinkoModeManualBtn) plinkoModeManualBtn.addEventListener('click', () => setPlinkoControlMode('manual'));
+  if (plinkoModeAutomaticBtn) plinkoModeAutomaticBtn.addEventListener('click', () => setPlinkoControlMode('automatic'));
   if (betInput) {
     betInput.addEventListener('input', onBetInput);
     betInput.addEventListener('change', onBetInput);
@@ -460,6 +541,10 @@
   });
 
   window.addEventListener('hashchange', onHashChange);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopPlinkoAuto();
+  });
+  window.addEventListener('beforeunload', () => stopPlinkoAuto());
   window.showPage = showPage;
   onHashChange();
 

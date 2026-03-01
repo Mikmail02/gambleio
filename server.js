@@ -88,6 +88,25 @@ loadData();
 // Pre-made Mikmail owner – full profile, always exists after server start
 const MIKMAIL_EMAIL = 'mikael@betyr.no';
 const MIKMAIL_PASSWORD = 'owner123';
+const PLINKO_RISK_COSTS = { medium: 50000, high: 500000, extreme: 5000000 };
+const TRACKED_GAME_SOURCES = ['click', 'plinko', 'roulette', 'slots'];
+
+function emptyGameNet() {
+  return { click: 0, plinko: 0, roulette: 0, slots: 0 };
+}
+
+function emptyGamePlayCounts() {
+  return { click: 0, plinko: 0, roulette: 0, slots: 0 };
+}
+
+function emptyXpBySource() {
+  return { click: 0, plinko: 0, roulette: 0, slots: 0 };
+}
+
+function normalizeGameSource(source) {
+  const s = String(source || '').toLowerCase().trim();
+  return TRACKED_GAME_SOURCES.includes(s) ? s : null;
+}
 
 function ensureMikmailUser() {
   const key = MIKMAIL_EMAIL.toLowerCase().trim();
@@ -107,6 +126,12 @@ function ensureMikmailUser() {
     totalWinsCount: 0,
     biggestWinAmount: 0,
     biggestWinMultiplier: 1,
+    biggestWinMeta: { game: null, betAmount: 0, multiplier: 1, timestamp: 0 },
+    totalProfitWins: 0,
+    analyticsStartedAt: Date.now(),
+    gameNet: emptyGameNet(),
+    gamePlayCounts: emptyGamePlayCounts(),
+    xpBySource: emptyXpBySource(),
     isOwner: true,
     createdAt: Date.now(),
   };
@@ -149,12 +174,71 @@ function ensureFields(user) {
   if (user.totalClicks === undefined) user.totalClicks = 0;
   if (user.totalWinsCount === undefined) user.totalWinsCount = 0;
   if (user.totalGamblingWins === undefined) user.totalGamblingWins = 0;
+  if (user.totalClickEarnings === undefined) user.totalClickEarnings = 0;
   if (user.biggestWinAmount === undefined) user.biggestWinAmount = 0;
   if (user.biggestWinMultiplier === undefined) user.biggestWinMultiplier = 1;
   if (user.totalBets === undefined) user.totalBets = 0;
   if (user.xp === undefined) user.xp = 0;
   if (user.level === undefined) user.level = 1;
   if (user.balance === undefined) user.balance = 0;
+  if (user.createdAt === undefined) user.createdAt = Date.now();
+  if (user.analyticsStartedAt === undefined) user.analyticsStartedAt = Date.now();
+  if (user.totalProfitWins === undefined) user.totalProfitWins = 0;
+  if (!user.gameNet || typeof user.gameNet !== 'object') {
+    user.gameNet = emptyGameNet();
+  } else {
+    user.gameNet = {
+      click: Number(user.gameNet.click) || 0,
+      plinko: Number(user.gameNet.plinko) || 0,
+      roulette: Number(user.gameNet.roulette) || 0,
+      slots: Number(user.gameNet.slots) || 0,
+    };
+  }
+  if (!user.gamePlayCounts || typeof user.gamePlayCounts !== 'object') {
+    user.gamePlayCounts = emptyGamePlayCounts();
+  } else {
+    user.gamePlayCounts = {
+      click: Number(user.gamePlayCounts.click) || 0,
+      plinko: Number(user.gamePlayCounts.plinko) || 0,
+      roulette: Number(user.gamePlayCounts.roulette) || 0,
+      slots: Number(user.gamePlayCounts.slots) || 0,
+    };
+  }
+  if (!user.xpBySource || typeof user.xpBySource !== 'object') {
+    user.xpBySource = emptyXpBySource();
+  } else {
+    user.xpBySource = {
+      click: Number(user.xpBySource.click) || 0,
+      plinko: Number(user.xpBySource.plinko) || 0,
+      roulette: Number(user.xpBySource.roulette) || 0,
+      slots: Number(user.xpBySource.slots) || 0,
+    };
+  }
+  if (!user.biggestWinMeta || typeof user.biggestWinMeta !== 'object') {
+    user.biggestWinMeta = {
+      game: null,
+      betAmount: 0,
+      multiplier: user.biggestWinMultiplier || 1,
+      timestamp: 0,
+    };
+  } else {
+    user.biggestWinMeta = {
+      game: user.biggestWinMeta.game || null,
+      betAmount: Number(user.biggestWinMeta.betAmount) || 0,
+      multiplier: Number(user.biggestWinMeta.multiplier) || (user.biggestWinMultiplier || 1),
+      timestamp: Number(user.biggestWinMeta.timestamp) || 0,
+    };
+  }
+  if (!user.plinkoRiskLevel) user.plinkoRiskLevel = 'low';
+  if (!user.plinkoRiskUnlocked || typeof user.plinkoRiskUnlocked !== 'object') {
+    user.plinkoRiskUnlocked = { medium: false, high: false, extreme: false };
+  } else {
+    user.plinkoRiskUnlocked = {
+      medium: !!user.plinkoRiskUnlocked.medium,
+      high: !!user.plinkoRiskUnlocked.high,
+      extreme: !!user.plinkoRiskUnlocked.extreme,
+    };
+  }
   return user;
 }
 
@@ -175,6 +259,14 @@ function publicUser(u) {
     totalWinsCount: u.totalWinsCount || 0,
     biggestWinAmount: u.biggestWinAmount || 0,
     biggestWinMultiplier: u.biggestWinMultiplier || 1,
+    biggestWinMeta: u.biggestWinMeta || { game: null, betAmount: 0, multiplier: 1, timestamp: 0 },
+    totalProfitWins: u.totalProfitWins || 0,
+    analyticsStartedAt: u.analyticsStartedAt || u.createdAt || Date.now(),
+    gameNet: u.gameNet || emptyGameNet(),
+    gamePlayCounts: u.gamePlayCounts || emptyGamePlayCounts(),
+    xpBySource: u.xpBySource || emptyXpBySource(),
+    plinkoRiskLevel: u.plinkoRiskLevel || 'low',
+    plinkoRiskUnlocked: u.plinkoRiskUnlocked || { medium: false, high: false, extreme: false },
   };
 }
 
@@ -206,6 +298,12 @@ function publicProfile(u) {
     totalWinsCount: u.totalWinsCount || 0,
     biggestWinAmount: u.biggestWinAmount || 0,
     biggestWinMultiplier: u.biggestWinMultiplier || 1,
+    biggestWinMeta: u.biggestWinMeta || { game: null, betAmount: 0, multiplier: 1, timestamp: 0 },
+    totalProfitWins: u.totalProfitWins || 0,
+    analyticsStartedAt: u.analyticsStartedAt || u.createdAt || Date.now(),
+    gameNet: u.gameNet || emptyGameNet(),
+    gamePlayCounts: u.gamePlayCounts || emptyGamePlayCounts(),
+    xpBySource: u.xpBySource || emptyXpBySource(),
   };
 }
 
@@ -235,6 +333,14 @@ app.post('/api/auth/register', (req, res) => {
     totalWinsCount: 0,
     biggestWinAmount: 0,
     biggestWinMultiplier: 1,
+    biggestWinMeta: { game: null, betAmount: 0, multiplier: 1, timestamp: 0 },
+    totalProfitWins: 0,
+    analyticsStartedAt: Date.now(),
+    gameNet: emptyGameNet(),
+    gamePlayCounts: emptyGamePlayCounts(),
+    xpBySource: emptyXpBySource(),
+    plinkoRiskLevel: 'low',
+    plinkoRiskUnlocked: { medium: false, high: false, extreme: false },
     createdAt: Date.now(),
   };
   users.set(userKey, user);
@@ -343,11 +449,17 @@ app.post('/api/user/place-bet', (req, res) => {
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
   const amount = Number(req.body.amount);
+  const source = normalizeGameSource(req.body?.source);
   if (!Number.isFinite(amount) || amount < 0.01 || amount > user.balance) {
     return res.status(400).json({ error: 'Invalid bet amount or insufficient balance' });
   }
   user.balance -= amount;
   user.totalBets += 1;
+  if (source && source !== 'click') {
+    user.gameNet[source] -= amount;
+    user.gamePlayCounts[source] += 1;
+    user.xpBySource[source] += 3;
+  }
   users.set(user.username, user);
   saveUsers();
   res.json({ balance: user.balance, totalBets: user.totalBets });
@@ -361,17 +473,30 @@ app.post('/api/user/win', (req, res) => {
   const amount = Number(req.body.amount);
   const multiplier = req.body.multiplier != null ? Number(req.body.multiplier) : null;
   const betAmount = req.body.betAmount != null ? Number(req.body.betAmount) : null;
+  const source = normalizeGameSource(req.body?.source);
   if (!Number.isFinite(amount) || amount < 0) {
     return res.status(400).json({ error: 'Invalid win amount' });
   }
   user.balance += amount;
   user.totalGamblingWins += amount;
+  if (source && source !== 'click') {
+    user.gameNet[source] += amount;
+  }
   const isProfit = betAmount != null ? amount > betAmount : true;
   if (amount > 0 && isProfit) {
+    const profit = Math.max(0, amount - (Number.isFinite(betAmount) ? betAmount : 0));
+    user.totalProfitWins += profit;
     user.totalWinsCount += 1;
+    if (source) user.xpBySource[source] += 3;
     if (amount > user.biggestWinAmount) {
       user.biggestWinAmount = amount;
       user.biggestWinMultiplier = (multiplier != null && Number.isFinite(multiplier)) ? multiplier : 1;
+      user.biggestWinMeta = {
+        game: source,
+        betAmount: Number.isFinite(betAmount) ? betAmount : 0,
+        multiplier: user.biggestWinMultiplier,
+        timestamp: Date.now(),
+      };
     }
   }
   users.set(user.username, user);
@@ -400,6 +525,49 @@ app.post('/api/user/refund', (req, res) => {
   res.json({ balance: user.balance });
 });
 
+app.post('/api/plinko/risk-level', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+
+  const level = String(req.body?.level || '').toLowerCase().trim();
+  if (!['low', 'medium', 'high', 'extreme'].includes(level)) {
+    return res.status(400).json({ error: 'Invalid risk level' });
+  }
+
+  if (level === 'low') {
+    user.plinkoRiskLevel = 'low';
+  } else if (user.plinkoRiskUnlocked[level]) {
+    user.plinkoRiskLevel = level;
+  } else {
+    if (level === 'high' && !user.plinkoRiskUnlocked.medium) {
+      return res.status(400).json({ error: 'Unlock Medium first' });
+    }
+    if (level === 'extreme' && !user.plinkoRiskUnlocked.high) {
+      return res.status(400).json({ error: 'Unlock High first' });
+    }
+    const cost = PLINKO_RISK_COSTS[level];
+    if (!Number.isFinite(cost) || cost <= 0) {
+      return res.status(400).json({ error: 'Invalid unlock configuration' });
+    }
+    if (user.balance < cost) {
+      return res.status(400).json({ error: 'Insufficient balance for unlock' });
+    }
+    user.balance -= cost;
+    user.plinkoRiskUnlocked[level] = true;
+    user.plinkoRiskLevel = level;
+  }
+
+  users.set(user.username, user);
+  saveUsers();
+  res.json({
+    balance: user.balance,
+    plinkoRiskLevel: user.plinkoRiskLevel,
+    plinkoRiskUnlocked: user.plinkoRiskUnlocked,
+  });
+});
+
 app.post('/api/user/click-earnings', (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   const user = getUserFromSession(token);
@@ -415,6 +583,9 @@ app.post('/api/user/click-earnings', (req, res) => {
   user.balance += capped;
   user.totalClickEarnings += capped;
   user.totalClicks += cappedClicks;
+  user.gameNet.click += capped;
+  user.gamePlayCounts.click += cappedClicks;
+  user.xpBySource.click += cappedClicks * 3;
   users.set(user.username, user);
   saveUsers();
   res.json({ balance: user.balance, totalClickEarnings: user.totalClickEarnings, totalClicks: user.totalClicks });
@@ -422,12 +593,11 @@ app.post('/api/user/click-earnings', (req, res) => {
 
 // ===== LEADERBOARD =====
 
-app.get('/api/leaderboard/:type', (req, res) => {
-  const { type } = req.params;
-  const validTypes = ['clicks', 'wins', 'biggest-win', 'networth', 'xp', 'level'];
-  if (!validTypes.includes(type)) {
-    return res.status(400).json({ error: 'Invalid leaderboard type' });
-  }
+function validLeaderboardType(type) {
+  return ['clicks', 'wins', 'biggest-win', 'networth', 'xp', 'level'].includes(type);
+}
+
+function buildLeaderboardRows(type) {
   const allUsers = Array.from(users.values()).map(u => {
     ensureFields(u);
     ensureProfileSlug(u);
@@ -442,10 +612,17 @@ app.get('/api/leaderboard/:type', (req, res) => {
       level,
       xp,
       totalClicks: u.totalClicks || 0,
+      totalClickEarnings: u.totalClickEarnings || 0,
       totalGamblingWins: u.totalGamblingWins || 0,
+      totalProfitWins: u.totalProfitWins || 0,
       totalWinsCount: u.totalWinsCount || 0,
       biggestWinAmount: u.biggestWinAmount || 0,
       biggestWinMultiplier: u.biggestWinMultiplier || 1,
+      biggestWinMeta: u.biggestWinMeta || { game: null, betAmount: 0, multiplier: 1, timestamp: 0 },
+      gameNet: u.gameNet || emptyGameNet(),
+      gamePlayCounts: u.gamePlayCounts || emptyGamePlayCounts(),
+      xpBySource: u.xpBySource || emptyXpBySource(),
+      analyticsStartedAt: u.analyticsStartedAt || u.createdAt || Date.now(),
     };
   });
   let sorted;
@@ -455,7 +632,82 @@ app.get('/api/leaderboard/:type', (req, res) => {
   else if (type === 'networth') sorted = allUsers.sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0));
   else if (type === 'xp') sorted = allUsers.sort((a, b) => b.xp - a.xp);
   else if (type === 'level') sorted = allUsers.sort((a, b) => b.level - a.level || b.xp - a.xp);
+  else sorted = allUsers;
+  return sorted;
+}
+
+function getTopGamesFromCounts(gamePlayCounts) {
+  const gameLabel = (key) => {
+    if (key === 'plinko') return 'Plinko';
+    if (key === 'roulette') return 'Roulette';
+    if (key === 'slots') return 'Slots';
+    if (key === 'click') return 'Click';
+    return key;
+  };
+  const entries = Object.entries(gamePlayCounts || {})
+    .filter(([key]) => key !== 'click')
+    .map(([key, count]) => [key, Number(count) || 0])
+    .sort((a, b) => b[1] - a[1]);
+  return entries.slice(0, 3).map(([key]) => gameLabel(key));
+}
+
+app.get('/api/leaderboard/:type', (req, res) => {
+  const { type } = req.params;
+  if (!validLeaderboardType(type)) {
+    return res.status(400).json({ error: 'Invalid leaderboard type' });
+  }
+  const sorted = buildLeaderboardRows(type);
   res.json(sorted.slice(0, 100));
+});
+
+app.get('/api/leaderboard/:type/user/:slug', (req, res) => {
+  const { type, slug } = req.params;
+  if (!validLeaderboardType(type)) {
+    return res.status(400).json({ error: 'Invalid leaderboard type' });
+  }
+  const sorted = buildLeaderboardRows(type);
+  const normalizedSlug = String(slug || '').toLowerCase().trim();
+  const idx = sorted.findIndex((u) =>
+    (u.profileSlug || '').toLowerCase() === normalizedSlug ||
+    (u.username || '').toLowerCase() === normalizedSlug
+  );
+  if (idx === -1) return res.status(404).json({ error: 'User not found' });
+  const user = sorted[idx];
+  const now = Date.now();
+  const startedAt = Number(user.analyticsStartedAt) || now;
+  const daysActive = Math.max(1, (now - startedAt) / (1000 * 60 * 60 * 24));
+  const gameLabel = (key) => {
+    if (key === 'plinko') return 'Plinko';
+    if (key === 'roulette') return 'Roulette';
+    if (key === 'slots') return 'Slots';
+    if (key === 'click') return 'Click';
+    return key || null;
+  };
+  res.json({
+    type,
+    rank: idx + 1,
+    username: user.username,
+    profileSlug: user.profileSlug,
+    displayName: user.displayName,
+    level: user.level,
+    xp: user.xp,
+    balance: user.balance,
+    totalClicks: user.totalClicks,
+    totalClickEarnings: user.totalClickEarnings,
+    avgClicksPerDay: Math.round((user.totalClicks || 0) / daysActive),
+    totalGamblingWins: user.totalGamblingWins,
+    totalProfitWins: user.totalProfitWins || 0,
+    totalWinsCount: user.totalWinsCount,
+    biggestWinAmount: user.biggestWinAmount,
+    biggestWinMultiplier: user.biggestWinMultiplier,
+    biggestWinBetAmount: user.biggestWinMeta?.betAmount || 0,
+    biggestWinGame: gameLabel(user.biggestWinMeta?.game || null),
+    biggestWinTimestamp: user.biggestWinMeta?.timestamp || 0,
+    netByGame: user.gameNet || emptyGameNet(),
+    xpBySource: user.xpBySource || emptyXpBySource(),
+    topGames: getTopGamesFromCounts(user.gamePlayCounts),
+    analyticsStartedAt: startedAt,
+  });
 });
 
 app.post('/api/plinko-land', (req, res) => {
@@ -527,6 +779,7 @@ const ROULETTE_BETTING_MS = 20000;
 const ROULETTE_SPINNING_MS = 5000;
 const ROULETTE_RESULT_MS = 3000;
 const ROULETTE_RED = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
+const ROULETTE_STRICT_CASINO_MODE = true;
 
 const rouletteState = {
   roundId: 1,
@@ -574,10 +827,40 @@ function isRouletteWin(key, n) {
 }
 
 function roulettePayout(key) {
-  const num = parseInt(key, 10);
-  if (!isNaN(num) && num >= 0 && num <= 36) return 36;
+  const normalized = typeof key === 'string' ? key.trim() : String(key ?? '').trim();
+  const num = parseInt(normalized, 10);
+  if (!isNaN(num) && String(num) === normalized && num >= 0 && num <= 36) return 36;
   if (key === '1-12' || key === '13-24' || key === '25-36') return 3;
   return 2;
+}
+
+function isValidRouletteBetKey(key) {
+  if (typeof key !== 'string' || !key.trim()) return false;
+  const normalized = key.trim();
+  const num = parseInt(normalized, 10);
+  if (!isNaN(num) && String(num) === normalized && num >= 0 && num <= 36) return true;
+  const outside = new Set(['1-12', '13-24', '25-36', 'red', 'black', 'odd', 'even', '1-18', '19-36']);
+  return outside.has(normalized);
+}
+
+function rouletteOutsideGroup(key) {
+  if (key === '1-12' || key === '13-24' || key === '25-36') return 'dozen';
+  if (key === '1-18' || key === '19-36') return 'half';
+  if (key === 'odd' || key === 'even') return 'parity';
+  if (key === 'red' || key === 'black') return 'color';
+  return null;
+}
+
+function hasStrictRouletteConflict(existingBets, incomingKey) {
+  if (!ROULETTE_STRICT_CASINO_MODE) return false;
+  const incomingGroup = rouletteOutsideGroup(incomingKey);
+  if (!incomingGroup) return false;
+  for (const b of existingBets) {
+    if (rouletteOutsideGroup(b.key) === incomingGroup) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function resolveAllRouletteBets() {
@@ -588,20 +871,40 @@ function resolveAllRouletteBets() {
     ensureFields(user);
     let totalWin = 0;
     let totalBet = 0;
+    let bestWinningBet = null;
+
     for (const { key, amount } of userBets) {
       totalBet += amount;
       if (isRouletteWin(key, win)) {
-        totalWin += amount * roulettePayout(key);
+        const payout = amount * roulettePayout(key);
+        if (!bestWinningBet || payout > bestWinningBet.payout) {
+          bestWinningBet = { key, amount, payout };
+        }
       }
     }
+
+    // Casino rule for this project: only one winning condition is paid per round.
+    if (bestWinningBet) {
+      totalWin = bestWinningBet.payout;
+    }
+
     if (totalWin > 0) {
       user.balance += totalWin;
       user.totalGamblingWins += totalWin;
+      user.gameNet.roulette += totalWin;
       if (totalWin > totalBet) {
+        user.totalProfitWins += (totalWin - totalBet);
         user.totalWinsCount += 1;
+        user.xpBySource.roulette += 3;
         if (totalWin > user.biggestWinAmount) {
           user.biggestWinAmount = totalWin;
           user.biggestWinMultiplier = totalBet > 0 ? Math.round((totalWin / totalBet) * 100) / 100 : 1;
+          user.biggestWinMeta = {
+            game: 'roulette',
+            betAmount: totalBet,
+            multiplier: user.biggestWinMultiplier,
+            timestamp: Date.now(),
+          };
         }
       }
       users.set(username, user);
@@ -652,20 +955,27 @@ app.post('/api/roulette/bet', (req, res) => {
   }
   const { key, amount } = req.body;
   const amt = Number(amount);
-  if (!key || !Number.isFinite(amt) || amt < 1) {
+  if (!isValidRouletteBetKey(key) || !Number.isFinite(amt) || amt < 1) {
     return res.status(400).json({ error: 'Invalid bet' });
   }
   if (amt > user.balance) {
     return res.status(400).json({ error: 'Insufficient balance' });
   }
-  user.balance -= amt;
-  user.totalBets += 1;
-  users.set(user.username, user);
-  saveUsers();
   if (!rouletteState.bets.has(user.username)) {
     rouletteState.bets.set(user.username, []);
   }
-  rouletteState.bets.get(user.username).push({ key, amount: amt });
+  const userBets = rouletteState.bets.get(user.username);
+  if (hasStrictRouletteConflict(userBets, key)) {
+    return res.status(400).json({ error: 'Strict mode: conflicting outside bet in same category is not allowed' });
+  }
+  user.balance -= amt;
+  user.totalBets += 1;
+  user.gameNet.roulette -= amt;
+  user.gamePlayCounts.roulette += 1;
+  user.xpBySource.roulette += 3;
+  users.set(user.username, user);
+  saveUsers();
+  userBets.push({ key, amount: amt });
   res.json({ balance: user.balance, totalBets: user.totalBets });
 });
 
@@ -683,6 +993,7 @@ app.post('/api/roulette/clear-bets', (req, res) => {
   for (const b of userBets) refundTotal += b.amount;
   if (refundTotal > 0) {
     user.balance += refundTotal;
+    user.gameNet.roulette += refundTotal;
     users.set(user.username, user);
     saveUsers();
   }
