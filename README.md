@@ -19,15 +19,6 @@ A modern, interactive gambling game platform featuring Plinko and Roulette games
 2. Run the server: `node server.js`
 3. Open `http://localhost:3000` in a web browser
 
-### Demo / Mikmail Owner Login
-
-A pre-made Mikmail owner account is created when the server starts (survives data resets):
-
-- **Email/Username:** `mikael@betyr.no`
-- **Password:** `owner123`
-
-Use these credentials in the login form.
-
 ### File Structure
 
 ```
