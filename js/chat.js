@@ -13,6 +13,7 @@
   const muteMsgTextEl = document.getElementById('chatMuteMsgText');
   const muteMsgDismissEl = document.getElementById('chatMuteMsgDismiss');
   let muteCheckTimer = null;
+  let muteCountdownTimer = null;
   let messagePollTimer = null;
   let globalMessagePollTimer = null;
   let delayClearTimer = null;
@@ -101,7 +102,42 @@
     return new Date(ts).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' });
   }
 
+  function buildMuteMessageWithCountdown(until) {
+    const now = Date.now();
+    if (until <= now) return '';
+    const secs = Math.ceil((until - now) / 1000);
+    return 'You have been muted until ' + formatMutedUntil(until) + ' - ' + secs + ' second(s)';
+  }
+
+  function startMuteCountdown(until) {
+    if (muteCountdownTimer) clearInterval(muteCountdownTimer);
+    muteCountdownTimer = null;
+    if (until == null || until <= Date.now()) return;
+    function tick() {
+      const now = Date.now();
+      if (until <= now) {
+        if (muteCountdownTimer) clearInterval(muteCountdownTimer);
+        muteCountdownTimer = null;
+        refreshMuteState();
+        return;
+      }
+      const msg = buildMuteMessageWithCountdown(until);
+      if (muteMsgTextEl) muteMsgTextEl.textContent = msg;
+      lastMuteMessageText = msg;
+    }
+    tick();
+    muteCountdownTimer = setInterval(tick, 1000);
+  }
+
+  function stopMuteCountdown() {
+    if (muteCountdownTimer) {
+      clearInterval(muteCountdownTimer);
+      muteCountdownTimer = null;
+    }
+  }
+
   function hideMessage() {
+    stopMuteCountdown();
     if (muteMsgTextEl) muteMsgTextEl.textContent = '';
     if (muteMsgEl) muteMsgEl.classList.add('hidden');
   }
@@ -112,17 +148,23 @@
     const muted = effectiveUntil > now;
     if (inputEl) inputEl.disabled = muted;
     if (sendBtn) sendBtn.disabled = muted;
+    if (!muted) {
+      stopMuteCountdown();
+      effectiveMutedUntil = 0;
+      lastMuteMessageText = '';
+      hideMessage();
+      return;
+    }
+    if (mutedUntil != null && mutedUntil > now) effectiveMutedUntil = mutedUntil;
     if (messageText !== undefined && messageText !== null && messageText !== '') {
       lastMuteMessageText = messageText;
       if (muteMsgTextEl) muteMsgTextEl.textContent = messageText;
       if (muteMsgEl) muteMsgEl.classList.remove('hidden');
-    } else if (!muted) {
-      effectiveMutedUntil = 0;
-      lastMuteMessageText = '';
-      hideMessage();
+      startMuteCountdown(effectiveUntil > now ? effectiveUntil : mutedUntil);
     } else if (lastMuteMessageText) {
       if (muteMsgTextEl) muteMsgTextEl.textContent = lastMuteMessageText;
       if (muteMsgEl) muteMsgEl.classList.remove('hidden');
+      startMuteCountdown(effectiveUntil);
     }
   }
 
@@ -135,13 +177,12 @@
       const now = Date.now();
       const serverUntil = data.chatMutedUntil != null ? Number(data.chatMutedUntil) : null;
       const stillMutedByServer = serverUntil != null && serverUntil > now;
-      const stillMutedByClient = effectiveMutedUntil > now;
-      if (stillMutedByServer || stillMutedByClient) {
-        const useUntil = Math.max(serverUntil || 0, effectiveMutedUntil);
-        updateMuteUI(useUntil);
-      } else {
+      if (!stillMutedByServer) {
         effectiveMutedUntil = 0;
         updateMuteUI(null);
+      } else {
+        const useUntil = Math.max(serverUntil || 0, effectiveMutedUntil);
+        updateMuteUI(useUntil, buildMuteMessageWithCountdown(useUntil) || undefined);
       }
     } catch (e) {
       if (effectiveMutedUntil <= Date.now()) {
@@ -175,6 +216,7 @@
       if (muteCheckTimer) { clearInterval(muteCheckTimer); muteCheckTimer = null; }
       if (messagePollTimer) { clearInterval(messagePollTimer); messagePollTimer = null; }
       if (delayClearTimer) { clearTimeout(delayClearTimer); delayClearTimer = null; }
+      stopMuteCountdown();
       hideMessage();
       lastMuteMessageText = '';
     }
@@ -209,7 +251,7 @@
         if (res.status === 403 && (data.code === 'CHAT_MUTED' || data.code === 'CHAT_RATE_MUTED')) {
           const until = data.mutedUntil != null ? Number(data.mutedUntil) : null;
           if (until != null) effectiveMutedUntil = until;
-          updateMuteUI(until, data.error || (until ? 'Muted until ' + formatMutedUntil(until) : ''));
+          updateMuteUI(until, until ? buildMuteMessageWithCountdown(until) : (data.error || ''));
         } else if (res.status === 429) {
           updateMuteUI(null, "Don't spam");
           const ms = data.retryAfterMs != null ? Math.min(10000, Number(data.retryAfterMs)) : 2000;

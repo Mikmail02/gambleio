@@ -28,6 +28,9 @@ npm-debug.log*
 # User data (contains passwords - never commit)
 data/
 
+# Local-only docs (keep file, do not push to GitHub)
+DATABASE-SETUP.md
+
 # Temporary files
 *.tmp
 .cache/

@@ -53,6 +53,30 @@ const CHAT_DELAY_MS = 2000;
 const CHAT_BURST_COUNT = 5;
 const CHAT_BURST_WINDOW_MS = 15000;
 const CHAT_RATE_MUTE_MS = 15000;
+
+// --- Anti-cheat: caps and rate limits (server is source of truth) ---
+const MAX_WIN_AMOUNT_PER_REQUEST = 10_000_000;       // max single win (e.g. 1000x on 10k bet)
+const MAX_REFUND_AMOUNT_PER_REQUEST = 10_000;       // refund only for small corrections
+const MAX_XP_INCREASE_PER_SYNC = 100;               // max xp client can add per update-stats
+const MAX_BIGGEST_WIN_AMOUNT = 100_000_000;         // cap biggestWin for stats
+const RATE_LIMIT_WIN_PER_MIN = 60;                  // max win calls per user per minute
+const RATE_LIMIT_REFUND_PER_MIN = 5;
+const RATE_LIMIT_UPDATE_STATS_PER_MIN = 20;
+const rateLimitWin = new Map();   // key -> [timestamps]
+const rateLimitRefund = new Map();
+const rateLimitUpdateStats = new Map();
+
+function checkRateLimit(map, key, maxPerMin) {
+  const now = Date.now();
+  const window = 60 * 1000;
+  let list = map.get(key) || [];
+  list = list.filter((t) => t > now - window);
+  if (list.length >= maxPerMin) return false;
+  list.push(now);
+  map.set(key, list);
+  return true;
+}
+
 const chatLastSend = {};
 const chatRecentSends = {};
 const chatRateLimitMutedUntil = {};
@@ -124,7 +148,8 @@ async function saveUser(user) {
     try {
       await db.saveUser(user);
     } catch (e) {
-      console.error('Failed to save user:', e.message);
+      console.error('Failed to save user:', e.message, e.code || '', user?.username || '');
+      throw e; // La API returnere 500 så klienten ikke tror lagring lyktes
     }
     return;
   }
@@ -740,8 +765,10 @@ app.post('/api/chat', async (req, res) => {
   const key = user.username;
 
   if (user.chatMutedUntil != null && user.chatMutedUntil > now) {
+    const untilFormatted = new Date(user.chatMutedUntil).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' });
+    const secs = Math.ceil((user.chatMutedUntil - now) / 1000);
     return res.status(403).json({
-      error: 'Muted until [date][time]',
+      error: 'You have been muted until ' + untilFormatted + ' - ' + secs + ' second(s)',
       mutedUntil: user.chatMutedUntil,
       code: 'CHAT_MUTED',
     });
@@ -797,17 +824,27 @@ app.post('/api/chat', async (req, res) => {
   res.json({ message: msg });
 });
 
-// Only sync non-delta fields: xp, level, biggestWin
+// Only sync non-delta fields: xp, level, biggestWin. Server enforces caps so client cannot cheat.
 app.post('/api/user/update-stats', async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
+  if (!checkRateLimit(rateLimitUpdateStats, user.username, RATE_LIMIT_UPDATE_STATS_PER_MIN)) {
+    return res.status(429).json({ error: 'Too many sync requests' });
+  }
   const { level, xp, biggestWinAmount, biggestWinMultiplier } = req.body;
   if (xp !== undefined) {
-    const oldLevel = getLevelFromXp(user.xp || 0);
-    user.xp = xp;
-    user.level = getLevelFromXp(xp);
+    const numXp = Number(xp);
+    if (!Number.isFinite(numXp) || numXp < 0) {
+      return res.status(400).json({ error: 'Invalid xp' });
+    }
+    const currentXp = Number(user.xp) || 0;
+    const maxAllowedXp = currentXp + MAX_XP_INCREASE_PER_SYNC;
+    const clampedXp = Math.min(numXp, maxAllowedXp);
+    const oldLevel = getLevelFromXp(currentXp);
+    user.xp = clampedXp;
+    user.level = getLevelFromXp(clampedXp);
     const newLevel = user.level;
     if (newLevel > oldLevel) {
       const key = `${user.username}:${newLevel}`;
@@ -818,10 +855,17 @@ app.post('/api/user/update-stats', async (req, res) => {
         await addAdminLog({ type: 'level_up', targetUsername: user.username, targetDisplayName: user.displayName, newLevel, previousLevel: oldLevel });
       }
     }
-  } else if (level !== undefined) user.level = level;
-  if (biggestWinAmount !== undefined && biggestWinAmount > user.biggestWinAmount) {
-    user.biggestWinAmount = biggestWinAmount;
-    user.biggestWinMultiplier = biggestWinMultiplier || 1;
+  } else if (level !== undefined) {
+    const numLevel = Math.max(1, Math.floor(Number(level)) || 1);
+    const maxLevelFromXp = getLevelFromXp((Number(user.xp) || 0) + MAX_XP_INCREASE_PER_SYNC);
+    user.level = Math.min(numLevel, maxLevelFromXp);
+  }
+  if (biggestWinAmount !== undefined && biggestWinAmount > (user.biggestWinAmount || 0)) {
+    const capped = Math.min(Number(biggestWinAmount) || 0, MAX_BIGGEST_WIN_AMOUNT);
+    if (capped > user.biggestWinAmount) {
+      user.biggestWinAmount = capped;
+      user.biggestWinMultiplier = (biggestWinMultiplier != null && Number.isFinite(biggestWinMultiplier)) ? biggestWinMultiplier : 1;
+    }
   }
   if (!useDb) users.set(user.username, user);
   await saveUser(user);
@@ -857,26 +901,34 @@ app.post('/api/user/win', async (req, res) => {
   const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
-  const amount = Number(req.body.amount);
+  if (!checkRateLimit(rateLimitWin, user.username, RATE_LIMIT_WIN_PER_MIN)) {
+    return res.status(429).json({ error: 'Too many win requests' });
+  }
+  const rawAmount = req.body.amount;
+  const amount = typeof rawAmount === 'number' ? rawAmount : Number(rawAmount);
+  if (amount !== amount || amount < 0 || amount === Infinity || amount > MAX_WIN_AMOUNT_PER_REQUEST) {
+    return res.status(400).json({ error: 'Invalid win amount or exceeds maximum allowed (' + MAX_WIN_AMOUNT_PER_REQUEST + ')' });
+  }
+  const amountToAdd = Math.min(Math.floor(amount), MAX_WIN_AMOUNT_PER_REQUEST);
+  if (!Number.isFinite(amountToAdd) || amountToAdd < 0) {
+    return res.status(400).json({ error: 'Invalid win amount' });
+  }
   const multiplier = req.body.multiplier != null ? Number(req.body.multiplier) : null;
   const betAmount = req.body.betAmount != null ? Number(req.body.betAmount) : null;
   const source = normalizeGameSource(req.body?.source);
-  if (!Number.isFinite(amount) || amount < 0) {
-    return res.status(400).json({ error: 'Invalid win amount' });
-  }
-  user.balance += amount;
-  user.totalGamblingWins += amount;
+  user.balance += amountToAdd;
+  user.totalGamblingWins += amountToAdd;
   if (source && source !== 'click') {
-    user.gameNet[source] += amount;
+    user.gameNet[source] += amountToAdd;
   }
-  const isProfit = betAmount != null ? amount > betAmount : true;
-  if (amount > 0 && isProfit) {
-    const profit = Math.max(0, amount - (Number.isFinite(betAmount) ? betAmount : 0));
+  const isProfit = betAmount != null ? amountToAdd > betAmount : true;
+  if (amountToAdd > 0 && isProfit) {
+    const profit = Math.max(0, amountToAdd - (Number.isFinite(betAmount) ? betAmount : 0));
     user.totalProfitWins += profit;
     user.totalWinsCount += 1;
     if (source) user.xpBySource[source] += 3;
-    if (amount > user.biggestWinAmount) {
-      user.biggestWinAmount = amount;
+    if (amountToAdd > user.biggestWinAmount) {
+      user.biggestWinAmount = Math.min(amountToAdd, MAX_BIGGEST_WIN_AMOUNT);
       user.biggestWinMultiplier = (multiplier != null && Number.isFinite(multiplier)) ? multiplier : 1;
       user.biggestWinMeta = {
         game: source,
@@ -897,16 +949,21 @@ app.post('/api/user/win', async (req, res) => {
   });
 });
 
-// Refund: adds to balance only (no win tracking)
+// Refund: adds to balance only (no win tracking). Always capped server-side – client cannot grant more.
 app.post('/api/user/refund', async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
-  const amount = Number(req.body.amount);
-  if (!Number.isFinite(amount) || amount < 0) {
+  if (!checkRateLimit(rateLimitRefund, user.username, RATE_LIMIT_REFUND_PER_MIN)) {
+    return res.status(429).json({ error: 'Too many refund requests' });
+  }
+  const raw = req.body.amount;
+  const num = typeof raw === 'number' ? raw : Number(raw);
+  if (num !== num || num < 0 || num === Infinity) {
     return res.status(400).json({ error: 'Invalid refund amount' });
   }
-  user.balance += amount;
+  const amountToAdd = Math.min(Math.max(0, Math.floor(num)), MAX_REFUND_AMOUNT_PER_REQUEST);
+  user.balance = (Number(user.balance) || 0) + amountToAdd;
   if (!useDb) users.set(user.username, user);
   await saveUser(user);
   res.json({ balance: user.balance });
