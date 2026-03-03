@@ -12,7 +12,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 // Redirect www to root domain so gambleio.com is the canonical URL (production only)
 const ROOT_DOMAIN = process.env.ROOT_DOMAIN || 'gambleio.com';
@@ -39,6 +39,7 @@ const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : pat
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 const PLINKO_STATS_FILE = path.join(DATA_DIR, 'plinko-stats.json');
+const PLINKO_PATHS_FILE = path.join(DATA_DIR, 'plinko-paths.json');
 const ADMIN_LOGS_FILE = path.join(DATA_DIR, 'admin-logs.json');
 
 const users = new Map();
@@ -57,11 +58,11 @@ const CHAT_RATE_MUTE_MS = 15000;
 // --- Anti-cheat: caps and rate limits (server is source of truth) ---
 const MAX_WIN_AMOUNT_PER_REQUEST = 10_000_000;       // max single win (e.g. 1000x on 10k bet)
 const MAX_REFUND_AMOUNT_PER_REQUEST = 10_000;       // refund only for small corrections
-const MAX_XP_INCREASE_PER_SYNC = 100;               // max xp client can add per update-stats
+const MAX_XP_INCREASE_PER_SYNC = 500;               // max xp client can add per update-stats
 const MAX_BIGGEST_WIN_AMOUNT = 100_000_000;         // cap biggestWin for stats
-const RATE_LIMIT_WIN_PER_MIN = 60;                  // max win calls per user per minute
+const RATE_LIMIT_WIN_PER_MIN = 300;                 // max win calls per user per minute (plinko recording)
 const RATE_LIMIT_REFUND_PER_MIN = 5;
-const RATE_LIMIT_UPDATE_STATS_PER_MIN = 20;
+const RATE_LIMIT_UPDATE_STATS_PER_MIN = 120;        // max update-stats per minute (plinko recording)
 const rateLimitWin = new Map();   // key -> [timestamps]
 const rateLimitRefund = new Map();
 const rateLimitUpdateStats = new Map();
@@ -134,6 +135,7 @@ async function savePlinkoStats() {
     console.error('Failed to save plinko stats:', e.message);
   }
 }
+
 
 function saveUsersSync() {
   try {
@@ -1166,6 +1168,161 @@ app.post('/api/plinko-land', async (req, res) => {
   plinkoStats.landings[idx] = (plinkoStats.landings[idx] || 0) + 1;
   await savePlinkoStats();
   res.json({ ok: true });
+});
+
+// Plinko resolve: odds per risk (edge %), multipliers. Backend velger mult fra odds, deretter random slot med den mult, deretter random bane.
+const PLINKO_ODDS = {
+  low: [0.8, 1.8, 3, 5, 7, 9.7, 15.3, 9.7, 7, 7, 9.7, 15.3, 9.7, 7, 5, 3, 1.8, 0.8],
+  medium: [0.6, 1.4, 2.4, 4, 6, 8.5, 13.5, 8.5, 6.5, 6.5, 8.5, 13.5, 8.5, 6.5, 4, 2.4, 1.4, 0.6],
+  high: [0.4, 1, 1.8, 3.2, 5, 7.5, 12, 7.5, 6, 6, 7.5, 12, 7.5, 6, 5, 3.2, 1.8, 0.4],
+  extreme: [0.05, 0.2, 0.4, 0.6, 1.5, 3, 5, 16, 60, 60, 16, 5, 3, 1.5, 0.6, 0.4, 0.2, 0.05],
+};
+const PLINKO_MULTIPLIERS = {
+  low: [15, 8.5, 4.3, 2.7, 1.3, 1.1, 1, 0.8, 0.5, 0.5, 0.8, 1, 1.1, 1.3, 2.7, 4.3, 8.5, 15],
+  medium: [20, 10, 5, 2.5, 1.2, 1, 0.8, 0.6, 0.3, 0.3, 0.6, 0.8, 1, 1.2, 2.5, 5, 10, 20],
+  high: [50, 25, 10, 3, 1, 0.5, 0.3, 0.2, 0.1, 0.1, 0.2, 0.3, 0.5, 1, 3, 10, 25, 50],
+  extreme: [1000, 100, 20, 5, 1, 0.2, 0.1, 0.05, 0.01, 0.01, 0.05, 0.1, 0.2, 1, 5, 20, 100, 1000],
+};
+
+function pickPlinkoOutcome(riskLevel, pathsData) {
+  const odds = PLINKO_ODDS[riskLevel] || PLINKO_ODDS.low;
+  const mults = PLINKO_MULTIPLIERS[riskLevel] || PLINKO_MULTIPLIERS.low;
+  const total = odds.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  let slotIndex = 0;
+  for (let i = 0; i < odds.length; i++) {
+    r -= odds[i];
+    if (r < 0) {
+      slotIndex = i;
+      break;
+    }
+    slotIndex = i;
+  }
+  const multiplier = mults[slotIndex] ?? 1;
+  const slotsWithSameMult = [];
+  for (let i = 0; i < 18; i++) {
+    if (Math.abs((mults[i] ?? 0) - multiplier) < 0.001) slotsWithSameMult.push(i);
+  }
+  const chosenSlot = slotsWithSameMult[Math.floor(Math.random() * slotsWithSameMult.length)] ?? slotIndex;
+  const paths = pathsData?.paths?.[String(chosenSlot)];
+  const path = Array.isArray(paths) && paths.length > 0 ? paths[Math.floor(Math.random() * paths.length)] : null;
+  return { slotIndex: chosenSlot, multiplier, path };
+}
+
+// Plinko paths: én bane per skål, brukes for alle risk levels (kun multiplier/odds endres)
+app.get('/api/plinko/paths', (req, res) => {
+  try {
+    let data = { paths: {} };
+    if (fs.existsSync(PLINKO_PATHS_FILE)) {
+      data = JSON.parse(fs.readFileSync(PLINKO_PATHS_FILE, 'utf8'));
+    }
+    const paths = data.paths || data.low || data;
+    const perSlot = {};
+    for (let i = 0; i < 18; i++) {
+      const arr = paths[String(i)];
+      perSlot[i] = Array.isArray(arr) ? arr.length : 0;
+    }
+    res.json({ paths: paths, perSlot, total: Object.values(perSlot).reduce((s, n) => s + n, 0) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/plinko/save-paths', (req, res) => {
+  const { paths } = req.body;
+  if (!paths || typeof paths !== 'object') {
+    return res.status(400).json({ error: 'Invalid paths object' });
+  }
+  try {
+    let existing = { paths: {} };
+    if (fs.existsSync(PLINKO_PATHS_FILE)) {
+      existing = JSON.parse(fs.readFileSync(PLINKO_PATHS_FILE, 'utf8'));
+      if (!existing.paths) existing.paths = existing.low || existing;
+    }
+    for (const [slot, arr] of Object.entries(paths)) {
+      if (Array.isArray(arr) && arr.length > 0) {
+        const key = String(slot);
+        const valid = arr.filter((p) => Array.isArray(p) && p.length >= 10).slice(0, 10);
+        const existingArr = existing.paths[key] || [];
+        const merged = [...existingArr];
+        for (const p of valid) {
+          if (merged.length >= 10) break;
+          merged.push(p);
+        }
+        existing.paths[key] = merged.slice(0, 10);
+      }
+    }
+    fs.writeFileSync(PLINKO_PATHS_FILE, JSON.stringify(existing, null, 2));
+    const total = Object.values(existing.paths).reduce((s, a) => s + (Array.isArray(a) ? a.length : 0), 0);
+    res.json({ ok: true, total });
+  } catch (e) {
+    console.error('Save plinko paths:', e.message);
+    res.status(500).json({ error: 'Failed to save paths' });
+  }
+});
+
+app.post('/api/plinko/resolve', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  const amount = Number(req.body.amount);
+  if (!Number.isFinite(amount) || amount < 0.01 || amount > user.balance) {
+    return res.status(400).json({ error: 'Invalid bet amount or insufficient balance' });
+  }
+  const riskLevel = (user.plinkoRiskLevel || 'low').toLowerCase();
+  if (!['low', 'medium', 'high', 'extreme'].includes(riskLevel)) {
+    return res.status(400).json({ error: 'Invalid risk level' });
+  }
+  let pathsData = { paths: {} };
+  try {
+    if (fs.existsSync(PLINKO_PATHS_FILE)) {
+      pathsData = JSON.parse(fs.readFileSync(PLINKO_PATHS_FILE, 'utf8'));
+      if (!pathsData.paths) pathsData.paths = pathsData.low || pathsData;
+    }
+  } catch (e) {
+    console.error('Load plinko paths:', e.message);
+    return res.status(500).json({ error: 'Paths not available' });
+  }
+  let outcome;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    outcome = pickPlinkoOutcome(riskLevel, pathsData);
+    if (outcome.path) break;
+  }
+  if (!outcome || !outcome.path) {
+    return res.status(503).json({ error: 'No path for outcome – use physics mode' });
+  }
+  const winAmount = amount * outcome.multiplier;
+  user.balance -= amount;
+  user.balance += winAmount;
+  user.totalBets += 1;
+  user.gameNet.plinko -= amount;
+  user.gameNet.plinko += winAmount;
+  user.gamePlayCounts.plinko += 1;
+  user.xpBySource.plinko += 3;
+  user.totalGamblingWins = (user.totalGamblingWins || 0) + winAmount;
+  const isProfit = winAmount > amount;
+  if (winAmount > 0 && isProfit) {
+    user.totalProfitWins = (user.totalProfitWins || 0) + Math.max(0, winAmount - amount);
+    user.totalWinsCount = (user.totalWinsCount || 0) + 1;
+    if (winAmount > (user.biggestWinAmount || 0)) {
+      user.biggestWinAmount = Math.min(winAmount, MAX_BIGGEST_WIN_AMOUNT);
+      user.biggestWinMultiplier = outcome.multiplier;
+      user.biggestWinMeta = { game: 'plinko', betAmount: amount, multiplier: outcome.multiplier, timestamp: Date.now() };
+    }
+  }
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
+  plinkoStats.totalBalls += 1;
+  plinkoStats.landings[outcome.slotIndex] = (plinkoStats.landings[outcome.slotIndex] || 0) + 1;
+  await savePlinkoStats();
+  res.json({
+    slotIndex: outcome.slotIndex,
+    multiplier: outcome.multiplier,
+    winAmount,
+    path: outcome.path,
+    balance: user.balance,
+  });
 });
 
 // Plinko stats – public, read-only (hvor mange baller har landet i hver slot)

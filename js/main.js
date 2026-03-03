@@ -15,9 +15,9 @@
   const navLinks = document.querySelectorAll('.nav-link');
   const clickerBtn = document.getElementById('clickerBtn');
   const riskLevelCurrent = document.getElementById('riskLevelCurrent');
-  const buyMedium = document.getElementById('buyMedium');
-  const buyHigh = document.getElementById('buyHigh');
-  const buyExtreme = document.getElementById('buyExtreme');
+  const riskDropdown = document.getElementById('riskDropdown');
+  const riskDropdownTrigger = document.getElementById('riskDropdownTrigger');
+  const riskDropdownMenu = document.getElementById('riskDropdownMenu');
   const costMedium = document.getElementById('costMedium');
   const costHigh = document.getElementById('costHigh');
   const costExtreme = document.getElementById('costExtreme');
@@ -25,6 +25,11 @@
   const plinkoModeAutomaticBtn = document.getElementById('plinkoModeAutomatic');
   const plinkoAutoBetsGroup = document.getElementById('plinkoAutoBetsGroup');
   const plinkoAutoBetsInput = document.getElementById('plinkoAutoBets');
+  const plinkoRecordingBtn = document.getElementById('plinkoRecordingBtn');
+  const plinkoRecordingText = document.getElementById('plinkoRecordingText');
+  const plinkoRecordingStatus = document.getElementById('plinkoRecordingStatus');
+  const plinkoSavePathsBtn = document.getElementById('plinkoSavePathsBtn');
+  const plinkoDownloadPathsBtn = document.getElementById('plinkoDownloadPathsBtn');
 
   const LAST_MULTIPLIERS_MAX = 10;
   const PLINKO_AUTO_DROP_DELAY_MS = 200; // 5 balls per second
@@ -61,6 +66,19 @@
     const atMax = activeBalls >= (Plinko && Plinko.maxActiveBalls ? Plinko.maxActiveBalls : 25);
     dropBtn.disabled = plinkoAutoRunning ? false : (!canBet || atMax);
     dropBtn.textContent = plinkoAutoRunning ? 'Stop' : (plinkoControlMode === 'automatic' ? 'Start auto' : 'Drop ball');
+    updateRiskDropdownLock(activeBalls);
+  }
+
+  function updateRiskDropdownLock(activeBalls) {
+    const ballsInPlay = (activeBalls ?? (window.Plinko && window.Plinko.getActiveBallCount ? window.Plinko.getActiveBallCount() : 0)) > 0;
+    if (riskDropdownTrigger) {
+      riskDropdownTrigger.disabled = ballsInPlay;
+      riskDropdownTrigger.classList.toggle('risk-locked', ballsInPlay);
+      riskDropdownTrigger.title = ballsInPlay ? 'Wait for balls to land before changing risk' : '';
+    }
+    if (ballsInPlay && riskDropdown && riskDropdown.classList.contains('open')) {
+      closeRiskDropdown();
+    }
   }
 
   function setPlinkoControlMode(mode) {
@@ -142,14 +160,36 @@
     const level = Game.getPlinkoRiskLevel();
     riskLevelCurrent.textContent = level.charAt(0).toUpperCase() + level.slice(1);
     const costs = Game.plinkoRiskCosts;
-    if (costMedium) costMedium.textContent = Game.plinkoRiskUnlocked.medium ? '✓' : formatDollars(costs.medium);
-    if (costHigh) costHigh.textContent = Game.plinkoRiskUnlocked.high ? '✓' : formatDollars(costs.high);
-    if (costExtreme) costExtreme.textContent = Game.plinkoRiskUnlocked.extreme ? '✓' : formatDollars(costs.extreme);
-    document.querySelectorAll('.btn-risk').forEach((btn) => {
-      const r = btn.getAttribute('data-risk');
-      btn.classList.toggle('active', Game.getPlinkoRiskLevel() === r);
-      btn.disabled = r === 'low' ? false : (r === 'medium' ? Game.plinkoRiskUnlocked.medium : (r === 'high' ? Game.plinkoRiskUnlocked.high : Game.plinkoRiskUnlocked.extreme)) ? false : !Game.canUnlockPlinkoRisk(r);
+    if (costMedium) costMedium.textContent = Game.plinkoRiskUnlocked.medium ? '✓ Unlocked' : formatDollars(costs.medium);
+    if (costHigh) costHigh.textContent = Game.plinkoRiskUnlocked.high ? '✓ Unlocked' : formatDollars(costs.high);
+    if (costExtreme) costExtreme.textContent = Game.plinkoRiskUnlocked.extreme ? '✓ Unlocked' : formatDollars(costs.extreme);
+    document.querySelectorAll('.risk-dropdown-option').forEach((opt) => {
+      const r = opt.getAttribute('data-risk');
+      opt.classList.toggle('active', Game.getPlinkoRiskLevel() === r);
+      const unlocked = r === 'low' || (r === 'medium' ? Game.plinkoRiskUnlocked.medium : (r === 'high' ? Game.plinkoRiskUnlocked.high : Game.plinkoRiskUnlocked.extreme));
+      opt.classList.toggle('locked', !unlocked);
+      opt.classList.toggle('purchasable', !unlocked && Game.canUnlockPlinkoRisk(r));
     });
+  }
+
+  function closeRiskDropdown() {
+    if (riskDropdown) riskDropdown.classList.remove('open');
+    if (riskDropdownMenu) riskDropdownMenu.classList.add('hidden');
+    if (riskDropdownTrigger) riskDropdownTrigger.setAttribute('aria-expanded', 'false');
+  }
+
+  function updateRecordingUI() {
+    if (!plinkoRecordingBtn || !plinkoRecordingText || !plinkoRecordingStatus) return;
+    const Plinko = window.Plinko;
+    if (!Plinko) return;
+    const isRecording = Plinko.recordingEnabled;
+    plinkoRecordingBtn.classList.toggle('is-recording', isRecording);
+    plinkoRecordingText.textContent = isRecording ? 'Stop recording' : 'Start recording';
+    const status = Plinko.getRecordingStatus?.() || { total: 0, complete: false, slotsNeeded: [] };
+    const needed = status.slotsNeeded || Plinko.getSlotsNeeded?.() || [];
+    plinkoRecordingStatus.textContent = status.complete
+      ? 'Ferdig (180 baner)'
+      : `${status.total}/180 baner${needed.length ? ` · Mangler: ${needed.join(', ')}` : ''}`;
   }
 
   function renderLastMultipliers() {
@@ -175,18 +215,29 @@
     if (pageLeaderboard) pageLeaderboard.classList.toggle('hidden', pageId !== 'leaderboard');
     navLinks.forEach((a) => a.classList.toggle('active', a.getAttribute('data-page') === pageId));
     if (pageId === 'plinko') {
-      updateDropButton();
-      updateRiskLevelUI();
-      updatePlinkoSessionPnl();
-      setPlinkoControlMode(plinkoControlMode);
-      if (window.Plinko && window.Plinko.updateMultipliers) {
-        window.Plinko.updateMultipliers();
-      }
-      if (window.Plinko && window.Plinko.recenterBoard) {
-        requestAnimationFrame(() => {
-          window.Plinko.recenterBoard();
-          setTimeout(() => window.Plinko.recenterBoard(), 120);
-        });
+      const onIntroDone = () => {
+        document.querySelectorAll('.plinko-content').forEach((el) => el.classList.add('plinko-content-visible'));
+        updateDropButton();
+        updateRiskLevelUI();
+        updateRecordingUI();
+        updatePlinkoSessionPnl();
+        setPlinkoControlMode(plinkoControlMode);
+        if (window.Plinko && window.Plinko.updateMultipliers) {
+          window.Plinko.updateMultipliers();
+        }
+        if (window.Plinko && window.Plinko.recenterBoard) {
+          requestAnimationFrame(() => {
+            window.Plinko.recenterBoard();
+            setTimeout(() => window.Plinko.recenterBoard(), 120);
+          });
+        }
+      };
+      document.querySelectorAll('.plinko-content').forEach((el) => el.classList.remove('plinko-content-visible'));
+      if (window.PlinkoIntro && window.PlinkoIntro.runIntro) {
+        window.PlinkoIntro.runIntro(onIntroDone);
+      } else {
+        document.getElementById('plinkoIntro')?.classList.add('plinko-intro-done');
+        onIntroDone();
       }
     }
     if (pageId !== 'plinko') {
@@ -277,8 +328,57 @@
     const bet = Game.getBet();
     if (!Game.canBet(bet)) return false;
 
+    const useResolve = window.Stats && window.Stats.plinkoResolve && window.Stats.getPlinkoPathsReady;
+    let pathsReady = false;
+    if (useResolve) {
+      const status = await window.Stats.getPlinkoPathsReady();
+      pathsReady = status.ready;
+    }
+
+    if (pathsReady && window.Stats.plinkoResolve) {
+      const result = await window.Stats.plinkoResolve(bet);
+      if (!result) {
+        alert('Server error – try again.');
+        return false;
+      }
+      Game.balance -= bet;
+      updateBalance();
+      updateDropButton();
+      if (window.Stats && window.Stats.recordPlinkoLand) {
+        window.Stats.recordPlinkoLand(result.slotIndex, bet, result.multiplier);
+      }
+      const added = window.Plinko && window.Plinko.playPathReplay(
+        result.path,
+        bet,
+        result.slotIndex,
+        result.multiplier,
+        (res) => {
+          Game.balance = result.balance;
+          plinkoSessionBet += bet;
+          plinkoSessionWon += res.winAmount;
+          updatePlinkoSessionPnl();
+          updateBalance();
+          addLastMultiplier(res.multiplier);
+          setLastResult(`${res.multiplier}× → ${formatDollars(res.winAmount)}`, res.multiplier >= 1);
+          updateDropButton();
+          if (window.Auth && window.Auth.updateProfileStats) window.Auth.updateProfileStats();
+        }
+      );
+      if (!added) {
+        Game.balance = result.balance;
+        plinkoSessionBet += bet;
+        plinkoSessionWon += result.winAmount;
+        updatePlinkoSessionPnl();
+        updateBalance();
+        addLastMultiplier(result.multiplier);
+        setLastResult(`${result.multiplier}× → ${formatDollars(result.winAmount)}`, result.multiplier >= 1);
+        updateDropButton();
+      }
+      return true;
+    }
+
     const placeResult = window.Stats && window.Stats.placeBet
-      ? await window.Stats.placeBet(bet)
+      ? await window.Stats.placeBet(bet, 'plinko')
       : (Game.placeBet(bet) ? { balance: Game.balance } : null);
     if (!placeResult) {
       if (!window.Auth || !window.Auth.isAuthenticated()) return false;
@@ -286,17 +386,20 @@
       return false;
     }
     if (!window.Stats || !window.Stats.placeBet) Game.recordBet();
+    Game.balance = placeResult.balance ?? (Game.balance - bet);
     plinkoSessionBet += bet;
     updateBalance();
     updateDropButton();
-    updatePlinkoSessionPnl();
 
     const added = window.Plinko && window.Plinko.dropBall(bet, async (result) => {
       if (window.Stats && window.Stats.recordPlinkoLand) {
         window.Stats.recordPlinkoLand(result.slotIndex, bet, result.multiplier);
       }
+      if (result.recordedPath && window.Plinko && window.Plinko.addRecordedPath) {
+        window.Plinko.addRecordedPath(result.slotIndex, result.recordedPath);
+      }
       if (window.Stats && window.Stats.win) {
-        await window.Stats.win(result.winAmount, result.multiplier, bet);
+        await window.Stats.win(result.winAmount, result.multiplier, bet, 'plinko');
       } else {
         Game.win(result.winAmount, result.multiplier, bet);
       }
@@ -316,7 +419,7 @@
       plinkoSessionWon += bet;
       updatePlinkoSessionPnl();
       if (window.Stats && window.Stats.win) {
-        await window.Stats.win(bet, 1, bet);
+        await window.Stats.win(bet, 1, bet, 'plinko');
       } else {
         Game.win(bet, 1, bet);
       }
@@ -393,8 +496,8 @@
     }
     pendingClickAmount += Game.clickEarning;
     pendingClickCount += 1;
-    Game.balance += Game.clickEarning;
     if (Game.rewardClickXP) Game.rewardClickXP();
+    updateClickerPendingDisplay();
     const floatsEl = document.getElementById('clickerFloats');
     if (floatsEl) {
       const span = document.createElement('span');
@@ -407,7 +510,17 @@
       Game.totalClickEarnings = (Game.totalClickEarnings || 0) + Game.clickEarning;
       Game.totalClicks = (Game.totalClicks || 0) + 1;
     }
-    updateBalance();
+  }
+
+  function updateClickerPendingDisplay() {
+    const el = document.getElementById('clickerPending');
+    if (!el) return;
+    if (pendingClickAmount > 0) {
+      el.textContent = 'Pending: +$' + new Intl.NumberFormat('en', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(pendingClickAmount);
+      el.classList.remove('hidden');
+    } else {
+      el.classList.add('hidden');
+    }
   }
 
   setInterval(() => {
@@ -428,16 +541,21 @@
     const countToSend = pendingClickCount;
     pendingClickAmount = 0;
     pendingClickCount = 0;
+    updateClickerPendingDisplay();
     if (window.Stats && window.Stats.sendClickEarnings) {
       const result = await window.Stats.sendClickEarnings(toSend, countToSend);
       if (result == null) {
         pendingClickAmount += toSend;
         pendingClickCount += countToSend;
-        Game.balance -= toSend;
+        updateClickerPendingDisplay();
+      } else {
+        Game.balance = result.balance;
+        updateBalance();
       }
-      updateBalance();
     } else {
-      Game.totalClickEarnings = (Game.totalClickEarnings || 0);
+      Game.balance = (Game.balance || 0) + toSend;
+      Game.totalClickEarnings = (Game.totalClickEarnings || 0) + toSend;
+      Game.totalClicks = (Game.totalClicks || 0) + countToSend;
       updateBalance();
     }
   }
@@ -511,6 +629,30 @@
       handleDrop();
     });
   }
+  if (plinkoRecordingBtn) {
+    plinkoRecordingBtn.addEventListener('click', () => {
+      if (!window.Plinko) return;
+      if (window.Plinko.recordingEnabled) {
+        window.Plinko.stopRecording();
+      } else {
+        window.Plinko.startRecording();
+      }
+      updateRecordingUI();
+    });
+  }
+  if (plinkoSavePathsBtn) {
+    plinkoSavePathsBtn.addEventListener('click', async () => {
+      if (!window.Plinko || !window.Plinko.saveRecordedPathsNow) return;
+      await window.Plinko.saveRecordedPathsNow();
+      updateRecordingUI();
+    });
+  }
+  if (plinkoDownloadPathsBtn) {
+    plinkoDownloadPathsBtn.addEventListener('click', () => {
+      if (!window.Plinko || !window.Plinko.downloadRecordedPaths) return;
+      window.Plinko.downloadRecordedPaths();
+    });
+  }
   if (plinkoModeManualBtn) plinkoModeManualBtn.addEventListener('click', () => setPlinkoControlMode('manual'));
   if (plinkoModeAutomaticBtn) plinkoModeAutomaticBtn.addEventListener('click', () => setPlinkoControlMode('automatic'));
   if (betInput) {
@@ -518,10 +660,28 @@
     betInput.addEventListener('change', onBetInput);
   }
 
-  document.querySelectorAll('.btn-risk').forEach((btn) => {
-    btn.addEventListener('click', async () => {
+  if (riskDropdownTrigger) {
+    riskDropdownTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
       if (!window.Auth || !window.Auth.requireAuth(() => {})) return;
-      const risk = btn.getAttribute('data-risk');
+      const activeBalls = window.Plinko && window.Plinko.getActiveBallCount ? window.Plinko.getActiveBallCount() : 0;
+      if (activeBalls > 0) return;
+      riskDropdown.classList.toggle('open');
+      riskDropdownMenu.classList.toggle('hidden', !riskDropdown.classList.contains('open'));
+      riskDropdownTrigger.setAttribute('aria-expanded', riskDropdown.classList.contains('open'));
+    });
+  }
+  document.addEventListener('click', (e) => {
+    if (riskDropdown && !riskDropdown.contains(e.target)) closeRiskDropdown();
+  });
+  document.querySelectorAll('.risk-dropdown-option').forEach((opt) => {
+    opt.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!window.Auth || !window.Auth.requireAuth(() => {})) return;
+      const activeBalls = window.Plinko && window.Plinko.getActiveBallCount ? window.Plinko.getActiveBallCount() : 0;
+      if (activeBalls > 0) return;
+      const risk = opt.getAttribute('data-risk');
+      if (opt.classList.contains('locked') && !opt.classList.contains('purchasable')) return;
       if (risk === 'low') {
         if (window.Stats && window.Stats.setPlinkoRiskLevel) {
           const result = await window.Stats.setPlinkoRiskLevel('low');
@@ -529,11 +689,10 @@
         } else {
           Game.setPlinkoRiskLevel('low');
         }
+        closeRiskDropdown();
         updateBalance();
         updateRiskLevelUI();
-        if (window.Plinko && window.Plinko.updateMultipliers) {
-          window.Plinko.updateMultipliers();
-        }
+        if (window.Plinko && window.Plinko.updateMultipliers) window.Plinko.updateMultipliers();
         return;
       }
       if (Game.plinkoRiskUnlocked[risk]) {
@@ -543,31 +702,28 @@
         } else {
           Game.setPlinkoRiskLevel(risk);
         }
+        closeRiskDropdown();
         updateBalance();
         updateRiskLevelUI();
-        if (window.Plinko && window.Plinko.updateMultipliers) {
-          window.Plinko.updateMultipliers();
-        }
+        if (window.Plinko && window.Plinko.updateMultipliers) window.Plinko.updateMultipliers();
         return;
       }
       if (Game.canUnlockPlinkoRisk(risk) && window.Stats && window.Stats.setPlinkoRiskLevel) {
         const result = await window.Stats.setPlinkoRiskLevel(risk);
         if (result && !result.error) {
+          closeRiskDropdown();
           updateBalance();
           updateRiskLevelUI();
-          if (window.Plinko && window.Plinko.updateMultipliers) {
-            window.Plinko.updateMultipliers();
-          }
+          if (window.Plinko && window.Plinko.updateMultipliers) window.Plinko.updateMultipliers();
         } else if (result && result.error) {
           if (typeof alert === 'function') alert(result.error);
         }
       } else if (Game.canUnlockPlinkoRisk(risk)) {
         if (Game.unlockPlinkoRisk(risk)) {
+          closeRiskDropdown();
           updateBalance();
           updateRiskLevelUI();
-          if (window.Plinko && window.Plinko.updateMultipliers) {
-            window.Plinko.updateMultipliers();
-          }
+          if (window.Plinko && window.Plinko.updateMultipliers) window.Plinko.updateMultipliers();
         }
       }
     });
@@ -583,4 +739,5 @@
 
   setInterval(updateDropButton, 300);
   setInterval(updateRiskLevelUI, 500);
+  setInterval(() => updateRecordingUI(), 1000);
 })();

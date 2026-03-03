@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "reset": "node reset-data.js"
+    "reset": "node reset-data.js",
+    "reset-plinko-test": "node scripts/reset-plinko-test.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

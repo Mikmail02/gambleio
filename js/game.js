@@ -20,13 +20,19 @@ const Game = {
   biggestWinAmount: 0,
   biggestWinMultiplier: 1,
 
-  /** Slot odds: 1% for 15x edges, increasing toward center. Sum = 100%. */
+  /** Slot odds per risk. Must match server PLINKO_ODDS exactly. */
+  plinkoOdds: {
+    low: [0.8, 1.8, 3, 5, 7, 9.7, 15.3, 9.7, 7, 7, 9.7, 15.3, 9.7, 7, 5, 3, 1.8, 0.8],
+    medium: [0.6, 1.4, 2.4, 4, 6, 8.5, 13.5, 8.5, 6.5, 6.5, 8.5, 13.5, 8.5, 6.5, 4, 2.4, 1.4, 0.6],
+    high: [0.4, 1, 1.8, 3.2, 5, 7.5, 12, 7.5, 6, 6, 7.5, 12, 7.5, 6, 5, 3.2, 1.8, 0.4],
+    extreme: [0.05, 0.2, 0.4, 0.6, 1.5, 3, 5, 16, 60, 60, 16, 5, 3, 1.5, 0.6, 0.4, 0.2, 0.05],
+  },
+
+  /** Slot odds for current risk level. Used for hover tooltip and spawn weights. */
   getSlotOddsPercent() {
-    // Left side: [1, 2, 3, 5, 7, 8, 10, 8, 6] then mirrored
-    // This gives: 1% for 15x, 2% for 8.5x, 3% for 4.3x, 5% for 2.7x, 7% for 1.3x, 8% for 1.1x, 10% for 1x, 8% for 0.8x, 6% for 0.5x
-    const left = [1, 2, 3, 5, 7, 8, 10, 8, 6];
-    const right = [...left].reverse();
-    return [...left, ...right];
+    const risk = this.plinkoRiskLevel || 'low';
+    const odds = this.plinkoOdds[risk] || this.plinkoOdds.low;
+    return odds.slice(0, 18);
   },
 
   /** Multipliers per risk. Same slot order: edges high, center low. */

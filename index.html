@@ -157,6 +157,7 @@
                 <span class="clicker-coin-symbol" aria-hidden="true">$</span>
               </div>
               <p class="clicker-desc">Click to earn <span id="clickerPerClick">$1</span> per click. Money will be added every <span id="clickerIntervalSec">10</span> seconds.</p>
+              <p class="clicker-pending hidden" id="clickerPending">Pending: +$0</p>
             </button>
           </div>
           <div class="clicker-floats" id="clickerFloats" aria-hidden="true"></div>
@@ -171,16 +172,63 @@
 
       <!-- Plinko -->
       <section id="page-plinko" class="page page-plinko hidden">
-        <aside class="controls">
+        <div class="plinko-intro" id="plinkoIntro" aria-hidden="false">
+          <div class="plinko-intro-board" id="plinkoIntroBoard">
+            <div class="plinko-intro-mini-board" id="plinkoIntroMiniBoard">
+              <div class="plinko-intro-ball" id="plinkoIntroBall"></div>
+            </div>
+            <div class="plinko-intro-bowl plinko-intro-bowl-1000x" id="plinkoIntroBowl">1000x</div>
+            <h1 class="plinko-intro-logo" id="plinkoIntroLogo">Plinko</h1>
+            <div class="plinko-intro-cracks" id="plinkoIntroCracks" aria-hidden="true">
+              <svg class="plinko-intro-cracks-svg" viewBox="0 0 400 360" preserveAspectRatio="none">
+                <path class="plinko-crack plinko-crack-1" d="M0,150 L60,160 L90,140 L110,170 L130,150" />
+                <path class="plinko-crack plinko-crack-2" d="M400,200 L340,190 L310,210 L290,180 L270,200" />
+                <path class="plinko-crack plinko-crack-3" d="M180,0 L190,50 L170,90 L200,120 L210,80" />
+                <path class="plinko-crack plinko-crack-4" d="M80,360 L100,300 L80,260 L120,280 L140,320" />
+                <path class="plinko-crack plinko-crack-5" d="M320,360 L300,300 L320,260 L280,280 L260,320" />
+                <path class="plinko-crack plinko-crack-6" d="M0,50 L40,70 L20,100 L50,120" />
+                <path class="plinko-crack plinko-crack-7" d="M400,300 L360,280 L380,250 L350,230" />
+              </svg>
+            </div>
+          </div>
+        </div>
+        <aside class="controls plinko-content">
           <div class="control-group risk-level-group">
             <p class="risk-level-title">Risk level</p>
-            <p class="risk-level-current" id="riskLevelCurrent">Low</p>
-            <div class="risk-level-buttons" id="riskLevelButtons">
-              <button type="button" class="btn-risk btn-risk-low active" data-risk="low">Low</button>
-              <button type="button" class="btn-risk" data-risk="medium" id="buyMedium">Medium <span class="risk-cost" id="costMedium"></span></button>
-              <button type="button" class="btn-risk" data-risk="high" id="buyHigh">High <span class="risk-cost" id="costHigh"></span></button>
-              <button type="button" class="btn-risk" data-risk="extreme" id="buyExtreme">Extreme <span class="risk-cost" id="costExtreme"></span></button>
+            <div class="risk-dropdown" id="riskDropdown">
+              <button type="button" class="risk-dropdown-trigger" id="riskDropdownTrigger" aria-haspopup="listbox" aria-expanded="false">
+                <span class="risk-dropdown-value" id="riskLevelCurrent">Low</span>
+                <span class="risk-dropdown-arrow">▼</span>
+              </button>
+              <div class="risk-dropdown-menu hidden" id="riskDropdownMenu" role="listbox">
+                <div class="risk-dropdown-option" data-risk="low" role="option">
+                  <span class="risk-option-label">Low</span>
+                </div>
+                <div class="risk-dropdown-option" data-risk="medium" role="option">
+                  <span class="risk-option-label">Medium</span>
+                  <span class="risk-option-meta" id="costMedium"></span>
+                </div>
+                <div class="risk-dropdown-option" data-risk="high" role="option">
+                  <span class="risk-option-label">High</span>
+                  <span class="risk-option-meta" id="costHigh"></span>
+                </div>
+                <div class="risk-dropdown-option" data-risk="extreme" role="option">
+                  <span class="risk-option-label">Extreme</span>
+                  <span class="risk-option-meta" id="costExtreme"></span>
+                </div>
+              </div>
             </div>
+          </div>
+          <div class="control-group plinko-recording-group" id="plinkoRecordingGroup">
+            <div class="recording-buttons">
+              <button type="button" class="btn btn-recording" id="plinkoRecordingBtn">
+                <span class="recording-icon">⏺</span>
+                <span class="recording-text" id="plinkoRecordingText">Start recording</span>
+              </button>
+              <button type="button" class="btn btn-save-paths" id="plinkoSavePathsBtn">Lagre nå</button>
+              <button type="button" class="btn btn-download-paths" id="plinkoDownloadPathsBtn">Last ned</button>
+            </div>
+            <p class="recording-status" id="plinkoRecordingStatus"></p>
           </div>
           <div class="control-group">
             <div class="plinko-mode-toggle" id="plinkoControlToggle">
@@ -211,7 +259,7 @@
           <p class="balls-hint">Max 25 balls on board. Drop again to add more.</p>
         </aside>
 
-        <section class="plinko-area">
+        <section class="plinko-area plinko-content">
           <div id="plinkoBoard" class="plinko-board"></div>
         </section>
       </section>
@@ -434,6 +482,19 @@
         </div>
       </section>
     </main>
+    <footer class="site-footer">
+      <div class="site-footer-inner">
+        <span class="site-footer-brand">Gambleio</span>
+        <span class="site-footer-links">
+          <a href="#home">Home</a>
+          <a href="#plinko">Plinko</a>
+          <a href="#roulette">Roulette</a>
+          <a href="#slots">Slots</a>
+          <a href="#leaderboard">Leaderboard</a>
+        </span>
+        <span class="site-footer-copy">&copy; 2025 Gambleio</span>
+      </div>
+    </footer>
     </div><!-- .app-body -->
   </div>
 
@@ -577,6 +638,7 @@
   <script src="js/stats.js"></script>
   <script src="js/leaderboard.js"></script>
   <script src="js/plinko.js"></script>
+  <script src="js/plinko-intro.js"></script>
   <script src="js/roulette.js"></script>
   <script>
     console.log('[index.html] About to load slot-integration.js...');

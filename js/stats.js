@@ -5,7 +5,7 @@
  */
 const Stats = {
   apiBase: '/api',
-  syncDebounce: 250,
+  syncDebounce: 500,
   syncTimer: null,
   _syncInFlight: false,
   _syncQueued: false,
@@ -189,8 +189,8 @@ const Stats = {
     }
   },
 
-  /** Place a bet: server deducts balance. */
-  async placeBet(amount) {
+  /** Place a bet: server deducts balance. source: 'plinko' | 'roulette' | 'slots' | 'click' */
+  async placeBet(amount, source) {
     if (!window.Auth || !window.Auth.isAuthenticated()) {
       return Game.placeBet(amount) ? { balance: Game.balance } : null;
     }
@@ -198,7 +198,7 @@ const Stats = {
       const res = await this._fetch(`${this.apiBase}/user/place-bet`, {
         method: 'POST',
         headers: this._headers(),
-        body: JSON.stringify({ amount }),
+        body: JSON.stringify({ amount, source: source || null }),
       });
       if (!res.ok) return null;
       const data = await res.json();
@@ -212,8 +212,8 @@ const Stats = {
     }
   },
 
-  /** Record a win with amount, multiplier, and betAmount (only count as win when amount > betAmount). */
-  async win(amount, multiplier, betAmount) {
+  /** Record a win with amount, multiplier, and betAmount (only count as win when amount > betAmount). source: 'plinko' | 'roulette' | 'slots' */
+  async win(amount, multiplier, betAmount, source) {
     if (!window.Auth || !window.Auth.isAuthenticated()) {
       Game.win(amount, multiplier, betAmount);
       return { balance: Game.balance };
@@ -222,7 +222,7 @@ const Stats = {
       const res = await this._fetch(`${this.apiBase}/user/win`, {
         method: 'POST',
         headers: this._headers(),
-        body: JSON.stringify({ amount, multiplier: multiplier ?? null, betAmount: betAmount ?? null }),
+        body: JSON.stringify({ amount, multiplier: multiplier ?? null, betAmount: betAmount ?? null, source: source || null }),
       });
       if (!res.ok) return null;
       const data = await res.json();
@@ -275,6 +275,56 @@ const Stats = {
       });
     } catch (e) {
       console.warn('recordPlinkoLand failed:', e.message);
+    }
+  },
+
+  async savePlinkoPaths(paths) {
+    try {
+      const res = await this._fetch(`${this.apiBase}/plinko/save-paths`, {
+        method: 'POST',
+        headers: this._headers(),
+        body: JSON.stringify({ paths }),
+      });
+      return res.ok;
+    } catch (e) {
+      console.warn('savePlinkoPaths failed:', e.message);
+      return false;
+    }
+  },
+
+  /** Check if server has paths ready (10 per slot). Returns { ready, total, perSlot }. */
+  async getPlinkoPathsReady() {
+    try {
+      const res = await fetch(`${this.apiBase}/plinko/paths`);
+      if (!res.ok) return { ready: false, total: 0, perSlot: {} };
+      const data = await res.json();
+      const perSlot = data.perSlot || {};
+      const total = data.total || 0;
+      const ready = Object.keys(perSlot).length >= 18 && Object.values(perSlot).every((n) => n >= 10);
+      return { ready: !!ready, total, perSlot };
+    } catch (e) {
+      return { ready: false, total: 0, perSlot: {} };
+    }
+  },
+
+  /** Server-authoritative plinko: resolve bet, get slot+path. Returns { slotIndex, multiplier, winAmount, path, balance } or null. */
+  async plinkoResolve(amount) {
+    if (!window.Auth || !window.Auth.isAuthenticated()) return null;
+    try {
+      const res = await this._fetch(`${this.apiBase}/plinko/resolve`, {
+        method: 'POST',
+        headers: this._headers(),
+        body: JSON.stringify({ amount }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.warn('plinkoResolve failed:', err.error || res.status);
+        return null;
+      }
+      return await res.json();
+    } catch (e) {
+      console.warn('plinkoResolve failed:', e.message);
+      return null;
     }
   },
 

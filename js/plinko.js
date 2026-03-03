@@ -9,14 +9,14 @@
   const pegRows = 15;
   const pegSpacing = 36;
   const ballSize = 10;
-  const gravity = 0.21;
-  const bounceDamping = 0.557;
+  const gravity = 0.25;
+  const bounceDamping = 0.50;
   const centerBias = 0.00028;
   const randomBias = 0.01;
   const airDragX = 0.9965;
   const airDragY = 0.9985;
   const DROP_DELAY_MS = 80;
-  const VISUAL_TIME_SCALE = 0.55;
+  const VISUAL_TIME_SCALE = 0.75;
   const SPAWN_CONGESTION_LIMIT = 6;
   const SPAWN_ZONE_HEIGHT = 36;
   const BALL_FORCE_RESOLVE_MS = 20000;
@@ -32,6 +32,12 @@
   const SPAWN_NEAR_EDGE_TARGET_WEIGHT_SCALE = 0.28;
   const SPAWN_CENTER_TARGET_WEIGHT_SCALE = 1.2;
   const EDGE_SPAWN_CHANCE_BY_RISK = { low: 0.005, medium: 0.0025, high: 0.00125, extreme: 0.0003 };
+  const PATH_SAMPLE_MS = 40;
+  const PATH_NORMALIZE = true;
+
+  function setBallTransform(ball, x, y) {
+    ball.style.transform = `translate3d(${x}px,${y}px,0)`;
+  }
 
   let balls = [];
   let lastDropTime = 0;
@@ -39,9 +45,96 @@
   let multiplierBoxes = [];
   let rebuildTimer = null;
 
+  // Recording: én bane per skål (10 per skål), brukes for alle risk levels.
+  const PATHS_PER_SLOT = 10;
+  let recordingEnabled = false;
+  const recordedPaths = {};
+
+  function getSlotsNeeded() {
+    const needed = [];
+    for (let i = 0; i < 18; i++) {
+      const count = (recordedPaths[String(i)] || []).length;
+      if (count < PATHS_PER_SLOT) needed.push(i);
+    }
+    return needed;
+  }
+
+  function addRecordedPath(slotIndex, path) {
+    if (!recordingEnabled || !path || !Array.isArray(path) || path.length < 10) return;
+    const key = String(slotIndex);
+    if (!recordedPaths[key]) recordedPaths[key] = [];
+    const arr = recordedPaths[key];
+    if (arr.length >= PATHS_PER_SLOT) return;
+    arr.push(path);
+    const status = getRecordingStatus();
+    console.log(`[Plinko recording] slot ${slotIndex}: ${arr.length}/10. Total: ${status.total}/180. Mangler: ${getSlotsNeeded().join(', ') || 'ingen'}`);
+    if (status.complete) {
+      saveRecordedPaths();
+    }
+  }
+
+  function getRecordingStatus() {
+    const perSlot = {};
+    let total = 0;
+    let minCount = PATHS_PER_SLOT;
+    for (let i = 0; i < 18; i++) {
+      const count = (recordedPaths[String(i)] || []).length;
+      perSlot[i] = count;
+      total += count;
+      if (count < minCount) minCount = count;
+    }
+    return { perSlot, total, complete: minCount >= PATHS_PER_SLOT, slotsNeeded: getSlotsNeeded() };
+  }
+
+  async function saveRecordedPaths() {
+    if (window.Stats && window.Stats.savePlinkoPaths) {
+      const ok = await window.Stats.savePlinkoPaths(recordedPaths);
+      if (ok) {
+        const total = Object.values(recordedPaths).reduce((s, a) => s + a.length, 0);
+        console.log(`[Plinko recording] Lagret permanent (${total} baner)`);
+      } else {
+        console.warn('[Plinko recording] Lagring feilet – bruk «Last ned» for å lagre lokalt');
+      }
+    } else {
+      console.warn('[Plinko recording] Stats.savePlinkoPaths ikke tilgjengelig');
+    }
+  }
+
+  function downloadRecordedPaths() {
+    const data = { paths: recordedPaths };
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'plinko-paths.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    const total = Object.values(recordedPaths).reduce((s, arr) => s + arr.length, 0);
+    console.log(`[Plinko] Lastet ned ${total} baner til plinko-paths.json`);
+  }
+
+  async function loadRecordedPaths() {
+    try {
+      const res = await fetch('/api/plinko/paths');
+      if (!res.ok) return;
+      const data = await res.json();
+      const paths = data.paths || {};
+      for (const [slot, arr] of Object.entries(paths)) {
+        if (Array.isArray(arr) && arr.length > 0) {
+          recordedPaths[String(slot)] = arr.slice(0, PATHS_PER_SLOT);
+        }
+      }
+      const total = Object.values(recordedPaths).reduce((s, a) => s + a.length, 0);
+      if (total > 0) console.log(`[Plinko] Lastet ${total} baner fra server`);
+    } catch (e) {
+      console.warn('[Plinko] Kunne ikke laste baner:', e.message);
+    }
+  }
+
   function init() {
     if (!pegBoard) return;
     scheduleBoardRebuild();
+    loadRecordedPaths();
   }
 
   function hasValidBoardSize() {
@@ -156,7 +249,7 @@
       const odds = Game.getSlotOddsPercent();
       const oddsPercent = odds[i] || 0;
       box.dataset.odds = oddsPercent.toString();
-      box.title = `${oddsPercent}% chance`;
+      box.title = formatOddsPercent(oddsPercent) + ' chance';
       
       setupMultiplierBoxHover(box, oddsPercent);
       
@@ -212,6 +305,16 @@
     if (!base.length) return [1];
     const last = base.length - 1;
     const center = Math.floor(last / 2);
+
+    const needed = getSlotsNeeded();
+    if (recordingEnabled && needed.length > 0) {
+      const weights = Array(18).fill(0.01);
+      for (const slot of needed) {
+        weights[slot] = 50;
+      }
+      return weights;
+    }
+
     if (last >= 0) {
       base[0] *= SPAWN_EDGE_TARGET_WEIGHT_SCALE;
       base[last] *= SPAWN_EDGE_TARGET_WEIGHT_SCALE;
@@ -336,14 +439,13 @@
     ball.className = 'ball';
     ball.style.position = 'absolute';
     const spawnPlan = getSpawnPlan();
-    ball.style.left = `${spawnPlan.spawnLeft}px`;
-    ball.style.top = '0px';
     ball.style.width = `${ballSize}px`;
     ball.style.height = `${ballSize}px`;
     ball.style.borderRadius = '50%';
     ball.style.background = 'radial-gradient(circle at 30% 30%, #fff, #c4c8cc)';
     ball.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
     ball.style.pointerEvents = 'none';
+    setBallTransform(ball, spawnPlan.spawnLeft, 0);
     ball.dataset.betAmount = betAmount.toString();
     ball.dataset.createdAt = String(Date.now());
     ball.dataset.resolved = '0';
@@ -355,25 +457,47 @@
     let velocityX = ((Math.random() - 0.5) * 1.1) + spawnPlan.laneNudge;
     ball._forceResolveTimer = setTimeout(() => {
       if (!ball.parentNode) return;
-      // Failsafe: never leave a paid ball unresolved.
-      finishBall(ball, parseFloat(ball.style.left || '0'), betAmount, onComplete);
+      const pos = ball._posX != null ? ball._posX : spawnPlan.spawnLeft;
+      finishBall(ball, pos, betAmount, onComplete, null);
     }, BALL_FORCE_RESOLVE_MS);
-    animateBall(ball, velocityX, velocityY, betAmount, onComplete);
+    const recordPath = recordingEnabled;
+    animateBall(ball, velocityX, velocityY, betAmount, onComplete, { recordPath, spawnLeft: spawnPlan.spawnLeft });
     return true;
   }
 
-  function animateBall(ball, velocityX, velocityY, betAmount, onComplete) {
-    let lastTop = parseFloat(ball.style.top || '0');
-    let lastLeft = parseFloat(ball.style.left || '0');
+  function animateBall(ball, velocityX, velocityY, betAmount, onComplete, options) {
+    const recordPath = options && options.recordPath;
+    const pathData = recordPath ? [] : null;
+    let lastPathTime = recordPath ? performance.now() : 0;
+    let lastTop = 0;
+    let lastLeft = (options && options.spawnLeft != null) ? options.spawnLeft : 0;
     let nearSpawnStuckFrames = 0;
+    const boardW = pegBoard.offsetWidth || 1;
+    const boardH = pegBoard.offsetHeight || 1;
+
+    function samplePath() {
+      if (!pathData) return;
+      const now = performance.now();
+      if (now - lastPathTime >= PATH_SAMPLE_MS) {
+        lastPathTime = now;
+        const left = lastLeft + ballSize / 2;
+        const top = lastTop + ballSize / 2;
+        if (PATH_NORMALIZE) {
+          pathData.push([left / boardW, top / boardH]);
+        } else {
+          pathData.push([left, top]);
+        }
+      }
+    }
 
     function dropBallFrame() {
+      samplePath();
       const centerRegion = pegBoard.offsetWidth * 0.2;
-      const distanceFromCenter = Math.abs(parseFloat(ball.style.left) - (pegBoard.offsetWidth / 2));
+      const distanceFromCenter = Math.abs(lastLeft - (pegBoard.offsetWidth / 2));
 
       if (distanceFromCenter > centerRegion) {
         const biasStrength = Math.min(1, (distanceFromCenter - centerRegion) / centerRegion) * 0.28;
-        const bias = (parseFloat(ball.style.left) < pegBoard.offsetWidth / 2) ? centerBias : -centerBias;
+        const bias = (lastLeft < pegBoard.offsetWidth / 2) ? centerBias : -centerBias;
         velocityX += bias * biasStrength * VISUAL_TIME_SCALE;
       }
 
@@ -384,8 +508,8 @@
       velocityX = Math.max(-2.4, Math.min(2.4, velocityX));
       velocityY = Math.max(-4.5, Math.min(4.5, velocityY));
 
-      let newTop = parseFloat(ball.style.top) + velocityY * VISUAL_TIME_SCALE;
-      let newLeft = parseFloat(ball.style.left) + velocityX * VISUAL_TIME_SCALE;
+      let newTop = lastTop + velocityY * VISUAL_TIME_SCALE;
+      let newLeft = lastLeft + velocityX * VISUAL_TIME_SCALE;
 
       const leftBox = multiplierBoxes[0];
       const rightBox = multiplierBoxes[multiplierBoxes.length - 1];
@@ -415,8 +539,8 @@
           const bounceSpeed = speed * bounceDamping;
           velocityX = Math.cos(angle) * bounceSpeed;
           velocityY = Math.sin(angle) * bounceSpeed;
-          newLeft = parseFloat(ball.style.left) + velocityX;
-          newTop = parseFloat(ball.style.top) + velocityY;
+          newLeft = lastLeft + velocityX;
+          newTop = lastTop + velocityY;
           applyGlow(peg);
         }
       });
@@ -429,7 +553,6 @@
         nearSpawnStuckFrames = 0;
       }
       if (nearSpawnStuckFrames > 20) {
-        // Kick balls out of the spawn cluster if they lock.
         velocityY += 1.1 * VISUAL_TIME_SCALE;
         velocityX += ((Math.random() - 0.5) * 1.2) * VISUAL_TIME_SCALE;
         newTop += 1.5 * VISUAL_TIME_SCALE;
@@ -437,12 +560,14 @@
       }
 
       if (newTop >= boxY - ballSize) {
-        finishBall(ball, newLeft, betAmount, onComplete);
+        samplePath();
+        finishBall(ball, newLeft, betAmount, onComplete, pathData && pathData.length >= 10 ? pathData : null);
         return;
       }
 
-      ball.style.left = `${newLeft}px`;
-      ball.style.top = `${newTop}px`;
+      ball._posX = newLeft;
+      ball._posY = newTop;
+      setBallTransform(ball, newLeft, newTop);
       lastTop = newTop;
       lastLeft = newLeft;
       requestAnimationFrame(dropBallFrame);
@@ -451,7 +576,7 @@
     requestAnimationFrame(dropBallFrame);
   }
 
-  function finishBall(ball, newLeft, betAmount, onComplete) {
+  function finishBall(ball, newLeft, betAmount, onComplete, recordedPath) {
     if (!ball || ball.dataset.resolved === '1') return;
     ball.dataset.resolved = '1';
     if (ball._forceResolveTimer) {
@@ -481,8 +606,65 @@
 
     if (resolvedBox) applyMultiplierGlow(resolvedBox);
     if (onComplete) {
-      onComplete({ slotIndex: resolvedIndex, multiplier, winAmount });
+      const result = { slotIndex: resolvedIndex, multiplier, winAmount };
+      if (recordedPath && recordedPath.length >= 10) result.recordedPath = recordedPath;
+      onComplete(result);
     }
+  }
+
+  function playPathReplay(path, betAmount, slotIndex, multiplier, onComplete) {
+    if (!pegBoard || !path || !Array.isArray(path) || path.length < 10) return false;
+    if (balls.length >= 25) return false;
+    if (!multiplierBoxes.length || !hasValidBoardSize()) {
+      scheduleBoardRebuild();
+      return false;
+    }
+    const boardW = pegBoard.offsetWidth || 1;
+    const boardH = pegBoard.offsetHeight || 1;
+    const winAmount = betAmount * multiplier;
+
+    const ball = document.createElement('div');
+    ball.className = 'ball';
+    ball.style.position = 'absolute';
+    ball.style.width = `${ballSize}px`;
+    ball.style.height = `${ballSize}px`;
+    ball.style.borderRadius = '50%';
+    ball.style.background = 'radial-gradient(circle at 30% 30%, #fff, #c4c8cc)';
+    ball.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+    ball.style.pointerEvents = 'none';
+    pegBoard.appendChild(ball);
+    balls.push(ball);
+
+    const frameMs = PATH_SAMPLE_MS;
+    const totalDuration = (path.length - 1) * frameMs + 100;
+    const startTime = performance.now();
+    function step() {
+      const elapsed = performance.now() - startTime;
+      if (elapsed >= totalDuration) {
+        const last = path[path.length - 1];
+        const lx = PATH_NORMALIZE ? last[0] * boardW - ballSize / 2 : last[0] - ballSize / 2;
+        const ly = PATH_NORMALIZE ? last[1] * boardH - ballSize / 2 : last[1] - ballSize / 2;
+        setBallTransform(ball, lx, ly);
+        if (ball.parentNode) pegBoard.removeChild(ball);
+        balls = balls.filter(b => b !== ball);
+        if (multiplierBoxes[slotIndex]) applyMultiplierGlow(multiplierBoxes[slotIndex]);
+        if (onComplete) onComplete({ slotIndex, multiplier, winAmount });
+        return;
+      }
+      const t = Math.min(elapsed / frameMs, path.length - 1.001);
+      const i = Math.floor(t);
+      const frac = t - i;
+      const p0 = path[i];
+      const p1 = path[Math.min(i + 1, path.length - 1)];
+      const nx = p0[0] + (p1[0] - p0[0]) * frac;
+      const ny = p0[1] + (p1[1] - p0[1]) * frac;
+      const left = PATH_NORMALIZE ? nx * boardW - ballSize / 2 : nx - ballSize / 2;
+      const top = PATH_NORMALIZE ? ny * boardH - ballSize / 2 : ny - ballSize / 2;
+      setBallTransform(ball, left, top);
+      requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+    return true;
   }
 
   function updateMultipliers() {
@@ -497,13 +679,19 @@
     createMultiplierBoxes();
   }
   
+  function formatOddsPercent(val) {
+    const n = Number(val);
+    if (!Number.isFinite(n)) return '0%';
+    return n < 1 ? `${n.toFixed(2)}%` : `${n}%`;
+  }
+
   function setupMultiplierBoxHover(box, oddsPercent) {
     let tooltip = null;
     box.addEventListener('mouseenter', () => {
       if (tooltip) return;
       tooltip = document.createElement('div');
       tooltip.className = 'multiplier-tooltip';
-      tooltip.textContent = `${oddsPercent}%`;
+      tooltip.textContent = formatOddsPercent(oddsPercent) + ' chance';
       const boxLeft = parseFloat(box.style.left);
       const boxTop = parseFloat(box.style.top);
       tooltip.style.left = `${boxLeft + 36 / 2}px`;
@@ -531,11 +719,19 @@
 
   window.Plinko = {
     dropBall,
+    playPathReplay,
     updateMultipliers,
     recenterBoard: () => scheduleBoardRebuild(18, 70),
     getActiveBallCount: () => balls.length,
     maxActiveBalls: 25,
-    isReplaysReady: () => true,
-    onReplaysReady: null,
+    startRecording: () => { recordingEnabled = true; console.log('[Plinko] Recording startet'); },
+    stopRecording: () => { recordingEnabled = false; console.log('[Plinko] Recording stoppet'); },
+    addRecordedPath,
+    getRecordingStatus,
+    getSlotsNeeded,
+    saveRecordedPathsNow: saveRecordedPaths,
+    downloadRecordedPaths,
+    loadRecordedPaths,
+    get recordingEnabled() { return recordingEnabled; },
   };
 })();
