@@ -1,6 +1,6 @@
 /**
- * Plinko intro: ball falls randomly into 1000x bowl, board+bowl disappear,
- * logo slams in, cracks appear, neon glow, fade out.
+ * Plinko intro: ball falls into 1000x bowl (same physics as real board),
+ * board+bowl disappear, logo slams in, cracks, neon, fade out.
  */
 (function () {
   const intro = document.getElementById('plinkoIntro');
@@ -13,10 +13,25 @@
 
   if (!intro || !board || !miniBoard || !ball || !bowl || !logo || !cracks) return;
 
-  const gravity = 0.4;
-  const ballSize = 10;
-  const pegSize = 6;
-  const pegSpacing = 20;
+  // Physics: lavere gravity enn ekte brett for roligere intro
+  const gravity = 0.14;
+  const bounceDamping = 0.5;
+  const airDragX = 0.9965;
+  const airDragY = 0.9985;
+  const centerBias = 0.00028;
+  const randomBias = 0.01;
+  const VISUAL_TIME_SCALE = 0.75;
+
+  const ballSize = 7;
+  const pegSize = 10;
+  const pegSpacing = 28;
+  const MINI_BOARD_HEIGHT = 200;
+  const MINI_BOARD_WIDTH = 400;
+  const BOWL_LEFT = 0;
+  const BOWL_RIGHT = MINI_BOARD_WIDTH;
+  const WALL_LEFT = 0;
+  const WALL_RIGHT = MINI_BOARD_WIDTH - ballSize;
+
   let animId = null;
   let pegs = [];
 
@@ -25,10 +40,10 @@
     pegs = [];
     const startY = 25;
     for (let row = 0; row < 4; row++) {
-      const count = 2 + row;
+      const count = 3 + row;
       const y = startY + row * pegSpacing;
       const rowWidth = (count - 1) * pegSpacing;
-      const startX = (board.offsetWidth - rowWidth) / 2;
+      const startX = (MINI_BOARD_WIDTH - rowWidth) / 2;
       for (let col = 0; col < count; col++) {
         const peg = document.createElement('div');
         peg.className = 'plinko-intro-peg';
@@ -51,16 +66,9 @@
     logo.classList.remove('plinko-intro-logo-slam', 'plinko-intro-logo-neon', 'plinko-intro-logo-out');
     cracks.classList.remove('plinko-intro-cracks-visible', 'plinko-intro-cracks-out');
 
-    const boardW = board.offsetWidth || 400;
-    const boardH = board.offsetHeight || 360;
-    const bowlW = 120;
-    const bowlH = 36;
-    const bowlX = (boardW - bowlW) / 2;
-    const bowlY = boardH - bowlH - 20;
-
-    let velocityX = (Math.random() - 0.5) * 1.2;
+    let velocityX = (Math.random() - 0.5) * 1.1;
     let velocityY = 0;
-    let lastLeft = boardW / 2 - ballSize / 2 + (Math.random() - 0.5) * 60;
+    let lastLeft = MINI_BOARD_WIDTH / 2 - ballSize / 2 + (Math.random() - 0.5) * 40;
     let lastTop = -15;
 
     ball.style.transform = `translate3d(${lastLeft}px,${lastTop}px,0)`;
@@ -70,24 +78,45 @@
 
     function frame() {
       const elapsed = performance.now() - startTime;
-      velocityY += gravity;
-      velocityX *= 0.998;
-      velocityY = Math.min(velocityY, 6);
 
-      let newTop = lastTop + velocityY;
-      let newLeft = lastLeft + velocityX;
-
-      const wallLeft = 8;
-      const wallRight = boardW - ballSize - 8;
-      if (newLeft < wallLeft) {
-        newLeft = wallLeft;
-        velocityX *= -0.6;
+      // Center bias (same as real board)
+      const centerRegion = MINI_BOARD_WIDTH * 0.2;
+      const distanceFromCenter = Math.abs(lastLeft - (MINI_BOARD_WIDTH / 2));
+      if (distanceFromCenter > centerRegion) {
+        const biasStrength = Math.min(1, (distanceFromCenter - centerRegion) / centerRegion) * 0.28;
+        const bias = (lastLeft < MINI_BOARD_WIDTH / 2) ? centerBias : -centerBias;
+        velocityX += bias * biasStrength * VISUAL_TIME_SCALE;
       }
-      if (newLeft > wallRight) {
-        newLeft = wallRight;
-        velocityX *= -0.6;
+      velocityX += ((Math.random() - 0.5) * randomBias) * VISUAL_TIME_SCALE;
+
+      velocityY += gravity * VISUAL_TIME_SCALE;
+      velocityX *= airDragX;
+      velocityY *= airDragY;
+      velocityX = Math.max(-2.4, Math.min(2.4, velocityX));
+      velocityY = Math.max(-4.5, Math.min(4.5, velocityY));
+
+      let newTop = lastTop + velocityY * VISUAL_TIME_SCALE;
+      let newLeft = lastLeft + velocityX * VISUAL_TIME_SCALE;
+
+      // Invisible walls (same idea as real board – ball cannot leave)
+      if (newLeft < WALL_LEFT) {
+        newLeft = WALL_LEFT;
+        velocityX *= -bounceDamping;
+      }
+      if (newLeft > WALL_RIGHT) {
+        newLeft = WALL_RIGHT;
+        velocityX *= -bounceDamping;
       }
 
+      // Bunn: ballen holdes innenfor brettet (skålen er like bred som brettet)
+      const ballBottom = newTop + ballSize;
+      if (ballBottom >= MINI_BOARD_HEIGHT - 2) {
+        newTop = MINI_BOARD_HEIGHT - ballSize - 2;
+        newLeft = Math.max(WALL_LEFT, Math.min(WALL_RIGHT, newLeft));
+        velocityX *= 0.6;
+      }
+
+      // Peg collisions (same physics as real: bounce with damping)
       pegs.forEach((peg) => {
         const pegLeft = parseFloat(peg.style.left);
         const pegTop = parseFloat(peg.style.top);
@@ -96,19 +125,20 @@
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < ballSize / 2 + pegSize / 2) {
           const angle = Math.atan2(dy, dx);
-          const speed = Math.sqrt(velocityX * velocityX + velocityY * velocityY) * 0.6;
-          velocityX = Math.cos(angle) * speed;
-          velocityY = Math.sin(angle) * speed;
+          const speed = Math.sqrt(velocityX * velocityX + velocityY * velocityY);
+          const bounceSpeed = speed * bounceDamping;
+          velocityX = Math.cos(angle) * bounceSpeed;
+          velocityY = Math.sin(angle) * bounceSpeed;
           newLeft = lastLeft + velocityX;
           newTop = lastTop + velocityY;
         }
       });
 
       const ballCenterX = newLeft + ballSize / 2;
-      const ballBottom = newTop + ballSize;
-      const inBowlX = ballCenterX >= bowlX - 5 && ballCenterX <= bowlX + bowlW + 5;
-      const inBowlY = ballBottom >= bowlY - 5 && ballBottom <= bowlY + bowlH + 15;
-      const forceLandAt = 8000;
+      const ballBottomCheck = newTop + ballSize;
+      const inBowlX = ballCenterX >= BOWL_LEFT - 5 && ballCenterX <= BOWL_RIGHT + 5;
+      const inBowlY = ballBottomCheck >= MINI_BOARD_HEIGHT - 15;
+      const forceLandAt = 12000;
 
       if ((inBowlX && inBowlY) || elapsed > forceLandAt) {
         if (animId) cancelAnimationFrame(animId);

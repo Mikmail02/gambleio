@@ -25,12 +25,6 @@
   const plinkoModeAutomaticBtn = document.getElementById('plinkoModeAutomatic');
   const plinkoAutoBetsGroup = document.getElementById('plinkoAutoBetsGroup');
   const plinkoAutoBetsInput = document.getElementById('plinkoAutoBets');
-  const plinkoRecordingBtn = document.getElementById('plinkoRecordingBtn');
-  const plinkoRecordingText = document.getElementById('plinkoRecordingText');
-  const plinkoRecordingStatus = document.getElementById('plinkoRecordingStatus');
-  const plinkoSavePathsBtn = document.getElementById('plinkoSavePathsBtn');
-  const plinkoDownloadPathsBtn = document.getElementById('plinkoDownloadPathsBtn');
-
   const LAST_MULTIPLIERS_MAX = 10;
   const PLINKO_AUTO_DROP_DELAY_MS = 200; // 5 balls per second
   let lastMultipliers = [];
@@ -178,20 +172,6 @@
     if (riskDropdownTrigger) riskDropdownTrigger.setAttribute('aria-expanded', 'false');
   }
 
-  function updateRecordingUI() {
-    if (!plinkoRecordingBtn || !plinkoRecordingText || !plinkoRecordingStatus) return;
-    const Plinko = window.Plinko;
-    if (!Plinko) return;
-    const isRecording = Plinko.recordingEnabled;
-    plinkoRecordingBtn.classList.toggle('is-recording', isRecording);
-    plinkoRecordingText.textContent = isRecording ? 'Stop recording' : 'Start recording';
-    const status = Plinko.getRecordingStatus?.() || { total: 0, complete: false, slotsNeeded: [] };
-    const needed = status.slotsNeeded || Plinko.getSlotsNeeded?.() || [];
-    plinkoRecordingStatus.textContent = status.complete
-      ? 'Ferdig (180 baner)'
-      : `${status.total}/180 baner${needed.length ? ` · Mangler: ${needed.join(', ')}` : ''}`;
-  }
-
   function renderLastMultipliers() {
     if (!lastMultipliersList) return;
     lastMultipliersList.innerHTML = lastMultipliers
@@ -219,17 +199,15 @@
         document.querySelectorAll('.plinko-content').forEach((el) => el.classList.add('plinko-content-visible'));
         updateDropButton();
         updateRiskLevelUI();
-        updateRecordingUI();
         updatePlinkoSessionPnl();
         setPlinkoControlMode(plinkoControlMode);
         if (window.Plinko && window.Plinko.updateMultipliers) {
           window.Plinko.updateMultipliers();
         }
         if (window.Plinko && window.Plinko.recenterBoard) {
-          requestAnimationFrame(() => {
-            window.Plinko.recenterBoard();
-            setTimeout(() => window.Plinko.recenterBoard(), 120);
-          });
+          requestAnimationFrame(() => window.Plinko.recenterBoard());
+          setTimeout(() => window.Plinko.recenterBoard(), 150);
+          setTimeout(() => window.Plinko.recenterBoard(), 400);
         }
       };
       document.querySelectorAll('.plinko-content').forEach((el) => el.classList.remove('plinko-content-visible'));
@@ -629,30 +607,6 @@
       handleDrop();
     });
   }
-  if (plinkoRecordingBtn) {
-    plinkoRecordingBtn.addEventListener('click', () => {
-      if (!window.Plinko) return;
-      if (window.Plinko.recordingEnabled) {
-        window.Plinko.stopRecording();
-      } else {
-        window.Plinko.startRecording();
-      }
-      updateRecordingUI();
-    });
-  }
-  if (plinkoSavePathsBtn) {
-    plinkoSavePathsBtn.addEventListener('click', async () => {
-      if (!window.Plinko || !window.Plinko.saveRecordedPathsNow) return;
-      await window.Plinko.saveRecordedPathsNow();
-      updateRecordingUI();
-    });
-  }
-  if (plinkoDownloadPathsBtn) {
-    plinkoDownloadPathsBtn.addEventListener('click', () => {
-      if (!window.Plinko || !window.Plinko.downloadRecordedPaths) return;
-      window.Plinko.downloadRecordedPaths();
-    });
-  }
   if (plinkoModeManualBtn) plinkoModeManualBtn.addEventListener('click', () => setPlinkoControlMode('manual'));
   if (plinkoModeAutomaticBtn) plinkoModeAutomaticBtn.addEventListener('click', () => setPlinkoControlMode('automatic'));
   if (betInput) {
@@ -739,5 +693,4 @@
 
   setInterval(updateDropButton, 300);
   setInterval(updateRiskLevelUI, 500);
-  setInterval(() => updateRecordingUI(), 1000);
 })();
