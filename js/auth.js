@@ -162,6 +162,7 @@
       roleTag.classList.add('hidden');
     }
     if (crown) crown.classList.toggle('hidden', !(currentUser && (currentUser.role === 'owner' || currentUser.isOwner)));
+    hideChallengeButton();
   }
 
   function renderProfileForUser(user) {
@@ -221,6 +222,22 @@
       }
     }
     if (crown) crown.classList.toggle('hidden', !(user.role === 'owner' || user.isOwner));
+
+    const challengeBtn = document.getElementById('challengeBtnProfile');
+    if (challengeBtn) {
+      challengeBtn.classList.remove('hidden');
+      challengeBtn.dataset.profileUsername = user.username || '';
+      challengeBtn.dataset.profileSlug = user.profileSlug || user.username || '';
+    }
+  }
+
+  function hideChallengeButton() {
+    const challengeBtn = document.getElementById('challengeBtnProfile');
+    if (challengeBtn) {
+      challengeBtn.classList.add('hidden');
+      challengeBtn.dataset.profileUsername = '';
+      challengeBtn.dataset.profileSlug = '';
+    }
   }
 
   async function showProfile(profileUsername) {
@@ -237,11 +254,13 @@
         document.getElementById('logoutBtnProfile') && (document.getElementById('logoutBtnProfile').style.display = 'none');
         document.getElementById('profileRoleTag')?.classList.add('hidden');
       }
+      hideChallengeButton();
       return;
     }
 
     if (currentUser && (currentUser.profileSlug || '').toLowerCase() === (profileUsername || '').toLowerCase()) {
       updateProfileUI();
+      hideChallengeButton();
       return;
     }
 
@@ -253,6 +272,7 @@
         document.getElementById('profileBalanceStat') && (document.getElementById('profileBalanceStat').style.display = 'none');
         document.getElementById('logoutBtnProfile') && (document.getElementById('logoutBtnProfile').style.display = 'none');
         document.getElementById('profileRoleTag')?.classList.add('hidden');
+        hideChallengeButton();
         return;
       }
       const user = await res.json();

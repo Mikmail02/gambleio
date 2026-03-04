@@ -82,8 +82,13 @@
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ key, amount }),
       });
-      if (!res.ok) return null;
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data.code === 'GAMBLE_LOCKED' && data.error && window.showGambleLockToast) {
+          window.showGambleLockToast(data.error);
+        }
+        return null;
+      }
       Game.balance = data.balance;
       return data;
     } catch (e) {

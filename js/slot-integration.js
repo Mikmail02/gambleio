@@ -1228,9 +1228,7 @@
     const placeResult = window.Stats && window.Stats.placeBet
       ? await window.Stats.placeBet(bet, 'slots')
       : (Game.placeBet(bet) ? { balance: Game.balance } : null);
-    if (!placeResult) {
-      if (!window.Auth || !window.Auth.isAuthenticated()) throw new Error('Session expired');
-      alert('Insufficient balance or server error.');
+    if (!placeResult || placeResult.gambleLocked) {
       throw new Error('Insufficient balance');
     }
     if (!window.Stats || !window.Stats.placeBet) Game.recordBet();

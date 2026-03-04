@@ -200,7 +200,14 @@ const Stats = {
         headers: this._headers(),
         body: JSON.stringify({ amount, source: source || null }),
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data.code === 'GAMBLE_LOCKED' && data.error) {
+          if (window.showGambleLockToast) window.showGambleLockToast(data.error);
+          return { gambleLocked: true };
+        }
+        return null;
+      }
       const data = await res.json();
       Game.balance = data.balance;
       Game.totalBets = data.totalBets ?? Game.totalBets;

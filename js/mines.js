@@ -216,7 +216,13 @@
       });
       const data = res.ok ? await res.json() : await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(data.error || 'Bet failed');
+        if (data.code === 'GAMBLE_LOCKED' && data.error && window.showGambleLockToast) {
+          window.showGambleLockToast(data.error);
+          state.autoRunning = false;
+          updateUI();
+        } else {
+          alert(data.error || 'Bet failed');
+        }
         return;
       }
       state.bet = bet;
@@ -300,8 +306,19 @@
     }
   }
 
+  function canAffordBet() {
+    const bet = parseFloat(document.getElementById('minesBetAmount')?.value) || state.bet;
+    const balance = window.Game && (typeof window.Game.getBalance === 'function' ? window.Game.getBalance() : window.Game.balance);
+    return Number.isFinite(bet) && bet >= 0.01 && window.Game && bet <= (balance || 0);
+  }
+
   async function runAutoRound() {
     if (!state.autoRunning || state.roundId != null) return;
+    if (!canAffordBet()) {
+      state.autoRunning = false;
+      updateUI();
+      return;
+    }
     await placeBet();
     if (state.roundId == null) return;
     const order = [...state.selectedTiles].sort((a, b) => a - b);
@@ -367,6 +384,11 @@
     const maxRounds = parseInt(document.getElementById('minesAutoRounds')?.value, 10);
     let rounds = 0;
     while (state.autoRunning) {
+      if (!canAffordBet()) {
+        state.autoRunning = false;
+        updateUI();
+        break;
+      }
       await runAutoRound();
       rounds++;
       if (Number.isFinite(maxRounds) && maxRounds > 0 && rounds >= maxRounds) break;

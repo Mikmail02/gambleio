@@ -40,6 +40,7 @@ const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 const PLINKO_STATS_FILE = path.join(DATA_DIR, 'plinko-stats.json');
 const ADMIN_LOGS_FILE = path.join(DATA_DIR, 'admin-logs.json');
+const CHAT_MESSAGES_FILE = path.join(DATA_DIR, 'chat-messages.json');
 
 const users = new Map();
 const sessions = new Map();
@@ -82,9 +83,21 @@ function checkRateLimit(store, key, maxPerMin) {
 }
 
 function loadData() {
-  if (useDb) return;
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (fs.existsSync(CHAT_MESSAGES_FILE)) {
+      const arr = JSON.parse(fs.readFileSync(CHAT_MESSAGES_FILE, 'utf8'));
+      if (Array.isArray(arr)) {
+        chatMessages.length = 0;
+        chatMessages.push(...arr.slice(-CHAT_MAX));
+        console.log(`Loaded ${chatMessages.length} chat messages`);
+      }
+    }
+  } catch (e) {
+    console.warn('Could not load chat:', e.message);
+  }
+  if (useDb) return;
+  try {
     if (fs.existsSync(USERS_FILE)) {
       const obj = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
       for (const [k, v] of Object.entries(obj)) {
@@ -116,6 +129,15 @@ function loadData() {
     }
   } catch (e) {
     console.warn('Could not load data, starting fresh:', e.message);
+  }
+}
+
+function saveChatMessages() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(CHAT_MESSAGES_FILE, JSON.stringify(chatMessages.slice(-CHAT_MAX), null, 2));
+  } catch (e) {
+    console.error('Failed to save chat messages:', e.message);
   }
 }
 
@@ -283,6 +305,7 @@ function ensureFields(user) {
   if (user.role === undefined) user.role = user.isOwner ? 'owner' : (user.isAdmin ? 'admin' : null);
   if (user.role !== null && !['member', 'mod', 'admin', 'owner'].includes(user.role)) user.role = null;
   if (user.totalProfitWins === undefined) user.totalProfitWins = 0;
+  if (user.gambleLockedUntil === undefined) user.gambleLockedUntil = null;
   if (!user.gameNet || typeof user.gameNet !== 'object') {
     user.gameNet = emptyGameNet();
   } else {
@@ -769,6 +792,406 @@ app.post('/api/user/chat-rules-accept', async (req, res) => {
 
 // ===== CHAT =====
 // Mute and rate limits are enforced only on the server. Clients cannot bypass via API, console or any request.
+// ===== CHALLENGES =====
+const challenges = new Map();
+let challengeIdCounter = 1;
+
+function formatChallengeWager(wagerType, wagerValue) {
+  if (wagerType === 'money') return '$' + (wagerValue || 0).toLocaleString();
+  if (wagerType === 'gamble_lock') return 'Gamble Lock ' + (wagerValue || 0) + ' min';
+  return String(wagerValue || '');
+}
+
+function formatChallengeGame(game) {
+  if (game === 'gambly_bird') return 'Gambly Bird';
+  return game || 'Gambly Bird';
+}
+
+function safeChallengeLabel(displayName, username) {
+  const d = displayName || username;
+  if (d && !String(d).includes('@')) return d;
+  return (username && !String(username).includes('@') ? username : null) || displayName || 'Player';
+}
+
+function addChallengeServerMessage(challenge, statusText) {
+  const challenger = safeChallengeLabel(challenge.challengerDisplayName, challenge.challengerUsername) || '?';
+  const target = safeChallengeLabel(challenge.targetDisplayName, challenge.targetUsername) || '?';
+  const wager = formatChallengeWager(challenge.wagerType, challenge.wagerValue);
+  const game = formatChallengeGame(challenge.game);
+  const text = challenger + ' challenged ' + target + '\nWager: ' + wager + '\nGame: ' + game + '\n' + statusText;
+  const msg = {
+    isServer: true,
+    challengeId: challenge.id,
+    text,
+    time: Date.now(),
+  };
+  chatMessages.push(msg);
+  if (chatMessages.length > CHAT_MAX) chatMessages.shift();
+  saveChatMessages();
+  return msg;
+}
+
+function updateChallengeServerMessage(challengeId, statusText) {
+  for (let i = chatMessages.length - 1; i >= 0; i--) {
+    const m = chatMessages[i];
+    if (m && m.isServer && m.challengeId === challengeId && m.text) {
+      const lines = m.text.split('\n');
+      if (lines.length >= 4) {
+        lines[3] = statusText;
+        m.text = lines.join('\n');
+        saveChatMessages();
+        return;
+      }
+    }
+  }
+}
+
+app.post('/api/challenge/send', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  const { targetUsername, wagerType, wagerValue, game } = req.body || {};
+  const targetKey = (targetUsername || '').toLowerCase().trim();
+  if (!targetKey) return res.status(400).json({ error: 'Target user required' });
+  if (targetKey === (user.username || '').toLowerCase()) return res.status(400).json({ error: 'Cannot challenge yourself' });
+  const target = await getUserByKeyOrSlug(targetKey);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  ensureFields(target);
+
+  const wType = (wagerType === 'gamble_lock') ? 'gamble_lock' : 'money';
+  let wVal;
+  if (wType === 'money') {
+    const amt = Number(wagerValue);
+    if (!Number.isFinite(amt) || amt < 1) return res.status(400).json({ error: 'Invalid money amount (min 1)' });
+    wVal = Math.floor(amt);
+  } else {
+    const min = Math.min(10, Math.max(1, Math.floor(Number(wagerValue) || 5)));
+    wVal = min;
+  }
+
+  const id = 'c' + (challengeIdCounter++);
+  const challenge = {
+    id,
+    challengerUsername: user.username,
+    challengerDisplayName: user.displayName || user.username,
+    targetUsername: target.username,
+    targetDisplayName: target.displayName || target.username,
+    wagerType: wType,
+    wagerValue: wVal,
+    game: game || 'gambly_bird',
+    status: 'pending',
+    createdAt: Date.now(),
+  };
+  challenges.set(id, challenge);
+  addChallengeServerMessage(challenge, 'Waiting....');
+  res.json({ challenge });
+});
+
+app.get('/api/challenge/pending', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  const targetKey = (user.username || '').toLowerCase();
+  for (const c of challenges.values()) {
+    if ((c.targetUsername || '').toLowerCase() === targetKey && c.status === 'pending') {
+      return res.json({ challenge: c });
+    }
+  }
+  res.json({ challenge: null });
+});
+
+const matches = new Map();
+
+function stringHash(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(31, h) + str.charCodeAt(i);
+  }
+  return (h >>> 0) || 1;
+}
+
+function mulberry32(seed) {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function simulateGamblyBird(seedStr, jumpTimestampsMs) {
+  const GAME_HEIGHT = 600;
+  const SCALE = GAME_HEIGHT / 1080;
+  const GRAVITY = 2000 * SCALE;
+  const JUMP_VELOCITY = -600 * SCALE;
+  const MAX_FALL_VELOCITY = 800 * SCALE;
+  const PIPE_SPEED = 300 * SCALE;
+  const PIPE_DISTANCE = 350;
+  const PIPE_GAP = 180;
+  const PIPE_WIDTH = 70;
+  const BIRD_RADIUS = 18;
+  const BIRD_X = 120;
+  const GAME_WIDTH = 800;
+  const PIPE_SPAWN_X = GAME_WIDTH + PIPE_WIDTH;
+  const DT = 1 / 60;
+
+  const h = stringHash(String(seedStr));
+  let seed = h;
+  const random = () => {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
+  function generatePipeGapY() {
+    const minY = PIPE_GAP / 2;
+    const maxY = GAME_HEIGHT - PIPE_GAP / 2;
+    return minY + random() * (maxY - minY);
+  }
+
+  let birdY = GAME_HEIGHT / 2;
+  let birdVy = 0;
+  let pipes = [];
+  let score = 0;
+  let nextPipeX = PIPE_SPAWN_X + 1;
+  const jumps = (jumpTimestampsMs || []).slice().sort((a, b) => a - b);
+  let jumpIdx = 0;
+
+  function checkCollision(by, bx) {
+    if (by - BIRD_RADIUS < 0 || by + BIRD_RADIUS > GAME_HEIGHT) return true;
+    for (const p of pipes) {
+      if (p.x + PIPE_WIDTH < bx - BIRD_RADIUS || p.x > bx + BIRD_RADIUS) continue;
+      if (by - BIRD_RADIUS < p.topHeight || by + BIRD_RADIUS > p.bottomY) return true;
+    }
+    return false;
+  }
+
+  function addPipeServer() {
+    const gapY = generatePipeGapY();
+    pipes.push({
+      x: PIPE_SPAWN_X,
+      topHeight: gapY - PIPE_GAP / 2,
+      bottomY: gapY + PIPE_GAP / 2,
+      passed: false,
+    });
+    nextPipeX = PIPE_SPAWN_X - PIPE_DISTANCE;
+  }
+
+  addPipeServer();
+  const maxSimTime = 300000;
+  let simTime = 0;
+
+  while (simTime < maxSimTime) {
+    const stepStartMs = simTime;
+    const stepEndMs = simTime + DT * 1000;
+
+    while (jumpIdx < jumps.length && jumps[jumpIdx] >= stepStartMs && jumps[jumpIdx] < stepEndMs) {
+      birdVy = JUMP_VELOCITY;
+      jumpIdx++;
+    }
+
+    birdVy += GRAVITY * DT;
+    if (birdVy > MAX_FALL_VELOCITY) birdVy = MAX_FALL_VELOCITY;
+    birdY += birdVy * DT;
+
+    const pipeDx = PIPE_SPEED * DT;
+    for (const p of pipes) {
+      p.x -= pipeDx;
+      if (!p.passed && p.x + PIPE_WIDTH < BIRD_X - BIRD_RADIUS) {
+        p.passed = true;
+        score++;
+      }
+    }
+    pipes = pipes.filter((p) => p.x + PIPE_WIDTH > 0);
+
+    while (pipes.length === 0 || (pipes[pipes.length - 1] && pipes[pipes.length - 1].x < nextPipeX)) {
+      addPipeServer();
+    }
+
+    if (checkCollision(birdY, BIRD_X)) break;
+    simTime = stepEndMs;
+  }
+
+  return score;
+}
+
+app.post('/api/challenge/accept', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  const { challengeId } = req.body || {};
+  const c = challenges.get(challengeId);
+  if (!c || c.status !== 'pending') return res.status(404).json({ error: 'Challenge not found or already resolved' });
+  if ((c.targetUsername || '').toLowerCase() !== (user.username || '').toLowerCase()) {
+    return res.status(403).json({ error: 'This challenge is not for you' });
+  }
+  c.status = 'accepted';
+  const seed = 'gambly_' + challengeId + '_' + Date.now();
+  const startTime = Date.now() + 3000;
+  const match = {
+    challengeId,
+    seed,
+    startTime,
+    challengerUsername: c.challengerUsername,
+    targetUsername: c.targetUsername,
+    wagerType: c.wagerType,
+    wagerValue: c.wagerValue,
+    results: {},
+    status: 'playing',
+  };
+  matches.set(challengeId, match);
+  c.matchSeed = seed;
+  c.matchStartTime = startTime;
+  updateChallengeServerMessage(challengeId, 'Accepted. Playing Gambly Bird...');
+  res.json({ challenge: c, match: { seed, startTime } });
+});
+
+app.get('/api/challenge/active-match', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  const un = (user.username || '').toLowerCase();
+  for (const [id, m] of matches) {
+    if (m.status !== 'playing') continue;
+    const c = challenges.get(id);
+    if (!c) continue;
+    const isChallenger = (c.challengerUsername || '').toLowerCase() === un;
+    const isTarget = (c.targetUsername || '').toLowerCase() === un;
+    if (isChallenger || isTarget) {
+      const key = isChallenger ? 'challenger' : 'target';
+      if (m.results[key] !== undefined) continue;
+      return res.json({ challengeId: id, seed: m.seed, startTime: m.startTime });
+    }
+  }
+  res.json({ challengeId: null });
+});
+
+app.get('/api/challenge/:id/result', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  const m = matches.get(req.params.id);
+  const c = challenges.get(req.params.id);
+  if (!m || !c) return res.status(404).json({ error: 'Not found' });
+  const un = (user.username || '').toLowerCase();
+  if ((c.challengerUsername || '').toLowerCase() !== un && (c.targetUsername || '').toLowerCase() !== un) {
+    return res.status(403).json({ error: 'Not your match' });
+  }
+  const bothDone = m.results.challenger != null && m.results.target != null;
+  const winner = bothDone
+    ? (m.results.challenger?.score > m.results.target?.score ? c.challengerUsername : m.results.challenger?.score < m.results.target?.score ? c.targetUsername : null)
+    : null;
+  const winnerDisplayName = winner
+    ? (safeChallengeLabel(winner === c.challengerUsername ? c.challengerDisplayName : c.targetDisplayName, winner === c.challengerUsername ? c.challengerUsername : c.targetUsername) || 'Player')
+    : null;
+  res.json({ bothDone, winner, winnerDisplayName: winnerDisplayName || 'Player' });
+});
+
+app.get('/api/challenge/:id/match', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  const c = challenges.get(req.params.id);
+  const m = matches.get(req.params.id);
+  if (!c || !m) return res.status(404).json({ error: 'Match not found' });
+  const un = (user.username || '').toLowerCase();
+  if ((c.challengerUsername || '').toLowerCase() !== un && (c.targetUsername || '').toLowerCase() !== un) {
+    return res.status(403).json({ error: 'Not your match' });
+  }
+  res.json({ seed: m.seed, startTime: m.startTime });
+});
+
+app.post('/api/challenge/submit-result', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  const { challengeId, jumpTimestamps } = req.body || {};
+  const c = challenges.get(challengeId);
+  const m = matches.get(challengeId);
+  if (!c || !m || m.status !== 'playing') return res.status(404).json({ error: 'Match not found or finished' });
+  const un = (user.username || '').toLowerCase();
+  const isChallenger = (c.challengerUsername || '').toLowerCase() === un;
+  const isTarget = (c.targetUsername || '').toLowerCase() === un;
+  if (!isChallenger && !isTarget) return res.status(403).json({ error: 'Not your match' });
+
+  const timestamps = Array.isArray(jumpTimestamps) ? jumpTimestamps.map(Number).filter(Number.isFinite) : [];
+  const score = simulateGamblyBird(m.seed, timestamps);
+
+  const key = isChallenger ? 'challenger' : 'target';
+  if (m.results[key] !== undefined) return res.status(400).json({ error: 'Already submitted' });
+  m.results[key] = { score, jumpTimestamps: timestamps };
+
+  const bothDone = m.results.challenger !== undefined && m.results.target !== undefined;
+  if (bothDone) {
+    m.status = 'finished';
+    const scA = m.results.challenger?.score ?? 0;
+    const scB = m.results.target?.score ?? 0;
+    let winner = null;
+    let loser = null;
+    if (scA > scB) {
+      winner = c.challengerUsername;
+      loser = c.targetUsername;
+    } else if (scB > scA) {
+      winner = c.targetUsername;
+      loser = c.challengerUsername;
+    }
+
+    if (winner && loser) {
+      const loserUser = await getUserByKeyOrSlug(loser);
+      const winnerUser = await getUserByKeyOrSlug(winner);
+      if (loserUser && winnerUser) {
+        ensureFields(loserUser);
+        ensureFields(winnerUser);
+        if (c.wagerType === 'money') {
+          const amt = c.wagerValue || 0;
+          loserUser.balance = Math.max(0, (loserUser.balance ?? 0) - amt);
+          winnerUser.balance = (winnerUser.balance ?? 0) + amt;
+        } else if (c.wagerType === 'gamble_lock') {
+          const min = Math.min(10, Math.max(1, c.wagerValue || 5));
+          loserUser.gambleLockedUntil = Date.now() + min * 60 * 1000;
+        }
+        if (!useDb) {
+          users.set(loserUser.username, loserUser);
+          users.set(winnerUser.username, winnerUser);
+        }
+        await saveUser(loserUser);
+        await saveUser(winnerUser);
+      }
+    }
+    const winnerDisplayName = winner
+      ? (safeChallengeLabel(winner === c.challengerUsername ? c.challengerDisplayName : c.targetDisplayName, winner === c.challengerUsername ? c.challengerUsername : c.targetUsername) || 'Player')
+      : null;
+    const winnerLabel = winnerDisplayName || 'Player';
+    updateChallengeServerMessage(challengeId, 'Finished. ' + (winner ? (winnerLabel + ' wins!') : "It's a tie!"));
+  }
+
+  const winner = bothDone
+    ? (m.results.challenger?.score > m.results.target?.score ? c.challengerUsername : m.results.challenger?.score < m.results.target?.score ? c.targetUsername : null)
+    : null;
+  const winnerDisplayName = winner
+    ? (safeChallengeLabel(winner === c.challengerUsername ? c.challengerDisplayName : c.targetDisplayName, winner === c.challengerUsername ? c.challengerUsername : c.targetUsername) || 'Player')
+    : null;
+  res.json({ score, bothDone, winner, winnerDisplayName: winnerDisplayName || 'Player' });
+});
+
+app.post('/api/challenge/decline', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  const { challengeId } = req.body || {};
+  const c = challenges.get(challengeId);
+  if (!c || c.status !== 'pending') return res.status(404).json({ error: 'Challenge not found or already resolved' });
+  if ((c.targetUsername || '').toLowerCase() !== (user.username || '').toLowerCase()) {
+    return res.status(403).json({ error: 'This challenge is not for you' });
+  }
+  c.status = 'declined';
+  updateChallengeServerMessage(challengeId, 'Declined.');
+  res.json({ challenge: c });
+});
+
+// ===== CHAT =====
 const CHAT_API_LIMIT = 100;
 app.get('/api/chat', (req, res) => {
   res.json({ messages: chatMessages.slice(-CHAT_API_LIMIT) });
@@ -839,6 +1262,7 @@ app.post('/api/chat', async (req, res) => {
   };
   chatMessages.push(msg);
   if (chatMessages.length > CHAT_MAX) chatMessages.shift();
+  saveChatMessages();
   res.json({ message: msg });
 });
 
@@ -897,6 +1321,7 @@ app.post('/api/user/place-bet', async (req, res) => {
   const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
+  if (!checkGambleLock(user, res)) return;
   const amount = Number(req.body.amount);
   const source = normalizeGameSource(req.body?.source);
   if (!Number.isFinite(amount) || amount < 0.01 || amount > user.balance) {
@@ -1297,6 +1722,60 @@ app.get('/api/admin/plinko-stats', (req, res) => {
 });
 
 // Admin: reset all data (for beta end, etc). Requires ADMIN_RESET_KEY env.
+// Owner only: reset all user stats (balance, xp, level, clicks, wins, etc.) — keeps users and accounts
+app.post('/api/admin/reset-all-stats', requireOwner, async (req, res) => {
+  const now = Date.now();
+  const resetBalance = 10000;
+  const emptyNet = emptyGameNet();
+  const emptyCounts = emptyGamePlayCounts();
+  const emptyXp = emptyXpBySource();
+  const emptyMeta = { game: null, betAmount: 0, multiplier: 1, timestamp: 0 };
+
+  if (useDb) {
+    try {
+      const client = await db.getPool().connect();
+      await client.query(
+        `UPDATE users SET
+          balance = $1, xp = 0, level = 1,
+          total_clicks = 0, total_bets = 0, total_gambling_wins = 0, total_wins_count = 0,
+          biggest_win_amount = 0, biggest_win_multiplier = 1, biggest_win_meta = $2,
+          total_click_earnings = 0, total_profit_wins = 0,
+          analytics_started_at = $3,
+          game_net = $4, game_play_counts = $5, xp_by_source = $6`,
+        [resetBalance, JSON.stringify(emptyMeta), now, JSON.stringify(emptyNet), JSON.stringify(emptyCounts), JSON.stringify(emptyXp)]
+      );
+      client.release();
+    } catch (e) {
+      console.error('Reset all stats DB error:', e);
+      return res.status(500).json({ error: 'Reset failed' });
+    }
+  } else {
+    for (const user of users.values()) {
+      user.balance = resetBalance;
+      user.xp = 0;
+      user.level = 1;
+      user.totalClicks = 0;
+      user.totalBets = 0;
+      user.totalGamblingWins = 0;
+      user.totalWinsCount = 0;
+      user.biggestWinAmount = 0;
+      user.biggestWinMultiplier = 1;
+      user.biggestWinMeta = { ...emptyMeta };
+      user.totalClickEarnings = 0;
+      user.totalProfitWins = 0;
+      user.analyticsStartedAt = now;
+      user.gameNet = { ...emptyNet };
+      user.gamePlayCounts = { ...emptyCounts };
+      user.xpBySource = { ...emptyXp };
+      users.set(user.username, user);
+    }
+    saveUsersSync();
+  }
+  await addAdminLog({ type: 'reset_all_stats', actorUsername: req.adminUser.username, actorDisplayName: req.adminUser.displayName });
+  console.log('Owner reset all user stats');
+  res.json({ success: true });
+});
+
 app.post('/api/admin/reset', async (req, res) => {
   const key = req.body?.key || req.headers['x-admin-key'];
   if (!process.env.ADMIN_RESET_KEY || key !== process.env.ADMIN_RESET_KEY) {
@@ -1506,11 +1985,25 @@ app.get('/api/roulette/round', async (req, res) => {
   res.json(resp);
 });
 
+function checkGambleLock(user, res) {
+  const now = Date.now();
+  if (user.gambleLockedUntil != null && user.gambleLockedUntil > now) {
+    res.status(403).json({
+      error: 'You lost a challenge, you are gamble locked',
+      code: 'GAMBLE_LOCKED',
+      gambleLockedUntil: user.gambleLockedUntil,
+    });
+    return false;
+  }
+  return true;
+}
+
 app.post('/api/roulette/bet', async (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
+  if (!checkGambleLock(user, res)) return;
   rouletteTick();
   if (rouletteState.phase !== 'betting') {
     return res.status(400).json({ error: 'Betting phase is over' });
@@ -1773,6 +2266,7 @@ app.post('/api/crash/bet', async (req, res) => {
   const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
+  if (!checkGambleLock(user, res)) return;
   if (crashState.phase !== 'counting_down') {
     return res.status(400).json({ error: 'Betting only during countdown' });
   }
@@ -1837,6 +2331,7 @@ app.post('/api/mines/bet', async (req, res) => {
   const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
+  if (!checkGambleLock(user, res)) return;
   const amount = Number(req.body.amount);
   const mines = Number(req.body.mines);
   if (!Number.isFinite(amount) || amount < 0.01) {

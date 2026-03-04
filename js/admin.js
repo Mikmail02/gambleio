@@ -128,6 +128,9 @@
     modal.setAttribute('aria-hidden', 'false');
     if (listPanel) listPanel.classList.remove('hidden');
     if (detail) detail.classList.add('hidden');
+    const ownerActions = document.getElementById('adminOwnerActions');
+    const isOwner = window.Auth && window.Auth.user && (window.Auth.user.isOwner || window.Auth.user.role === 'owner');
+    if (ownerActions) ownerActions.classList.toggle('hidden', !isOwner);
     selectedUsername = null;
     loadUserList();
   }
@@ -409,6 +412,8 @@
       case 'chat_mute':
         const meta = entry.meta || {};
         return time + ' — ' + actor + ' ' + (meta.until ? 'muted ' + target + ' until ' + new Date(meta.until).toLocaleString('en-US') : 'unmuted ' + target);
+      case 'reset_all_stats':
+        return time + ' — ' + actor + ' reset all user stats';
       default:
         return time + ' — ' + (entry.type || 'event');
     }
@@ -584,6 +589,29 @@
 
     if (xpBtn && xpInput) xpBtn.addEventListener('click', () => applyAdjust('xp', xpInput.value));
     if (moneyBtn && moneyInput) moneyBtn.addEventListener('click', () => applyAdjust('money', moneyInput.value));
+
+    const resetStatsBtn = document.getElementById('adminResetAllStatsBtn');
+    if (resetStatsBtn) {
+      resetStatsBtn.addEventListener('click', async () => {
+        if (!confirm('Reset all stats for ALL users? Balance → $10k, XP → 0, Level → 1, wins, clicks, etc. Accounts stay.')) return;
+        try {
+          const res = await fetch(API + '/admin/reset-all-stats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({}),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || 'Failed');
+          }
+          alert('All user stats have been reset.');
+          loadUserList();
+          if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
+        } catch (e) {
+          alert(e.message || 'Reset failed');
+        }
+      });
+    }
   }
 
   function init() {

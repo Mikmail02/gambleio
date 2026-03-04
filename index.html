@@ -446,6 +446,47 @@
         <div class="patch-notes-container">
           <h2 class="patch-notes-page-title">Patch notes</h2>
           <div class="patch-notes-grid">
+            <article class="patch-note-card slot-game-card" id="patch-v1-3" tabindex="0" role="button" data-expanded="false" aria-label="Patch notes v1.3, click to open">
+              <div class="patch-note-card-preview slot-game-card-image">
+                <span class="patch-note-card-preview-label">Patch notes v1.3</span>
+                <span class="slot-game-card-play">View</span>
+              </div>
+              <div class="patch-note-card-expanded-content">
+                <header class="patch-note-card-header">
+                  <h3 class="patch-note-card-title">Patch notes v1.3</h3>
+                  <p class="patch-note-card-meta">Latest update</p>
+                </header>
+                <div class="patch-note-card-body">
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">Challenge system</h4>
+                  <p class="patch-note-section-desc">Challenge other players to duels. Visit a profile, hit Challenge, choose your wager and game, then send. The challenged player gets an invite and can accept or decline. Everyone sees the challenge in chat.</p>
+                  <ul class="patch-note-list">
+                    <li><strong>Wager types</strong> — Money (set amount) or Gamble Lock (loser can’t bet for 1–10 minutes)</li>
+                    <li><strong>Gambly Bird</strong> — Provably fair Flappy Bird–style duel. Same seed for both players; server validates scores from jump timestamps</li>
+                    <li><strong>Challenge flow</strong> — Invite banner (top right), accept/decline, server messages in chat with distinct styling</li>
+                    <li><strong>Gamble lock</strong> — When you lose a challenge with gamble lock wager, you can’t place bets on any game until the lock expires. Custom toast instead of browser alert</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">Chat & UI</h4>
+                  <p class="patch-note-section-desc">Server messages and display names updated for clarity.</p>
+                  <ul class="patch-note-list">
+                    <li>Server messages (challenges, outcomes) use display name/username only — no email shown</li>
+                    <li>Loser in a challenge sees the final result when the winner submits (no more “Waiting for opponent…”)</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">Gamble lock coverage</h4>
+                  <p class="patch-note-section-desc">Gamble lock now blocks bets on all games, including autobet.</p>
+                  <ul class="patch-note-list">
+                    <li>Mines: bet and autobet now respect gamble lock</li>
+                    <li>Plinko auto: stops when bet fails (gamble lock or insufficient balance)</li>
+                    <li>Mines autobet: stops when gamble locked</li>
+                  </ul>
+                </section>
+                </div>
+              </div>
+            </article>
             <article class="patch-note-card slot-game-card" id="patch-v1-2" tabindex="0" role="button" data-expanded="false" aria-label="Patch notes v1.2, click to open">
               <div class="patch-note-card-preview slot-game-card-image">
                 <span class="patch-note-card-preview-label">Patch notes v1.2</span>
@@ -454,7 +495,7 @@
               <div class="patch-note-card-expanded-content">
                 <header class="patch-note-card-header">
                   <h3 class="patch-note-card-title">Patch notes v1.2</h3>
-                  <p class="patch-note-card-meta">Latest update</p>
+                  <p class="patch-note-card-meta">Mines & Live Stats</p>
                 </header>
                 <div class="patch-note-card-body">
                 <section class="patch-note-section">
@@ -740,10 +781,76 @@
                 <span class="stat-value" id="profileCreatedAt">—</span>
               </div>
             </div>
+            <button type="button" class="btn-challenge-profile hidden" id="challengeBtnProfile">Challenge</button>
             <button type="button" class="btn-logout-profile" id="logoutBtnProfile" style="display: none;">Logout</button>
           </div>
         </div>
       </section>
+
+      <!-- Challenge invite banner (top right, under header) -->
+      <div id="challengeInviteBanner" class="challenge-invite-banner hidden">
+        <div class="challenge-invite-content">
+          <span class="challenge-invite-text" id="challengeInviteText">— challenged you!</span>
+          <div class="challenge-invite-actions">
+            <button type="button" class="btn-challenge-accept" id="challengeInviteAccept">Accept</button>
+            <button type="button" class="btn-challenge-decline" id="challengeInviteDecline">Decline</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Challenge modal (from profile) -->
+      <div id="challengeModal" class="modal challenge-modal hidden">
+        <div class="challenge-modal-backdrop" id="challengeModalBackdrop"></div>
+        <div class="challenge-modal-content">
+          <div class="challenge-modal-head">
+            <h2 class="challenge-modal-title">Challenge</h2>
+            <button type="button" class="challenge-modal-close" id="challengeModalClose" aria-label="Close">×</button>
+          </div>
+          <div class="challenge-modal-body">
+            <p class="challenge-modal-target" id="challengeModalTarget">Challenge —</p>
+            <div class="challenge-wager-section">
+              <h3 class="challenge-section-title">Wager</h3>
+              <div class="challenge-wager-options">
+                <label class="challenge-radio-wrap">
+                  <input type="radio" name="challengeWager" value="money" checked>
+                  <span>Money</span>
+                </label>
+                <label class="challenge-radio-wrap">
+                  <input type="radio" name="challengeWager" value="gamble_lock">
+                  <span>Gamble Lock</span>
+                </label>
+              </div>
+              <div class="challenge-wager-money" id="challengeWagerMoney">
+                <input type="number" id="challengeMoneyInput" min="1" step="1" placeholder="Amount ($)" value="100">
+              </div>
+              <div class="challenge-wager-lock hidden" id="challengeWagerLock">
+                <label>Duration (minutes, max 10)</label>
+                <input type="number" id="challengeLockMinutes" min="1" max="10" step="1" value="5">
+              </div>
+            </div>
+            <div class="challenge-game-section">
+              <h3 class="challenge-section-title">Game</h3>
+              <p class="challenge-game-value" id="challengeGameValue">Gambly Bird</p>
+              <p class="challenge-game-desc">Flappy bird style duel. Winner takes all!</p>
+            </div>
+            <button type="button" class="btn-challenge-send" id="challengeSendBtn">Challenge</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gambly Bird duel overlay -->
+      <div id="gamblyBirdOverlay" class="gambly-bird-overlay hidden">
+        <div class="gambly-bird-inner">
+          <div class="gambly-bird-header">
+            <h2 class="gambly-bird-title">Gambly Bird</h2>
+            <span class="gambly-bird-score-wrap">Score: <span id="gamblyBirdScore">0</span></span>
+          </div>
+          <div id="gamblyBirdCountdown" class="gambly-bird-countdown hidden">3</div>
+          <div id="gamblyBirdCanvasWrap" class="gambly-bird-canvas-wrap" tabindex="0"></div>
+          <p class="gambly-bird-hint">Click or press Space to flap</p>
+          <div id="gamblyBirdResult" class="gambly-bird-result hidden"></div>
+        </div>
+      </div>
     </main>
     <footer class="site-footer">
       <div class="site-footer-inner">
@@ -763,6 +870,9 @@
       </div>
       <div class="admin-modal-body">
         <div class="admin-panel-list" id="adminPanelList">
+          <div class="admin-owner-actions hidden" id="adminOwnerActions">
+            <button type="button" class="btn-admin-reset-stats" id="adminResetAllStatsBtn" title="Reset all user stats (balance, xp, level, wins, clicks, etc.). Keeps all accounts.">Reset all stats</button>
+          </div>
           <input type="text" id="adminUserSearch" class="admin-user-search" placeholder="Search users…" aria-label="Search users">
           <div id="adminUserList">
             <div class="admin-loading" id="adminListLoading">Loading users…</div>
@@ -924,6 +1034,8 @@
   <script src="js/auth.js"></script>
   <script src="js/admin.js"></script>
   <script src="js/chat.js"></script>
+  <script src="js/challenge.js"></script>
+  <script src="js/gambly-bird.js"></script>
   <script src="js/game.js"></script>
   <script src="js/stats.js"></script>
   <script src="js/leaderboard.js"></script>
@@ -956,6 +1068,10 @@
   <!-- Toast for click rate-limit block (shown at bottom) -->
   <div id="clickBlockToast" class="click-block-toast hidden" role="status" aria-live="polite">
     You are clicking too fast – Blocked for <span id="clickBlockSeconds">0</span>s
+  </div>
+  <!-- Toast for gamble lock (challenge loser) -->
+  <div id="gambleLockToast" class="gamble-lock-toast hidden" role="status" aria-live="polite">
+    <span id="gambleLockToastText">You lost a challenge, you are gamble locked</span>
   </div>
 </body>
 </html>

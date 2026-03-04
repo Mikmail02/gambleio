@@ -45,8 +45,19 @@
 
   function renderMessage(msg) {
     const div = document.createElement('div');
-    div.className = 'chat-msg';
+    div.className = 'chat-msg' + (msg.isServer ? ' chat-msg--server' : '');
     div.setAttribute('data-time', msg.time);
+    if (msg.isServer) {
+      const text = (msg.text || '').split('\n').map(function (line) { return escapeHtml(line); }).join('<br>');
+      const time = formatTime(msg.time);
+      div.innerHTML =
+        '<div class="chat-msg-header chat-msg-header--server">' +
+          '<span class="chat-msg-server-label">Server</span>' +
+          '<span class="chat-msg-time">' + time + '</span>' +
+        '</div>' +
+        '<div class="chat-msg-text chat-msg-text--server">' + text + '</div>';
+      return div;
+    }
     const name = escapeHtml(msg.displayName || msg.username || '?');
     const text = escapeHtml(msg.text);
     const time = formatTime(msg.time);

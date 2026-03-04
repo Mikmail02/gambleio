@@ -307,3 +307,16 @@ const Game = {
 if (typeof window !== 'undefined') {
   window.Game = Game;
 }
+
+function showGambleLockToast(message) {
+  const el = document.getElementById('gambleLockToast');
+  const textEl = document.getElementById('gambleLockToastText');
+  if (el && textEl) {
+    textEl.textContent = message || 'You lost a challenge, you are gamble locked';
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 5000);
+  }
+}
+if (typeof window !== 'undefined') {
+  window.showGambleLockToast = showGambleLockToast;
+}

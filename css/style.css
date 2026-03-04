@@ -284,6 +284,32 @@ body {
   word-break: break-word;
 }
 
+/* Chat server messages (challenge announcements) */
+.chat-msg--server {
+  background: rgba(0, 212, 170, 0.08);
+  border: 1px solid rgba(0, 212, 170, 0.25);
+  border-radius: 10px;
+  padding: 0.65rem 1rem;
+  margin: 0.25rem 0;
+}
+.chat-msg-header--server {
+  margin-bottom: 0.5rem;
+}
+.chat-msg-server-label {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+.chat-msg-text--server {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.85rem;
+  color: var(--text);
+  line-height: 1.5;
+}
+
 .chat-input-wrap {
   display: flex;
   flex-direction: column;
@@ -1294,6 +1320,24 @@ body {
 }
 .click-block-toast.hidden { display: none !important; }
 
+/* Gamble lock toast (challenge loser) */
+.gamble-lock-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1rem 1.5rem;
+  background: var(--bg-panel);
+  border: 2px solid var(--danger);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 1200;
+}
+.gamble-lock-toast.hidden { display: none !important; }
+
 /* Plinko intro: ball → 1000x bowl → logo slam → cracks → neon → fade */
 .plinko-intro {
   position: absolute;
@@ -2252,6 +2296,28 @@ body {
   gap: 0.6rem;
   min-height: 200px;
 }
+.admin-owner-actions {
+  margin-bottom: 0.25rem;
+}
+.admin-owner-actions.hidden {
+  display: none !important;
+}
+.btn-admin-reset-stats {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 10px;
+  color: #ef4444;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.btn-admin-reset-stats:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.6);
+}
 .admin-user-search {
   width: 100%;
   padding: 0.6rem 0.85rem;
@@ -3158,6 +3224,325 @@ body {
 .btn-logout-profile:hover {
   background: rgba(255, 71, 87, 0.1);
   border-color: var(--danger);
+}
+
+/* Challenge button on profile */
+.btn-challenge-profile {
+  width: 100%;
+  padding: 0.85rem;
+  background: rgba(0, 212, 170, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(0, 212, 170, 0.4);
+  border-radius: 8px;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  margin-top: 1rem;
+}
+.btn-challenge-profile:hover {
+  background: rgba(0, 212, 170, 0.25);
+  border-color: var(--accent);
+}
+
+/* Challenge invite banner (top right under header) */
+.challenge-invite-banner {
+  position: fixed;
+  top: var(--header-height);
+  right: 1rem;
+  z-index: 900;
+  max-width: 340px;
+  background: linear-gradient(135deg, rgba(26, 30, 40, 0.98), rgba(18, 22, 32, 0.98));
+  border: 1px solid rgba(0, 212, 170, 0.35);
+  border-radius: 0 0 var(--radius) var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.challenge-invite-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+}
+.challenge-invite-text {
+  font-size: 0.95rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+.challenge-invite-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.btn-challenge-accept {
+  flex: 1;
+  padding: 0.5rem 1rem;
+  background: var(--accent);
+  color: var(--bg-dark);
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+.btn-challenge-accept:hover {
+  background: var(--accent-dim);
+  transform: scale(1.02);
+}
+.btn-challenge-decline {
+  flex: 1;
+  padding: 0.5rem 1rem;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.btn-challenge-decline:hover {
+  background: rgba(255, 71, 87, 0.15);
+  color: var(--danger);
+}
+
+/* Challenge modal */
+.challenge-modal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.challenge-modal.hidden {
+  display: none !important;
+}
+.challenge-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+}
+.challenge-modal-content {
+  position: relative;
+  background: linear-gradient(160deg, rgba(22, 28, 38, 0.98), rgba(16, 20, 28, 0.98));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  padding: 1.5rem;
+  width: 90%;
+  max-width: 400px;
+}
+.challenge-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.challenge-modal-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.challenge-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem;
+  line-height: 1;
+}
+.challenge-modal-close:hover {
+  color: var(--text);
+}
+.challenge-modal-target {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+.challenge-wager-section,
+.challenge-game-section {
+  margin-bottom: 1.25rem;
+}
+.challenge-section-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.challenge-wager-options {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.challenge-radio-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.challenge-radio-wrap input {
+  accent-color: var(--accent);
+}
+.challenge-wager-money input,
+.challenge-wager-lock input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-input);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 1rem;
+}
+.challenge-wager-lock label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.challenge-game-value {
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+.challenge-game-desc {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.btn-challenge-send {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--accent);
+  color: var(--bg-dark);
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+.btn-challenge-send:hover {
+  background: var(--accent-dim);
+  transform: scale(1.01);
+}
+.btn-challenge-send:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Gambly Bird overlay */
+.gambly-bird-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+}
+.gambly-bird-overlay.hidden {
+  display: none !important;
+}
+.gambly-bird-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+.gambly-bird-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 800px;
+}
+.gambly-bird-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.gambly-bird-score-wrap {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.gambly-bird-countdown {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 4rem;
+  font-weight: 900;
+  color: var(--accent);
+  text-shadow: 0 0 30px rgba(0, 212, 170, 0.6);
+  z-index: 10;
+}
+.gambly-bird-canvas-wrap {
+  width: 800px;
+  height: 600px;
+  border-radius: var(--radius);
+  border: 2px solid rgba(0, 212, 170, 0.4);
+  overflow: hidden;
+  cursor: pointer;
+  outline: none;
+  background: #0d1117;
+}
+.gambly-bird-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.gambly-bird-result {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--bg-panel);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 2rem;
+  text-align: center;
+  z-index: 20;
+  min-width: 280px;
+}
+.gambly-bird-result.hidden {
+  display: none !important;
+}
+.gambly-result-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.gambly-result-score {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+  color: var(--accent);
+}
+.gambly-result-submit {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.btn-gambly-result-close {
+  padding: 0.5rem 1.25rem;
+  background: var(--accent);
+  color: var(--bg-dark);
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-gambly-result-close:hover {
+  background: var(--accent-dim);
 }
 
 /* Patch notes page */

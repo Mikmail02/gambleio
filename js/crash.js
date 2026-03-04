@@ -397,7 +397,11 @@
           });
           const data = res.ok ? await res.json() : await res.json().catch(() => ({}));
           if (!res.ok) {
-            alert(res.status === 404 ? 'Crash is unavailable. Restart the server (node server.js).' : (data.error || 'Bet failed'));
+            if (data.code === 'GAMBLE_LOCKED' && data.error && window.showGambleLockToast) {
+              window.showGambleLockToast(data.error);
+            } else {
+              alert(res.status === 404 ? 'Crash is unavailable. Restart the server (node server.js).' : (data.error || 'Bet failed'));
+            }
             return;
           }
           if (window.Game) window.Game.balance = data.balance;

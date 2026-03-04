@@ -142,6 +142,7 @@
       }
       const ok = await handleDrop();
       if (ok) dropped += 1;
+      else break;
       await new Promise((resolve) => setTimeout(resolve, PLINKO_AUTO_DROP_DELAY_MS));
     }
     plinkoAutoRunning = false;
@@ -412,11 +413,7 @@
     const placeResult = window.Stats && window.Stats.placeBet
       ? await window.Stats.placeBet(bet, 'plinko')
       : (Game.placeBet(bet) ? { balance: Game.balance } : null);
-    if (!placeResult) {
-      if (!window.Auth || !window.Auth.isAuthenticated()) return false;
-      alert('Insufficient balance or server error.');
-      return false;
-    }
+    if (!placeResult || placeResult.gambleLocked) return false;
     if (!window.Stats || !window.Stats.placeBet) Game.recordBet();
     Game.balance = placeResult.balance ?? (Game.balance - bet);
     plinkoSessionBet += bet;
