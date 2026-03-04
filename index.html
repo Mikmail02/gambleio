@@ -30,6 +30,7 @@
         <a href="#home" class="nav-link active" data-page="home">Home</a>
         <a href="#board-games" class="nav-link" data-page="board-games">Board Games</a>
         <a href="#slots" class="nav-link" data-page="slots">Slots</a>
+        <a href="#case-battle" class="nav-link" data-page="case-battle">Casebattle</a>
         <a href="#leaderboard" class="nav-link" data-page="leaderboard">Leaderboard</a>
         <a href="#profile" class="nav-link" data-page="profile" id="navProfile">Profile</a>
       </nav>
@@ -625,6 +626,74 @@
         </div>
       </section>
 
+      <!-- Casebattle -->
+      <section id="page-case-battle" class="page page-case-battle hidden">
+        <div class="case-battle-wip-wrapper">
+          <div class="case-battle-blur-content">
+        <div class="case-battle-container">
+          <h2 class="case-battle-title">Casebattle</h2>
+
+          <div class="case-battle-admin-wrap hidden" id="caseBattleAdminWrap">
+            <h3 class="case-battle-subtitle">Case management (Admin)</h3>
+            <div class="case-battle-case-form">
+              <label>Case name</label>
+              <input type="text" id="cbCaseName" placeholder="e.g. Starter Case">
+              <label>RTP (%)</label>
+              <input type="number" id="cbRtp" min="1" max="100" step="0.5" value="95" placeholder="95">
+              <div class="cb-items-header">
+                <span>Items (image URL, value $, percent %)</span>
+                <button type="button" class="btn btn-cb-add-item" id="cbAddItem">+ Item</button>
+              </div>
+              <div id="cbItemsList" class="cb-items-list"></div>
+              <p id="cbCaseCost" class="cb-case-cost"></p>
+              <button type="button" class="btn btn-cb-save-case" id="cbSaveCase">Save case</button>
+            </div>
+            <hr class="case-battle-hr">
+          </div>
+          <h3 class="case-battle-subtitle">Create battle</h3>
+          <div class="case-battle-create-form">
+            <label>Format</label>
+            <select id="cbFormat">
+              <option value="1v1">1v1</option>
+              <option value="1v1v1">1v1v1</option>
+              <option value="2v2">2v2</option>
+              <option value="2v2v2">2v2v2</option>
+              <option value="3v3">3v3</option>
+            </select>
+            <label>Mode</label>
+            <select id="cbMode">
+              <option value="standard">Standard (highest wins)</option>
+              <option value="terminal">Terminal (last case only)</option>
+              <option value="coop">Co-op (split)</option>
+              <option value="crazy_standard">Crazy (lowest wins)</option>
+              <option value="jackpot">Jackpot</option>
+            </select>
+            <label>Cases in battle</label>
+            <div id="cbBattleCases" class="cb-battle-cases"></div>
+            <div class="cb-add-case-row">
+              <select id="cbSelectCase">
+                <option value="">-- Select case --</option>
+              </select>
+              <input type="number" id="cbCaseCount" min="1" value="1" placeholder="Count">
+              <button type="button" class="btn btn-cb-add-case-to-battle" id="cbAddCaseToBattle">+ Add case</button>
+            </div>
+            <label>Add bots (fill slots)</label>
+            <input type="number" id="cbBotCount" min="0" value="0" placeholder="0">
+            <p id="cbEntryTotal" class="cb-entry-total"></p>
+            <button type="button" class="btn btn-cb-create-battle" id="cbCreateBattle">Create battle</button>
+          </div>
+
+          <div class="case-battle-list-wrap">
+            <h3 class="case-battle-subtitle">Active battles</h3>
+            <div id="caseBattleList" class="case-battle-list"></div>
+          </div>
+          </div>
+        </div>
+        <div class="case-battle-wip-overlay" aria-hidden="true">
+          <h2 class="case-battle-wip-title">Work in progress...</h2>
+        </div>
+      </section>
+
       <!-- Slot game page -->
       <section id="page-slot-game" class="page page-slot-game hidden">
         <div class="slot-game-container">
@@ -1057,6 +1126,7 @@
   </script>
   <script src="js/board-games.js"></script>
   <script src="js/slots.js"></script>
+  <script src="js/case-battle.js"></script>
   <script src="js/main.js"></script>
   <script>
     console.log('[index.html] All scripts loaded. Final check:', {

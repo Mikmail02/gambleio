@@ -34,6 +34,8 @@ app.use(express.static(__dirname));
 // --- Storage: database (when DATABASE_URL) or file-based (local dev) ---
 const useDb = !!process.env.DATABASE_URL;
 const db = useDb ? require('./db') : null;
+const caseBattleMath = require('./lib/case-battle-math');
+const caseBattleProvably = require('./lib/case-battle-provably-fair');
 
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -2478,6 +2480,208 @@ app.post('/api/crash/cash-out', async (req, res) => {
   await saveUser(user);
   crashState.cashOuts.set(user.username, { amount: myBet.amount, multiplier, winAmount });
   res.json({ balance: user.balance, multiplier, winAmount });
+});
+
+// ===== CASE BATTLE (in-memory cases + battles, bots supported) =====
+const caseBattleCases = new Map();
+const caseBattleBattles = new Map();
+let caseBattleCaseIdNext = 1;
+const BOT_NAMES = ['Ace', 'Blaze', 'Chip', 'Dice', 'Echo', 'Flux', 'Gale', 'Hex', 'Ivy', 'Jade', 'Kite', 'Luna', 'Nova', 'Onyx', 'Pepper', 'Quinn', 'Rex', 'Sky', 'Tank', 'Vex'];
+
+function getBotDisplayName() {
+  const name = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
+  return 'Bot ' + name;
+}
+
+app.get('/api/case-battle/cases', async (req, res) => {
+  const list = Array.from(caseBattleCases.values()).filter((c) => c.isActive !== false);
+  res.json({ cases: list });
+});
+
+app.post('/api/case-battle/calculate-price', async (req, res) => {
+  const { items, rtpDecimal } = req.body || {};
+  if (!Array.isArray(items)) return res.status(400).json({ error: 'items array required' });
+  const rtp = Number(rtpDecimal);
+  if (!Number.isFinite(rtp) || rtp <= 0 || rtp > 1) return res.status(400).json({ error: 'rtpDecimal 0–1 required' });
+  const normalized = items.map((i) => ({
+    value: Number(i.value) || 0,
+    probability: Number(i.probability) != null ? Number(i.probability) / 100 : 0,
+  }));
+  const result = caseBattleMath.calculateCasePrice(normalized, rtp);
+  if (!result.success) return res.status(400).json({ error: result.error });
+  res.json({ price: result.price, ev: result.ev });
+});
+
+app.post('/api/case-battle/cases', requireAdmin, async (req, res) => {
+  const { name, rtpDecimal, items } = req.body || {};
+  if (!name || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Name and items (with image, value, probability) required' });
+  }
+  const rtp = Number(rtpDecimal);
+  if (!Number.isFinite(rtp) || rtp <= 0 || rtp > 1) {
+    return res.status(400).json({ error: 'RTP must be decimal 0–1 (e.g. 0.95)' });
+  }
+  const normalized = items.map((i) => ({
+    value: Number(i.value) || 0,
+    probability: Number(i.probability) != null ? Number(i.probability) / 100 : 0,
+    name: i.name || '',
+    image: i.image || '',
+  }));
+  const result = caseBattleMath.calculateCasePrice(normalized, rtp);
+  if (!result.success) return res.status(400).json({ error: result.error });
+  const id = String(caseBattleCaseIdNext++);
+  const slug = (name || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'case-' + id;
+  const doc = {
+    id,
+    name: String(name).trim(),
+    slug,
+    rtpDecimal: rtp,
+    price: result.price,
+    expectedValue: result.ev,
+    items: normalized.map((i) => ({ ...i, probability: i.probability * 100 })),
+    createdAt: Date.now(),
+    createdBy: req.adminUser?.username,
+    isActive: true,
+  };
+  caseBattleCases.set(id, doc);
+  res.json({ case: doc });
+});
+
+app.get('/api/case-battle/battles', async (req, res) => {
+  const active = Array.from(caseBattleBattles.values()).filter((b) => b.status === 'waiting' || b.status === 'in_progress');
+  res.json({ battles: active });
+});
+
+app.post('/api/case-battle/battles', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  const { format, mode, caseIds, botCount } = req.body || {};
+  if (!format || !mode || !Array.isArray(caseIds) || caseIds.length === 0) {
+    return res.status(400).json({ error: 'format, mode, and caseIds (array of { caseId, count }) required' });
+  }
+  const slotsPerSide = format.split('v').map((n) => parseInt(n, 10)).filter((n) => Number.isFinite(n));
+  if (!caseBattleMath.isAllowedFormat(slotsPerSide)) {
+    return res.status(400).json({ error: 'Invalid format (e.g. 1v1, 2v2, 3v3)' });
+  }
+  const totalSlots = slotsPerSide.reduce((a, b) => a + b, 0);
+  let entryCost = 0;
+  const casesInBattle = [];
+  for (const { caseId, count } of caseIds) {
+    const c = caseBattleCases.get(String(caseId));
+    if (!c) return res.status(400).json({ error: 'Case not found: ' + caseId });
+    const n = Math.max(1, parseInt(count, 10) || 1);
+    entryCost += c.price * n;
+    casesInBattle.push({ caseId: c.id, count: n });
+  }
+  if (entryCost > (user.balance ?? 0)) {
+    return res.status(400).json({ error: 'Insufficient balance for entry' });
+  }
+  const battleId = crypto.randomUUID();
+  const participants = [];
+  let slotIdx = 0;
+  for (let t = 0; t < slotsPerSide.length; t++) {
+    for (let s = 0; s < slotsPerSide[t]; s++) {
+      participants.push({
+        teamIndex: t,
+        slotIndex: s,
+        username: slotIdx === 0 ? user.username : '',
+        isBot: false,
+        entryPaid: slotIdx === 0 ? entryCost : 0,
+        totalValue: 0,
+        terminalValue: 0,
+      });
+      slotIdx++;
+    }
+  }
+  participants[0].username = user.username;
+  participants[0].entryPaid = entryCost;
+  user.balance -= entryCost;
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
+  const addBots = Math.min(Number(botCount) || 0, totalSlots - 1);
+  const usedNames = new Set([user.username]);
+  let added = 0;
+  for (let i = 0; i < participants.length && added < addBots; i++) {
+    if (participants[i].username) continue;
+    let botName = getBotDisplayName();
+    while (usedNames.has(botName)) botName = getBotDisplayName() + ' ' + (i + 1);
+    usedNames.add(botName);
+    participants[i].username = botName;
+    participants[i].isBot = true;
+    added++;
+  }
+  const battle = {
+    id: battleId,
+    format,
+    mode,
+    totalPot: entryCost,
+    status: participants.length >= totalSlots ? 'in_progress' : 'waiting',
+    cases: casesInBattle,
+    participants,
+    totalSlots,
+    createdAt: Date.now(),
+    serverSeed: caseBattleProvably.generateServerSeed(),
+    clientSeed: 'cb_' + battleId.slice(0, 8),
+    nonce: 0,
+  };
+  caseBattleBattles.set(battleId, battle);
+  res.json({ battle, balance: user.balance });
+});
+
+app.post('/api/case-battle/battles/:id/join', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  const battle = caseBattleBattles.get(req.params.id);
+  if (!battle) return res.status(404).json({ error: 'Battle not found' });
+  if (battle.status !== 'waiting') return res.status(400).json({ error: 'Battle already started' });
+  const realCount = battle.participants.filter((p) => p.username && !p.isBot).length;
+  const entryCost = battle.totalPot / Math.max(1, realCount);
+  if ((user.balance ?? 0) < entryCost) return res.status(400).json({ error: 'Insufficient balance' });
+  const emptySlot = battle.participants.findIndex((p) => !p.username);
+  if (emptySlot < 0) return res.status(400).json({ error: 'No empty slot' });
+  user.balance -= entryCost;
+  battle.totalPot += entryCost;
+  battle.participants[emptySlot] = {
+    ...battle.participants[emptySlot],
+    username: user.username,
+    isBot: false,
+    entryPaid: entryCost,
+  };
+  if (battle.participants.every((p) => p.username)) battle.status = 'in_progress';
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
+  res.json({ battle, balance: user.balance });
+});
+
+app.post('/api/case-battle/battles/:id/add-bot', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  const battle = caseBattleBattles.get(req.params.id);
+  if (!battle) return res.status(404).json({ error: 'Battle not found' });
+  if (battle.status !== 'waiting') return res.status(400).json({ error: 'Battle already started' });
+  const emptySlot = battle.participants.findIndex((p) => !p.username);
+  if (emptySlot < 0) return res.status(400).json({ error: 'No empty slot' });
+  const usedNames = new Set(battle.participants.map((p) => p.username).filter(Boolean));
+  let botName = getBotDisplayName();
+  while (usedNames.has(botName)) botName = getBotDisplayName() + ' ' + Date.now();
+  const teamSlot = battle.participants[emptySlot].teamIndex;
+  const slotInTeam = battle.participants.filter((p) => p.teamIndex === teamSlot && p.username).length;
+  battle.participants[emptySlot] = {
+    teamIndex: teamSlot,
+    slotIndex: slotInTeam,
+    username: botName,
+    isBot: true,
+    entryPaid: 0,
+    totalValue: 0,
+    terminalValue: 0,
+  };
+  if (battle.participants.every((p) => p.username)) battle.status = 'in_progress';
+  res.json({ battle });
 });
 
 async function start() {

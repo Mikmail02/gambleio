@@ -204,6 +204,7 @@
 
   const pageProfile = document.getElementById('page-profile');
   const pageLeaderboard = document.getElementById('page-leaderboard');
+  const pageCaseBattle = document.getElementById('page-case-battle');
 
   function showPage(pageId, profileUsername) {
     if (pageHome) pageHome.classList.toggle('hidden', pageId !== 'home');
@@ -216,6 +217,7 @@
     if (pageSlotGame) pageSlotGame.classList.toggle('hidden', pageId !== 'slot-game');
     if (pageProfile) pageProfile.classList.toggle('hidden', pageId !== 'profile');
     if (pageLeaderboard) pageLeaderboard.classList.toggle('hidden', pageId !== 'leaderboard');
+    if (pageCaseBattle) pageCaseBattle.classList.toggle('hidden', pageId !== 'case-battle');
     if (pagePatchNotes) pagePatchNotes.classList.toggle('hidden', pageId !== 'patch-notes');
     navLinks.forEach((a) => a.classList.toggle('active', a.getAttribute('data-page') === pageId));
     const btnPatchNotes = document.querySelector('.btn-patch-notes');
@@ -262,6 +264,9 @@
     if (pageId !== 'crash' && window.Crash && window.Crash.onHide) {
       window.Crash.onHide();
     }
+    if (pageId !== 'case-battle' && window.CaseBattle && window.CaseBattle.onHide) {
+      window.CaseBattle.onHide();
+    }
     if (pageId === 'profile') {
       updateBalance();
       if (window.Auth && window.Auth.showProfile) {
@@ -293,7 +298,7 @@
 
   function onHashChange() {
     const hash = (window.location.hash || '#home').slice(1);
-    const validPages = ['home', 'board-games', 'plinko', 'roulette', 'crash', 'mines', 'slots', 'slot-game', 'profile', 'leaderboard', 'patch-notes'];
+    const validPages = ['home', 'board-games', 'plinko', 'roulette', 'crash', 'mines', 'slots', 'slot-game', 'case-battle', 'profile', 'leaderboard', 'patch-notes'];
     let page = validPages.includes(hash) ? hash : 'home';
     if (hash.startsWith('profile/')) {
       page = 'profile';
@@ -313,6 +318,9 @@
       }
       if (page === 'mines' && window.Mines && window.Mines.onShow) {
         window.Mines.onShow();
+      }
+      if (page === 'case-battle' && window.CaseBattle && window.CaseBattle.onShow) {
+        window.CaseBattle.onShow();
       }
     }, 0);
     setTimeout(() => {
