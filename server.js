@@ -184,18 +184,31 @@ async function addAdminLog(entry) {
 }
 
 const PLINKO_RISK_COSTS = { medium: 50000, high: 500000, extreme: 5000000 };
-const TRACKED_GAME_SOURCES = ['click', 'plinko', 'roulette', 'slots', 'crash'];
+const PLINKO_MAX_BET_BY_RISK = { low: 100, medium: 1000, high: 10000, extreme: 100000 };
+const PLINKO_ODDS = {
+  low: [0.8, 1.8, 3, 5, 7, 9.7, 15.3, 9.7, 7, 7, 9.7, 15.3, 9.7, 7, 5, 3, 1.8, 0.8],
+  medium: [0.6, 1.4, 2.4, 4, 6, 8.5, 13.5, 8.5, 6.5, 6.5, 8.5, 13.5, 8.5, 6.5, 4, 2.4, 1.4, 0.6],
+  high: [0.4, 1, 1.8, 3.2, 5, 7.5, 12, 7.5, 6, 6, 7.5, 12, 7.5, 6, 5, 3.2, 1.8, 0.4],
+  extreme: [0.05, 0.2, 0.4, 0.6, 1.5, 3, 5, 16, 60, 60, 16, 5, 3, 1.5, 0.6, 0.4, 0.2, 0.05],
+};
+const PLINKO_MULTIPLIERS = {
+  low: [15, 8.5, 4.3, 2.7, 1.3, 1.1, 1, 0.8, 0.5, 0.5, 0.8, 1, 1.1, 1.3, 2.7, 4.3, 8.5, 15],
+  medium: [20, 10, 5, 2.5, 1.2, 1, 0.8, 0.6, 0.3, 0.3, 0.6, 0.8, 1, 1.2, 2.5, 5, 10, 20],
+  high: [50, 25, 10, 3, 1, 0.5, 0.3, 0.2, 0.1, 0.1, 0.2, 0.3, 0.5, 1, 3, 10, 25, 50],
+  extreme: [1000, 100, 20, 5, 1, 0.2, 0.1, 0.05, 0.01, 0.01, 0.05, 0.1, 0.2, 1, 5, 20, 100, 1000],
+};
+const TRACKED_GAME_SOURCES = ['click', 'plinko', 'roulette', 'slots', 'crash', 'mines'];
 
 function emptyGameNet() {
-  return { click: 0, plinko: 0, roulette: 0, slots: 0, crash: 0 };
+  return { click: 0, plinko: 0, roulette: 0, slots: 0, crash: 0, mines: 0 };
 }
 
 function emptyGamePlayCounts() {
-  return { click: 0, plinko: 0, roulette: 0, slots: 0, crash: 0 };
+  return { click: 0, plinko: 0, roulette: 0, slots: 0, crash: 0, mines: 0 };
 }
 
 function emptyXpBySource() {
-  return { click: 0, plinko: 0, roulette: 0, slots: 0, crash: 0 };
+  return { click: 0, plinko: 0, roulette: 0, slots: 0, crash: 0, mines: 0 };
 }
 
 function normalizeGameSource(source) {
@@ -279,6 +292,7 @@ function ensureFields(user) {
       roulette: Number(user.gameNet.roulette) || 0,
       slots: Number(user.gameNet.slots) || 0,
       crash: Number(user.gameNet.crash) || 0,
+      mines: Number(user.gameNet.mines) || 0,
     };
   }
   if (!user.gamePlayCounts || typeof user.gamePlayCounts !== 'object') {
@@ -290,6 +304,7 @@ function ensureFields(user) {
       roulette: Number(user.gamePlayCounts.roulette) || 0,
       slots: Number(user.gamePlayCounts.slots) || 0,
       crash: Number(user.gamePlayCounts.crash) || 0,
+      mines: Number(user.gamePlayCounts.mines) || 0,
     };
   }
   if (!user.xpBySource || typeof user.xpBySource !== 'object') {
@@ -301,6 +316,7 @@ function ensureFields(user) {
       roulette: Number(user.xpBySource.roulette) || 0,
       slots: Number(user.xpBySource.slots) || 0,
       crash: Number(user.xpBySource.crash) || 0,
+      mines: Number(user.xpBySource.mines) || 0,
     };
   }
   if (!user.biggestWinMeta || typeof user.biggestWinMeta !== 'object') {
@@ -886,6 +902,13 @@ app.post('/api/user/place-bet', async (req, res) => {
   if (!Number.isFinite(amount) || amount < 0.01 || amount > user.balance) {
     return res.status(400).json({ error: 'Invalid bet amount or insufficient balance' });
   }
+  if (source === 'plinko') {
+    const risk = user.plinkoRiskLevel || 'low';
+    const maxBet = PLINKO_MAX_BET_BY_RISK[risk] ?? PLINKO_MAX_BET_BY_RISK.low;
+    if (amount > maxBet) {
+      return res.status(400).json({ error: `Max bet for ${risk} risk is $${maxBet.toLocaleString()}` });
+    }
+  }
   user.balance -= amount;
   user.totalBets += 1;
   if (source && source !== 'click') {
@@ -1089,6 +1112,7 @@ function getTopGamesFromCounts(gamePlayCounts) {
     if (key === 'roulette') return 'Roulette';
     if (key === 'slots') return 'Slots';
     if (key === 'crash') return 'Crash';
+    if (key === 'mines') return 'Mines';
     if (key === 'click') return 'Click';
     return key;
   };
@@ -1129,6 +1153,7 @@ app.get('/api/leaderboard/:type/user/:slug', async (req, res) => {
     if (key === 'roulette') return 'Roulette';
     if (key === 'slots') return 'Slots';
     if (key === 'crash') return 'Crash';
+    if (key === 'mines') return 'Mines';
     if (key === 'click') return 'Click';
     return key || null;
   };
@@ -1157,6 +1182,68 @@ app.get('/api/leaderboard/:type/user/:slug', async (req, res) => {
     topGames: getTopGamesFromCounts(user.gamePlayCounts),
     analyticsStartedAt: startedAt,
   });
+});
+
+function plinkoPickSlot(risk) {
+  const odds = PLINKO_ODDS[risk] || PLINKO_ODDS.low;
+  const r = Math.random() * 100;
+  let sum = 0;
+  for (let i = 0; i < odds.length; i++) {
+    sum += odds[i];
+    if (r < sum) return i;
+  }
+  return odds.length - 1;
+}
+
+app.post('/api/plinko/resolve', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  const amount = typeof req.body.amount === 'number' ? req.body.amount : Number(req.body.amount);
+  if (!Number.isFinite(amount) || amount < 0.01 || amount > user.balance) {
+    return res.status(400).json({ error: 'Invalid bet amount or insufficient balance' });
+  }
+  const risk = user.plinkoRiskLevel || 'low';
+  const maxBet = PLINKO_MAX_BET_BY_RISK[risk] ?? PLINKO_MAX_BET_BY_RISK.low;
+  if (amount > maxBet) return res.status(400).json({ error: 'Bet exceeds max for risk level' });
+
+  const slotIndex = plinkoPickSlot(risk);
+  const mults = PLINKO_MULTIPLIERS[risk] || PLINKO_MULTIPLIERS.low;
+  const multiplier = mults[slotIndex] ?? 1;
+  const winAmount = Math.floor(amount * multiplier);
+
+  user.balance -= amount;
+  user.totalBets += 1;
+  if (user.gameNet) user.gameNet.plinko = (user.gameNet.plinko || 0) - amount;
+  if (user.gamePlayCounts) user.gamePlayCounts.plinko = (user.gamePlayCounts.plinko || 0) + 1;
+  if (user.xpBySource) user.xpBySource.plinko = (user.xpBySource.plinko || 0) + 3;
+
+  user.balance += winAmount;
+  user.totalGamblingWins += winAmount;
+  if (user.gameNet) user.gameNet.plinko = (user.gameNet.plinko || 0) + winAmount;
+
+  const isProfit = winAmount > amount;
+  if (winAmount > 0 && isProfit) {
+    const profit = Math.max(0, winAmount - amount);
+    user.totalProfitWins = (user.totalProfitWins || 0) + profit;
+    user.totalWinsCount = (user.totalWinsCount || 0) + 1;
+    if (user.xpBySource) user.xpBySource.plinko = (user.xpBySource.plinko || 0) + 3;
+    if (winAmount > (user.biggestWinAmount || 0)) {
+      user.biggestWinAmount = Math.min(winAmount, MAX_BIGGEST_WIN_AMOUNT);
+      user.biggestWinMultiplier = multiplier;
+      user.biggestWinMeta = { game: 'plinko', betAmount: amount, multiplier, timestamp: Date.now() };
+    }
+  }
+
+  const idx = slotIndex >= 0 && slotIndex <= 17 ? slotIndex : 18;
+  plinkoStats.totalBalls += 1;
+  plinkoStats.landings[idx] = (plinkoStats.landings[idx] || 0) + 1;
+  await savePlinkoStats();
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
+
+  res.json({ slotIndex, multiplier, winAmount, path: null, balance: user.balance });
 });
 
 app.post('/api/plinko-land', async (req, res) => {
@@ -1244,7 +1331,7 @@ const ROULETTE_BETTING_MS = 20000;
 const ROULETTE_SPINNING_MS = 5000;
 const ROULETTE_RESULT_MS = 3000;
 const ROULETTE_RED = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
-const ROULETTE_STRICT_CASINO_MODE = true;
+const ROULETTE_STRICT_CASINO_MODE = false;
 
 const rouletteState = {
   roundId: 1,
@@ -1476,6 +1563,37 @@ app.post('/api/roulette/clear-bets', async (req, res) => {
   res.json({ balance: user.balance, refunded: refundTotal });
 });
 
+app.post('/api/roulette/remove-bet', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  rouletteTick();
+  if (rouletteState.phase !== 'betting') {
+    return res.status(400).json({ error: 'Cannot remove bet outside betting phase' });
+  }
+  const { key } = req.body;
+  if (!isValidRouletteBetKey(key)) {
+    return res.status(400).json({ error: 'Invalid bet key' });
+  }
+  const userBets = rouletteState.bets.get(user.username) || [];
+  let idx = -1;
+  for (let i = userBets.length - 1; i >= 0; i--) {
+    if (userBets[i].key === key) { idx = i; break; }
+  }
+  if (idx < 0) {
+    return res.status(400).json({ error: 'No bet on that field' });
+  }
+  const removed = userBets[idx].amount;
+  userBets.splice(idx, 1);
+  if (userBets.length === 0) rouletteState.bets.delete(user.username);
+  user.balance += removed;
+  user.gameNet.roulette += removed;
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
+  res.json({ balance: user.balance, removed });
+});
+
 app.get('/api/roulette/winners', (req, res) => {
   res.json(rouletteState.recentWinners);
 });
@@ -1486,17 +1604,21 @@ app.get('/api/roulette/all-bets', async (req, res) => {
   for (const [username, userBets] of rouletteState.bets) {
     const user = await getUserId(username);
     const displayName = getSafeDisplayName(user || { username });
+    const perKey = new Map();
     for (const b of userBets) {
       const k = String(b.key);
       const amt = Number(b.amount);
       if (!k || !Number.isFinite(amt)) continue;
+      perKey.set(k, (perKey.get(k) || 0) + amt);
+    }
+    for (const [k, totalAmt] of perKey) {
       let cur = agg.get(k);
       if (!cur) {
         cur = { key: k, total: 0, players: [] };
         agg.set(k, cur);
       }
-      cur.total += amt;
-      cur.players.push({ username: displayName, amount: amt });
+      cur.total += totalAmt;
+      cur.players.push({ username: displayName, amount: totalAmt });
     }
   }
   const bets = Array.from(agg.values()).map((v) => {
@@ -1673,6 +1795,156 @@ app.post('/api/crash/bet', async (req, res) => {
   await saveUser(user);
   crashState.bets.set(user.username, { amount });
   res.json({ balance: user.balance, bet: amount });
+});
+
+// --- Mines: 5x5 grid, N mines, RTP 97% ---
+const MINES_RTP = 0.97;
+const MINES_GRID_SIZE = 25;
+const minesRounds = new Map();
+
+function binom(n, k) {
+  if (k < 0 || k > n) return 0;
+  if (k === 0 || k === n) return 1;
+  let r = 1;
+  for (let i = 0; i < k; i++) {
+    r = r * (n - i) / (i + 1);
+  }
+  return r;
+}
+
+function minesProbReached(s, N) {
+  if (s < 0 || s > MINES_GRID_SIZE - N) return 0;
+  return binom(MINES_GRID_SIZE - s, N) / binom(MINES_GRID_SIZE, N);
+}
+
+function minesGetMultiplier(s, N) {
+  const p = minesProbReached(s, N);
+  if (p <= 0) return 0;
+  return MINES_RTP / p;
+}
+
+function shuffleArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+app.post('/api/mines/bet', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  const amount = Number(req.body.amount);
+  const mines = Number(req.body.mines);
+  if (!Number.isFinite(amount) || amount < 0.01) {
+    return res.status(400).json({ error: 'Invalid bet amount' });
+  }
+  if (!Number.isFinite(mines) || mines < 1 || mines > 24) {
+    return res.status(400).json({ error: 'Invalid mines count (1–24)' });
+  }
+  if (amount > user.balance) {
+    return res.status(400).json({ error: 'Insufficient balance' });
+  }
+  const roundId = crypto.randomBytes(16).toString('hex');
+  const indices = Array.from({ length: MINES_GRID_SIZE }, (_, i) => i);
+  const minePositions = shuffleArray(indices).slice(0, mines);
+  const mineSet = new Set(minePositions);
+  user.balance -= amount;
+  user.totalBets += 1;
+  user.gameNet.mines -= amount;
+  user.gamePlayCounts.mines += 1;
+  user.xpBySource.mines = (user.xpBySource.mines || 0) + 3;
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
+  minesRounds.set(roundId, {
+    username: user.username,
+    bet: amount,
+    mines,
+    mineSet,
+    revealed: [],
+    safeClicks: 0,
+  });
+  res.json({ roundId, balance: user.balance });
+});
+
+app.post('/api/mines/reveal', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  const { roundId, tileIndex } = req.body;
+  if (!roundId || tileIndex == null) {
+    return res.status(400).json({ error: 'Missing roundId or tileIndex' });
+  }
+  const idx = Number(tileIndex);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= MINES_GRID_SIZE) {
+    return res.status(400).json({ error: 'Invalid tile index' });
+  }
+  const round = minesRounds.get(roundId);
+  if (!round || round.username !== user.username) {
+    return res.status(400).json({ error: 'Invalid or expired round' });
+  }
+  if (round.revealed.includes(idx)) {
+    return res.status(400).json({ error: 'Tile already revealed' });
+  }
+  round.revealed.push(idx);
+  const isMine = round.mineSet.has(idx);
+  if (isMine) {
+    minesRounds.delete(roundId);
+    res.json({
+      isMine: true,
+      safeClicks: round.safeClicks,
+      multiplier: 0,
+      winAmount: 0,
+      balance: user.balance,
+    });
+    return;
+  }
+  round.safeClicks += 1;
+  const multiplier = minesGetMultiplier(round.safeClicks, round.mines);
+  res.json({
+    isMine: false,
+    safeClicks: round.safeClicks,
+    multiplier,
+    winAmount: Math.floor(round.bet * multiplier * 100) / 100,
+    balance: user.balance,
+  });
+});
+
+app.post('/api/mines/cash-out', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  const { roundId } = req.body;
+  if (!roundId) return res.status(400).json({ error: 'Missing roundId' });
+  const round = minesRounds.get(roundId);
+  if (!round || round.username !== user.username) {
+    return res.status(400).json({ error: 'Invalid or expired round' });
+  }
+  if (round.safeClicks === 0) {
+    return res.status(400).json({ error: 'Nothing to cash out' });
+  }
+  const multiplier = minesGetMultiplier(round.safeClicks, round.mines);
+  const winAmount = Math.floor(round.bet * multiplier * 100) / 100;
+  user.balance += winAmount;
+  user.totalGamblingWins += winAmount;
+  user.totalWinsCount += 1;
+  if (winAmount > round.bet) user.totalProfitWins += 1;
+  user.gameNet.mines += winAmount;
+  if (winAmount > (user.biggestWinAmount || 0)) {
+    user.biggestWinAmount = winAmount;
+    user.biggestWinMultiplier = multiplier;
+    user.biggestWinMeta = { game: 'mines', betAmount: round.bet, multiplier, timestamp: Date.now() };
+  }
+  user.xpBySource.mines = (user.xpBySource.mines || 0) + 5;
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
+  minesRounds.delete(roundId);
+  res.json({ balance: user.balance, multiplier, winAmount });
 });
 
 app.post('/api/crash/cash-out', async (req, res) => {

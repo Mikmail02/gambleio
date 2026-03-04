@@ -11,6 +11,7 @@
   const pagePlinko = document.getElementById('page-plinko');
   const pageRoulette = document.getElementById('page-roulette');
   const pageCrash = document.getElementById('page-crash');
+  const pageMines = document.getElementById('page-mines');
   const pageSlots = document.getElementById('page-slots');
   const pageBoardGames = document.getElementById('page-board-games');
   const pagePatchNotes = document.getElementById('page-patch-notes');
@@ -59,12 +60,26 @@
   function updateDropButton() {
     if (!dropBtn) return;
     const bet = Game.getBet();
-    const canBet = Game.canBet(bet);
+    const maxBet = typeof Game.getPlinkoMaxBet === 'function' ? Game.getPlinkoMaxBet() : 1e9;
+    const overMax = bet > maxBet;
+    const canBet = Game.canBet(bet) && !overMax;
     const activeBalls = window.Plinko && Plinko.getActiveBallCount ? Plinko.getActiveBallCount() : 0;
     const atMax = activeBalls >= (Plinko && Plinko.maxActiveBalls ? Plinko.maxActiveBalls : 25);
     dropBtn.disabled = plinkoAutoRunning ? false : (!canBet || atMax);
     dropBtn.textContent = plinkoAutoRunning ? 'Stop' : (plinkoControlMode === 'automatic' ? 'Start auto' : 'Drop ball');
     updateRiskDropdownLock(activeBalls);
+  }
+
+  function updatePlinkoMaxBetError() {
+    if (!plinkoMaxBetErrorEl) return;
+    const bet = Game.getBet();
+    const maxBet = typeof Game.getPlinkoMaxBet === 'function' ? Game.getPlinkoMaxBet() : 1e9;
+    if (bet > maxBet) {
+      plinkoMaxBetErrorEl.textContent = `Max bet for ${(Game.plinkoRiskLevel || 'low').charAt(0).toUpperCase() + (Game.plinkoRiskLevel || 'low').slice(1)} risk is $${maxBet.toLocaleString()}`;
+      plinkoMaxBetErrorEl.classList.remove('hidden');
+    } else {
+      plinkoMaxBetErrorEl.classList.add('hidden');
+    }
   }
 
   function updateRiskDropdownLock(activeBalls) {
@@ -194,6 +209,7 @@
     if (pagePlinko) pagePlinko.classList.toggle('hidden', pageId !== 'plinko');
     if (pageRoulette) pageRoulette.classList.toggle('hidden', pageId !== 'roulette');
     if (pageCrash) pageCrash.classList.toggle('hidden', pageId !== 'crash');
+    if (pageMines) pageMines.classList.toggle('hidden', pageId !== 'mines');
     if (pageSlots) pageSlots.classList.toggle('hidden', pageId !== 'slots');
     if (pageBoardGames) pageBoardGames.classList.toggle('hidden', pageId !== 'board-games');
     if (pageSlotGame) pageSlotGame.classList.toggle('hidden', pageId !== 'slot-game');
@@ -276,7 +292,7 @@
 
   function onHashChange() {
     const hash = (window.location.hash || '#home').slice(1);
-    const validPages = ['home', 'board-games', 'plinko', 'roulette', 'crash', 'slots', 'slot-game', 'profile', 'leaderboard', 'patch-notes'];
+    const validPages = ['home', 'board-games', 'plinko', 'roulette', 'crash', 'mines', 'slots', 'slot-game', 'profile', 'leaderboard', 'patch-notes'];
     let page = validPages.includes(hash) ? hash : 'home';
     if (hash.startsWith('profile/')) {
       page = 'profile';
@@ -293,6 +309,9 @@
       }
       if (page === 'crash' && window.Crash && window.Crash.onShow) {
         window.Crash.onShow();
+      }
+      if (page === 'mines' && window.Mines && window.Mines.onShow) {
+        window.Mines.onShow();
       }
     }, 0);
     setTimeout(() => {
@@ -327,9 +346,17 @@
   }
 
   async function handleDrop() {
+    const inputVal = parseFloat(betInput?.value);
+    if (Number.isFinite(inputVal) && inputVal >= 0.01) {
+      Game.setBet(inputVal);
+    }
     const bet = Game.getBet();
     const maxBet = typeof Game.getPlinkoMaxBet === 'function' ? Game.getPlinkoMaxBet() : 1e9;
-    if (!Game.canBet(bet) || bet > maxBet) return false;
+    if (bet > maxBet) {
+      updatePlinkoMaxBetError();
+      return false;
+    }
+    if (!Game.canBet(bet)) return false;
 
     const useResolve = window.Stats && window.Stats.plinkoResolve && window.Stats.getPlinkoPathsReady;
     let pathsReady = false;
@@ -359,6 +386,7 @@
           Game.balance = result.balance;
           plinkoSessionBet += bet;
           plinkoSessionWon += res.winAmount;
+          if (window.LiveStats) window.LiveStats.recordRound('plinko', bet, res.winAmount);
           updatePlinkoSessionPnl();
           updateBalance();
           addLastMultiplier(res.multiplier);
@@ -371,6 +399,7 @@
         Game.balance = result.balance;
         plinkoSessionBet += bet;
         plinkoSessionWon += result.winAmount;
+        if (window.LiveStats) window.LiveStats.recordRound('plinko', bet, result.winAmount);
         updatePlinkoSessionPnl();
         updateBalance();
         addLastMultiplier(result.multiplier);
@@ -401,6 +430,7 @@
       if (result.recordedPath && window.Plinko && window.Plinko.addRecordedPath) {
         window.Plinko.addRecordedPath(result.slotIndex, result.recordedPath);
       }
+      if (window.LiveStats) window.LiveStats.recordRound('plinko', bet, result.winAmount);
       if (window.Stats && window.Stats.win) {
         await window.Stats.win(result.winAmount, result.multiplier, bet, 'plinko');
       } else {
@@ -420,6 +450,7 @@
 
     if (!added) {
       plinkoSessionWon += bet;
+      if (window.LiveStats) window.LiveStats.recordRound('plinko', bet, bet);
       updatePlinkoSessionPnl();
       if (window.Stats && window.Stats.win) {
         await window.Stats.win(bet, 1, bet, 'plinko');
@@ -434,14 +465,8 @@
   }
 
   function onBetInput() {
-    let val = parseFloat(betInput.value);
+    const val = parseFloat(betInput.value);
     if (Number.isNaN(val)) return;
-    const pagePlinkoEl = document.getElementById('page-plinko');
-    if (pagePlinkoEl && !pagePlinkoEl.classList.contains('hidden')) {
-      const maxBet = Game.getPlinkoMaxBet();
-      val = Math.min(val, maxBet);
-      if (parseFloat(betInput.value) !== val) betInput.value = val;
-    }
     Game.setBet(val);
     updateDropButton();
     updatePlinkoMaxBetError();

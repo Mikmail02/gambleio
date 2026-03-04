@@ -14,6 +14,13 @@
       href: '#plinko'
     },
     {
+      id: 'mines',
+      name: 'Mines',
+      description: '5×5 grid. Choose mines, click safe tiles to multiply. Hit a mine and you lose.',
+      emoji: '💎',
+      href: '#mines'
+    },
+    {
       id: 'roulette',
       name: 'Roulette',
       description: 'Classic roulette wheel. Bet on numbers, colors or ranges and spin to win.',

@@ -87,8 +87,11 @@
           lastCrashedRoundId = data.roundId;
           last10Crashes = last10Crashes.concat(data.crashPoint).slice(-10);
         }
+        const hadBet = myBet != null;
+        const betAmt = typeof myBet === 'number' ? myBet : (myBet && myBet.amount) || 0;
         myBet = data.myBet;
         myCashOut = data.myCashOut;
+        /* On crash: do nothing – bet was already recorded as -bet on place bet */
         if (data.balance != null && window.Game) window.Game.balance = data.balance;
         if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
         updateUI(data);
@@ -400,6 +403,7 @@
           if (window.Game) window.Game.balance = data.balance;
           if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
           myBet = amount;
+          if (window.LiveStats) window.LiveStats.recordBetPlaced('crash', amount);
           updateUI({ phase, myBet: amount, balance: data.balance });
         } catch (e) {
           alert('Bet failed');
@@ -423,6 +427,7 @@
           if (window.Game) window.Game.balance = data.balance;
           if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
           myCashOut = { amount: myBet, multiplier: data.multiplier, winAmount: data.winAmount };
+          if (window.LiveStats) window.LiveStats.recordRound('crash', myBet, data.winAmount);
           updateUI({ phase, myCashOut: myCashOut, balance: data.balance });
         } catch (e) {
           alert('Cash out failed');

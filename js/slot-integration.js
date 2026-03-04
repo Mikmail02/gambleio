@@ -1226,7 +1226,7 @@
       throw new Error('Insufficient balance');
     }
     const placeResult = window.Stats && window.Stats.placeBet
-      ? await window.Stats.placeBet(bet)
+      ? await window.Stats.placeBet(bet, 'slots')
       : (Game.placeBet(bet) ? { balance: Game.balance } : null);
     if (!placeResult) {
       if (!window.Auth || !window.Auth.isAuthenticated()) throw new Error('Session expired');
@@ -1234,6 +1234,7 @@
       throw new Error('Insufficient balance');
     }
     if (!window.Stats || !window.Stats.placeBet) Game.recordBet();
+    if (window.LiveStats) window.LiveStats.recordBetPlaced('slots', bet);
     refreshSlotGameInfo();
   }
 
@@ -1241,8 +1242,9 @@
     if (multiplier <= 0 || !isFinite(multiplier)) return;
     const bet = betOverride != null ? betOverride : currentBet;
     const winAmount = bet * multiplier;
+    if (window.LiveStats) window.LiveStats.recordWin('slots', winAmount);
     if (window.Stats && window.Stats.win) {
-      await window.Stats.win(winAmount, multiplier, bet);
+      await window.Stats.win(winAmount, multiplier, bet, 'slots');
     } else if (typeof Game !== 'undefined' && Game.win) {
       Game.win(winAmount, multiplier, bet);
     }

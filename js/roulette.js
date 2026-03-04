@@ -26,8 +26,11 @@
   const liveBetsByField = document.getElementById('liveBetsByField');
 
   let selectedChipValue = CHIP_VALUES[0];
-  let localBets = {};
+  let localBets = {}; // { key: [amount, amount, ...] } for stacking and right-click remove
   let lastBets = null;
+  let rouletteBalanceBeforeRound = 0;
+  let rouletteTotalBetThisRound = 0;
+  let lastRecordedRouletteRoundId = null;
   let balanceUpdateCallback = null;
   let pollInterval = null;
   let lastRoundId = 0;
@@ -51,7 +54,10 @@
   }
 
   function getTotalBet() {
-    return Object.values(localBets).reduce((s, v) => s + v, 0);
+    return Object.values(localBets).reduce((s, v) => {
+      const amt = Array.isArray(v) ? v.reduce((a, b) => a + b, 0) : v;
+      return s + amt;
+    }, 0);
   }
 
   function getAuthHeaders() {
@@ -239,15 +245,27 @@
     if (data.myBets && data.myBets.length) {
       localBets = {};
       data.myBets.forEach((b) => {
-        localBets[b.key] = (localBets[b.key] || 0) + b.amount;
+        if (!localBets[b.key]) localBets[b.key] = [];
+        localBets[b.key].push(b.amount);
       });
       if (data.phase === 'spinning' || data.phase === 'result') {
         lastBets = JSON.parse(JSON.stringify(localBets));
+        if (data.phase === 'spinning' && Object.keys(localBets).length > 0) {
+          rouletteBalanceBeforeRound = Game.balance;
+          rouletteTotalBetThisRound = getTotalBet();
+        }
+        if (data.phase === 'result' && rouletteTotalBetThisRound > 0 && window.LiveStats && data.roundId !== lastRecordedRouletteRoundId) {
+          lastRecordedRouletteRoundId = data.roundId;
+          const payout = data.balance - rouletteBalanceBeforeRound;
+          window.LiveStats.recordRound('roulette', rouletteTotalBetThisRound, payout);
+          rouletteTotalBetThisRound = 0;
+        }
       }
     } else if (data.phase === 'betting') {
       if (data.roundId !== lastRoundId) {
         lastRoundId = data.roundId;
         localBets = {};
+        rouletteTotalBetThisRound = 0;
       }
     } else if (data.phase === 'spinning' && Object.keys(localBets).length) {
       lastBets = JSON.parse(JSON.stringify(localBets));
@@ -275,8 +293,42 @@
     }
     Game.balance = result.balance;
     if (balanceUpdateCallback) balanceUpdateCallback();
-    localBets[key] = (localBets[key] || 0) + selectedChipValue;
+    if (!localBets[key]) localBets[key] = [];
+    localBets[key].push(selectedChipValue);
     lastBets = JSON.parse(JSON.stringify(localBets));
+    updateBetDisplay();
+  }
+
+  async function removeBetApi(key) {
+    try {
+      const res = await fetch(API + '/roulette/remove-bet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ key }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      Game.balance = data.balance;
+      return data;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function onGridRightClick(cell, e) {
+    e.preventDefault();
+    if (!window.Auth || !window.Auth.requireAuth(() => {})) return;
+    const key = cell.getAttribute('data-bet');
+    if (!key || !localBets[key] || localBets[key].length === 0) return;
+    const result = await removeBetApi(key);
+    if (!result) {
+      showPopup('Remove failed');
+      return;
+    }
+    localBets[key].pop();
+    if (localBets[key].length === 0) delete localBets[key];
+    lastBets = JSON.parse(JSON.stringify(localBets));
+    if (balanceUpdateCallback) balanceUpdateCallback();
     updateBetDisplay();
   }
 
@@ -331,7 +383,9 @@
     if (data.myBets?.length) {
       data.myBets.forEach((b) => { current[b.key] = (current[b.key] || 0) + b.amount; });
     } else {
-      Object.assign(current, localBets);
+      for (const [key, arr] of Object.entries(localBets)) {
+        current[key] = Array.isArray(arr) ? arr.reduce((a, b) => a + b, 0) : arr;
+      }
     }
     if (!current || !Object.keys(current).length) {
       showPopup('No bets to double');
@@ -350,7 +404,7 @@
     localBets = {};
     for (const [key, amount] of Object.entries(template)) {
       const res = await placeBetApi(key, amount);
-      if (res) localBets[key] = (localBets[key] || 0) + amount;
+      if (res) localBets[key] = [amount];
     }
     const roundData = await fetchRound();
     if (roundData && roundData.balance !== undefined) Game.balance = roundData.balance;
@@ -367,12 +421,17 @@
     }
   }
 
+  function getFieldTotal(key) {
+    const arr = localBets[key];
+    return Array.isArray(arr) ? arr.reduce((a, b) => a + b, 0) : (arr || 0);
+  }
+
   function updateBetDisplay() {
     if (totalBetEl) totalBetEl.textContent = formatDollars(getTotalBet());
     if (!gridEl) return;
     gridEl.querySelectorAll('.roulette-cell').forEach((el) => {
       const key = el.getAttribute('data-bet');
-      const amount = localBets[key] || 0;
+      const amount = getFieldTotal(key);
       const existing = el.querySelector('.roulette-chip-stack');
       if (existing) existing.remove();
       if (amount > 0) {
@@ -420,6 +479,7 @@
     gridEl.innerHTML = parts.join('');
     gridEl.querySelectorAll('.roulette-cell').forEach((el) => {
       el.addEventListener('click', () => onGridClick(el));
+      el.addEventListener('contextmenu', (e) => onGridRightClick(el, e));
     });
   }
 
@@ -457,8 +517,8 @@
           const label = escapeHtml(getLiveBetFieldLabel(b.key));
           let players = Array.isArray(b.players) ? b.players.slice() : [];
           if (players.length === 0 && myBets.length > 0) {
-            const myBet = myBets.find((m) => String(m.key) === String(b.key));
-            if (myBet) players = [{ username: 'You', amount: myBet.amount }];
+            const totalOnKey = myBets.filter((m) => String(m.key) === String(b.key)).reduce((s, m) => s + (Number(m.amount) || 0), 0);
+            if (totalOnKey > 0) players = [{ username: 'You', amount: totalOnKey }];
           }
           players.sort((a, c) => (Number(c.amount) || 0) - (Number(a.amount) || 0));
           const playersHtml = players.map((p) =>

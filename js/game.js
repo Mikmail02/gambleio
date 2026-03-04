@@ -57,6 +57,11 @@ const Game = {
   /** Max bet per risk level. Max win = maxBet * highest multiplier for that level. */
   plinkoMaxBetByRisk: { low: 100, medium: 1000, high: 10000, extreme: 100000 },
 
+  getPlinkoMaxBet() {
+    const risk = this.plinkoRiskLevel || 'low';
+    return this.plinkoMaxBetByRisk[risk] ?? this.plinkoMaxBetByRisk.low;
+  },
+
   getMultipliers() {
     const risk = this.plinkoRisks[this.plinkoRiskLevel];
     return risk ? risk.multipliers : this.plinkoRisks.low.multipliers;

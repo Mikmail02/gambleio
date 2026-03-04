@@ -238,11 +238,13 @@
           <div class="control-group">
             <label for="bet">Bet per ball ($)</label>
             <input type="number" id="bet" min="0.01" value="10" step="0.5">
+          </div>
+          <div class="control-group">
+            <button type="button" class="btn btn-drop" id="dropBall">
+              Drop ball
+            </button>
             <p class="plinko-max-bet-error hidden" id="plinkoMaxBetError" role="alert"></p>
           </div>
-          <button type="button" class="btn btn-drop" id="dropBall">
-            Drop ball
-          </button>
           <div class="plinko-session-pnl" id="plinkoSessionPnl">
             <span class="plinko-session-label">Session:</span>
             <span class="plinko-session-value" id="plinkoSessionValue">$0</span>
@@ -253,6 +255,7 @@
           </div>
           <div class="last-result" id="lastResult"></div>
           <p class="balls-hint">Max 25 balls on board. Drop again to add more.</p>
+          <button type="button" class="live-stats-trigger" data-game-id="plinko" title="Live Stats">📊</button>
         </aside>
 
         <section class="plinko-area plinko-content">
@@ -306,6 +309,7 @@
             </div>
           </div>
         </div>
+        <button type="button" class="live-stats-trigger live-stats-trigger-roulette" data-game-id="roulette" title="Live Stats">📊</button>
         <div id="rouletteBalancePopup" class="roulette-popup hidden" aria-live="polite">Not enough balance</div>
       </section>
 
@@ -332,6 +336,7 @@
               <button type="button" class="btn btn-crash-cashout" id="crashCashOutBtn" disabled>Cash out</button>
             </div>
             <p class="crash-result hidden" id="crashResult" aria-live="polite"></p>
+            <button type="button" class="live-stats-trigger" data-game-id="crash" title="Live Stats">📊</button>
           </aside>
           <section class="crash-chart-wrap" aria-label="Crash multiplier chart">
             <div class="crash-recent-bar" aria-label="Last 10 crashes">
@@ -343,6 +348,83 @@
             <h3 class="crash-activity-title">Round results</h3>
             <div id="crashActivityList" class="crash-activity-list"></div>
           </aside>
+        </div>
+      </section>
+
+      <!-- Mines -->
+      <section id="page-mines" class="page page-mines hidden">
+        <div class="mines-layout">
+          <aside class="mines-sidebar">
+            <h2 class="mines-title">Mines</h2>
+            <p class="mines-desc">5×5 grid. Choose mines (1–24). Click safe tiles to multiply. Hit a mine and you lose.</p>
+            <span class="mines-rtp" title="Return to Player">RTP — 97%</span>
+            <div class="mines-mode-toggle">
+              <button type="button" class="mines-mode-btn is-active" id="minesModeManual">Manual</button>
+              <button type="button" class="mines-mode-btn" id="minesModeAuto">Auto</button>
+            </div>
+            <div class="mines-control-group">
+              <label for="minesBetAmount">Bet Amount</label>
+              <div class="mines-bet-row">
+                <input type="number" id="minesBetAmount" min="0.01" step="0.5" value="10">
+                <button type="button" class="mines-bet-shortcut" id="minesBetHalf" title="Half">½</button>
+                <button type="button" class="mines-bet-shortcut" id="minesBetDouble" title="Double">2×</button>
+              </div>
+            </div>
+            <div class="mines-control-group">
+              <label for="minesMines">Mines</label>
+              <select id="minesMines">
+                <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option>
+                <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+                <option value="7">7</option><option value="8">8</option><option value="9">9</option>
+                <option value="10">10</option><option value="11">11</option><option value="12">12</option>
+                <option value="13">13</option><option value="14">14</option><option value="15">15</option>
+                <option value="16">16</option><option value="17">17</option><option value="18">18</option>
+                <option value="19">19</option><option value="20">20</option><option value="21">21</option>
+                <option value="22">22</option><option value="23">23</option><option value="24">24</option>
+              </select>
+            </div>
+            <div class="mines-control-group">
+              <label>Gems</label>
+              <span id="minesGems" class="mines-gems-value">22</span>
+            </div>
+            <div class="mines-control-group hidden" id="minesAutoGroup">
+              <label for="minesAutoRounds">Number of Bets</label>
+              <input type="number" id="minesAutoRounds" min="0" placeholder="0 = infinite">
+              <div class="mines-potential-win" id="minesPotentialWin">
+                <span class="mines-potential-label">Potential win</span>
+                <span id="minesPotentialValue" class="mines-potential-value">—</span>
+              </div>
+              <div class="mines-fast-mode">
+                <span class="mines-fast-mode-label">Fast mode</span>
+                <button type="button" class="mines-toggle-slider" id="minesFastMode" role="switch" aria-checked="false" title="Reveal all tiles at once">
+                  <span class="mines-toggle-track"></span>
+                  <span class="mines-toggle-thumb"></span>
+                </button>
+              </div>
+            </div>
+            <div class="mines-buttons">
+              <button type="button" class="btn btn-mines-bet" id="minesBetBtn">Bet</button>
+              <button type="button" class="btn btn-mines-cashout" id="minesCashOutBtn">Cash out</button>
+              <button type="button" class="btn btn-mines-autobet" id="minesStartAutoBtn">Start Autobet</button>
+            </div>
+            <div class="mines-profit-row">
+              <span class="mines-profit-label">Multiplier</span>
+              <span id="minesMultiplier" class="mines-mult-value">—</span>
+            </div>
+            <div class="mines-profit-row">
+              <span class="mines-profit-label">Profit</span>
+              <span id="minesProfit" class="mines-profit-value">$0</span>
+            </div>
+            <button type="button" class="live-stats-trigger" data-game-id="mines" title="Live Stats">📊</button>
+          </aside>
+          <section class="mines-grid-wrap">
+            <div id="minesGrid" class="mines-grid" role="grid" aria-label="Mines game board"></div>
+            <div id="minesWinPopup" class="mines-win-popup hidden" aria-live="polite">
+              <span id="minesWinPopupMult" class="mines-win-popup-mult">—×</span>
+              <span class="mines-win-popup-sep"></span>
+              <span id="minesWinPopupAmount" class="mines-win-popup-amount">$0.00</span>
+            </div>
+          </section>
         </div>
       </section>
 
@@ -364,6 +446,57 @@
         <div class="patch-notes-container">
           <h2 class="patch-notes-page-title">Patch notes</h2>
           <div class="patch-notes-grid">
+            <article class="patch-note-card slot-game-card" id="patch-v1-2" tabindex="0" role="button" data-expanded="false" aria-label="Patch notes v1.2, click to open">
+              <div class="patch-note-card-preview slot-game-card-image">
+                <span class="patch-note-card-preview-label">Patch notes v1.2</span>
+                <span class="slot-game-card-play">View</span>
+              </div>
+              <div class="patch-note-card-expanded-content">
+                <header class="patch-note-card-header">
+                  <h3 class="patch-note-card-title">Patch notes v1.2</h3>
+                  <p class="patch-note-card-meta">Latest update</p>
+                </header>
+                <div class="patch-note-card-body">
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">New game</h4>
+                  <p class="patch-note-section-desc">We added Mines — a 5×5 grid with hidden mines. Choose how many mines (1–24), then click tiles to reveal gems. Each safe tile multiplies your payout; hit a mine and you lose. Cash out anytime to lock in your winnings.</p>
+                  <ul class="patch-note-list">
+                    <li><strong>Mines</strong> — Manual: click tiles one by one, cash out when you want. Auto: select tiles in advance and run autobet. Fast mode speeds up reveals. 97% RTP.</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">Live Stats</h4>
+                  <p class="patch-note-section-desc">Session tracker for profit, wagered, wins and losses. Available from each game’s stats button.</p>
+                  <ul class="patch-note-list">
+                    <li>Per-game stats: Plinko, Mines, Roulette, Slots, Crash</li>
+                    <li>Wagered and profit tracked correctly; wins/losses per round</li>
+                    <li>Crash & Slots: bet deducted when you place/spin; profit only added on win/cash-out</li>
+                    <li>Dropdown shows only games you’ve played since last refresh</li>
+                    <li>Layout improved: Wagered above Profit; counters no longer cut off</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">Roulette</h4>
+                  <p class="patch-note-section-desc">Betting and live view updates for a smoother experience.</p>
+                  <ul class="patch-note-list">
+                    <li>Chip stacking: click the same field multiple times to add more — e.g. 5k chip + 3 clicks = 15k on that field</li>
+                    <li>Right-click a field to remove the last bet you placed on it (repeat to remove more)</li>
+                    <li>All fields can be bet; no strict outside-bet conflicts</li>
+                    <li>Live bets preview now shows total per field per player (e.g. Mikmail – $15k instead of 3× $5k)</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">Plinko</h4>
+                  <p class="patch-note-section-desc">Max bet limits and leaderboard fixes.</p>
+                  <ul class="patch-note-list">
+                    <li>Max bet per risk level enforced (Low, Medium, High, Extreme)</li>
+                    <li>Leaderboard biggest win now shows correct game (Plinko) instead of N/A</li>
+                    <li>Server-side plinko resolve endpoint for consistent results</li>
+                  </ul>
+                </section>
+                </div>
+              </div>
+            </article>
             <article class="patch-note-card slot-game-card" id="patch-v1-1" tabindex="0" role="button" data-expanded="false" aria-label="Patch notes v1.1, click to open">
               <div class="patch-note-card-preview slot-game-card-image">
                 <span class="patch-note-card-preview-label">Patch notes v1.1</span>
@@ -375,6 +508,13 @@
                   <p class="patch-note-card-meta">Since release</p>
                 </header>
                 <div class="patch-note-card-body">
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">New game</h4>
+                  <p class="patch-note-section-desc">We added Crash — a multiplier game where you bet and cash out before the curve crashes. The multiplier rises from 1.00×; you decide when to lock in your winnings. Cash out in time and you win; if the curve crashes before you do, you lose your bet.</p>
+                  <ul class="patch-note-list">
+                    <li><strong>Crash</strong> — Bet, watch the multiplier rise, and cash out before it crashes. 98% RTP.</li>
+                  </ul>
+                </section>
                 <section class="patch-note-section">
                   <h4 class="patch-note-section-title">Plinko</h4>
                   <p class="patch-note-section-desc">We adjusted odds and mechanics so payouts match intended probabilities — not to make the game harder, but so the experience is fair and transparent. Risk selection is now clearer and session stats are visible.</p>
@@ -480,6 +620,9 @@
           
           <!-- Slot game footer with controls -->
           <div class="slot-game-footer" id="slotGameFooter" style="display: none;">
+            <button type="button" class="footer__button live-stats-trigger" data-game-id="slots" title="Live Stats" aria-label="Live Stats">
+              <span class="footer__buttonIcon" aria-hidden="true">📊</span>
+            </button>
             <button class="footer__button footer__modalButton" id="togglePayTable" title="Pay Table" aria-label="Pay Table">
               <span class="footer__buttonIcon" aria-hidden="true">🏆</span>
             </button>
@@ -715,6 +858,41 @@
     </div>
   </div>
 
+  <!-- Live Stats popup (draggable) -->
+  <div id="liveStatsPopup" class="live-stats-popup hidden" aria-label="Live Stats">
+    <div class="live-stats-header" id="liveStatsHeader">
+      <span class="live-stats-title">📊 Live Stats</span>
+      <button type="button" class="live-stats-close" id="liveStatsClose" aria-label="Close">×</button>
+    </div>
+    <div class="live-stats-controls">
+      <select id="liveStatsGameSelect" class="live-stats-select" aria-label="Select game">
+        <option value="all">All Games</option>
+      </select>
+      <button type="button" class="live-stats-refresh" id="liveStatsRefresh" title="Reset session">↻</button>
+    </div>
+    <div class="live-stats-summary">
+      <div class="live-stats-row live-stats-row-full">
+        <span class="live-stats-label">Wagered</span>
+        <span id="liveStatsWagered" class="live-stats-value">$0.00</span>
+      </div>
+      <div class="live-stats-row live-stats-row-full">
+        <span class="live-stats-label">Profit</span>
+        <span id="liveStatsProfit" class="live-stats-value">$0.00</span>
+      </div>
+      <div class="live-stats-row">
+        <span class="live-stats-label">Wins</span>
+        <span id="liveStatsWins" class="live-stats-value live-stats-wins">0</span>
+      </div>
+      <div class="live-stats-row">
+        <span class="live-stats-label">Losses</span>
+        <span id="liveStatsLosses" class="live-stats-value live-stats-losses">0</span>
+      </div>
+    </div>
+    <div class="live-stats-graph-wrap">
+      <canvas id="liveStatsGraph" class="live-stats-graph" width="280" height="80" aria-label="Profit graph"></canvas>
+    </div>
+  </div>
+
   <!-- Login Modal -->
   <div id="loginModal" class="modal hidden">
     <div class="modal-content auth-modal">
@@ -753,6 +931,8 @@
   <script src="js/plinko-intro.js"></script>
   <script src="js/roulette.js"></script>
   <script src="js/crash.js"></script>
+  <script src="js/mines.js"></script>
+  <script src="js/live-stats.js"></script>
   <script>
     console.log('[index.html] About to load slot-integration.js...');
   </script>
