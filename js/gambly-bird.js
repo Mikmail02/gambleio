@@ -11,6 +11,7 @@
   const JUMP_VELOCITY = -600 * SCALE;
   const MAX_FALL_VELOCITY = 800 * SCALE;
   const PIPE_SPEED = 300 * SCALE;
+  const PIPE_SPEED_RAMP = 0.01;
   const PIPE_DISTANCE = 350;
   const PIPE_GAP = 180;
   const PIPE_WIDTH = 70;
@@ -119,7 +120,9 @@
     if (birdVy > MAX_FALL_VELOCITY) birdVy = MAX_FALL_VELOCITY;
     birdY += birdVy * dt;
 
-    const pipeDx = PIPE_SPEED * dt;
+    const elapsedSec = (performance.now() - gameStartTime) / 1000;
+    const speedMult = 1 + PIPE_SPEED_RAMP * elapsedSec;
+    const pipeDx = PIPE_SPEED * speedMult * dt;
     for (const p of pipes) {
       p.x -= pipeDx;
       if (!p.passed && p.x + PIPE_WIDTH < BIRD_X - BIRD_RADIUS) {

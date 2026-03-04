@@ -996,7 +996,8 @@ function simulateGamblyBird(seedStr, jumpTimestampsMs) {
     if (birdVy > MAX_FALL_VELOCITY) birdVy = MAX_FALL_VELOCITY;
     birdY += birdVy * DT;
 
-    const pipeDx = PIPE_SPEED * DT;
+    const speedMult = 1 + 0.01 * (simTime / 1000);
+    const pipeDx = PIPE_SPEED * speedMult * DT;
     for (const p of pipes) {
       p.x -= pipeDx;
       if (!p.passed && p.x + PIPE_WIDTH < BIRD_X - BIRD_RADIUS) {
@@ -1081,7 +1082,7 @@ app.get('/api/challenge/:id/result', async (req, res) => {
   }
   const bothDone = m.results.challenger != null && m.results.target != null;
   const winner = bothDone
-    ? (m.results.challenger?.score > m.results.target?.score ? c.challengerUsername : m.results.challenger?.score < m.results.target?.score ? c.targetUsername : null)
+    ? (Number(m.results.challenger?.score ?? 0) > Number(m.results.target?.score ?? 0) ? c.challengerUsername : Number(m.results.challenger?.score ?? 0) < Number(m.results.target?.score ?? 0) ? c.targetUsername : null)
     : null;
   const winnerDisplayName = winner
     ? (safeChallengeLabel(winner === c.challengerUsername ? c.challengerDisplayName : c.targetDisplayName, winner === c.challengerUsername ? c.challengerUsername : c.targetUsername) || 'Player')
@@ -1126,8 +1127,8 @@ app.post('/api/challenge/submit-result', async (req, res) => {
   const bothDone = m.results.challenger !== undefined && m.results.target !== undefined;
   if (bothDone) {
     m.status = 'finished';
-    const scA = m.results.challenger?.score ?? 0;
-    const scB = m.results.target?.score ?? 0;
+    const scA = Number(m.results.challenger?.score ?? 0);
+    const scB = Number(m.results.target?.score ?? 0);
     let winner = null;
     let loser = null;
     if (scA > scB) {
@@ -1168,7 +1169,7 @@ app.post('/api/challenge/submit-result', async (req, res) => {
   }
 
   const winner = bothDone
-    ? (m.results.challenger?.score > m.results.target?.score ? c.challengerUsername : m.results.challenger?.score < m.results.target?.score ? c.targetUsername : null)
+    ? (Number(m.results.challenger?.score ?? 0) > Number(m.results.target?.score ?? 0) ? c.challengerUsername : Number(m.results.challenger?.score ?? 0) < Number(m.results.target?.score ?? 0) ? c.targetUsername : null)
     : null;
   const winnerDisplayName = winner
     ? (safeChallengeLabel(winner === c.challengerUsername ? c.challengerDisplayName : c.targetDisplayName, winner === c.challengerUsername ? c.challengerUsername : c.targetUsername) || 'Player')
@@ -1904,6 +1905,7 @@ function hasStrictRouletteConflict(existingBets, incomingKey) {
   return false;
 }
 
+// Roulette: no max win cap; payout is unlimited.
 async function resolveAllRouletteBets() {
   const win = rouletteState.winNumber;
   for (const [username, userBets] of rouletteState.bets) {
