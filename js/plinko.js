@@ -17,7 +17,7 @@
   const airDragY = 0.9985;
   const DROP_DELAY_MS = 80;
   const VISUAL_TIME_SCALE = 0.75;
-  const SPAWN_CONGESTION_LIMIT = 6;
+  const SPAWN_CONGESTION_LIMIT = 25;
   const SPAWN_ZONE_HEIGHT = 36;
   const BALL_FORCE_RESOLVE_MS = 20000;
   const SPAWN_POINTS_PER_SLOT = 3;

@@ -23,7 +23,7 @@
   const sliderStrip = document.getElementById('csgoSliderStrip');
   const resultDisplay = document.getElementById('rouletteResultDisplay');
   const winnerFeedList = document.getElementById('winnerFeedList');
-  const liveBetsList = document.getElementById('liveBetsList');
+  const liveBetsByField = document.getElementById('liveBetsByField');
 
   let selectedChipValue = CHIP_VALUES[0];
   let localBets = {};
@@ -428,19 +428,47 @@
     return labels[key] || key;
   }
 
-  async function loadAllBets() {
+  function getLiveBetFieldClass(key) {
+    const k = String(key);
+    if (k === '0') return 'roulette-cell-0 live-bet-field';
+    const n = parseInt(k, 10);
+    if (!isNaN(n) && n >= 1 && n <= 36) return `roulette-cell-num roulette-${isRed(n) ? 'red' : 'black'} live-bet-field`;
+    if (k === 'red' || k === 'black') return `roulette-cell-outside roulette-${k} live-bet-field`;
+    return 'roulette-cell-outside live-bet-field';
+  }
+
+  function getLiveBetFieldLabel(key) {
+    return formatBetKey(String(key));
+  }
+
+  async function loadAllBets(roundData) {
     try {
-      const res = await fetch(API + '/roulette/all-bets');
+      const res = await fetch(API + '/roulette/all-bets', { cache: 'no-store' });
       if (!res.ok) return;
-      const bets = await res.json();
-      if (!liveBetsList) return;
+      const data = await res.json();
+      const bets = Array.isArray(data) ? data : (data.bets || []);
+      if (!liveBetsByField) return;
+      const myBets = roundData && Array.isArray(roundData.myBets) ? roundData.myBets : [];
       if (bets.length === 0) {
-        liveBetsList.innerHTML = '<p class="live-bets-empty">No bets yet</p>';
-        return;
+        liveBetsByField.innerHTML = '';
+      } else {
+        liveBetsByField.innerHTML = bets.map((b) => {
+          const cls = getLiveBetFieldClass(b.key);
+          const label = escapeHtml(getLiveBetFieldLabel(b.key));
+          let players = Array.isArray(b.players) ? b.players.slice() : [];
+          if (players.length === 0 && myBets.length > 0) {
+            const myBet = myBets.find((m) => String(m.key) === String(b.key));
+            if (myBet) players = [{ username: 'You', amount: myBet.amount }];
+          }
+          players.sort((a, c) => (Number(c.amount) || 0) - (Number(a.amount) || 0));
+          const playersHtml = players.map((p) =>
+            `<div class="live-bet-entry"><span class="live-bet-name">${escapeHtml(String(p.username || ''))}</span><span class="live-bet-sep"> – </span><span class="live-bet-amount">$${Number(p.amount).toLocaleString()}</span></div>`
+          ).join('');
+          return `<div class="live-bet-field-group"><div class="live-bet-field-cell ${cls}"><span class="roulette-cell-label">${label}</span></div><div class="live-bet-field-players">${playersHtml}</div></div>`;
+        }).join('');
       }
-      liveBetsList.innerHTML = bets.map((b) =>
-        `<div class="live-bet-entry"><span class="bet-key">${escapeHtml(formatBetKey(b.key))}</span><span class="bet-meta">${b.count} ${b.count === 1 ? 'player' : 'players'} · $${b.total.toLocaleString()}</span></div>`
-      ).join('');
+      const below = document.getElementById('liveBetsBelow');
+      if (below) below.classList.toggle('has-bets', bets.length > 0);
     } catch (e) {}
   }
 
@@ -501,7 +529,7 @@
     if (sliderStrip && !sliderStrip.querySelector('.csgo-slider-cell')) buildSliderStrip();
     updateUIFromRound(data);
     await loadWinners(data);
-    if (data?.phase === 'betting') await loadAllBets();
+    if (data?.phase === 'betting') await loadAllBets(data);
   }
 
   function init() {

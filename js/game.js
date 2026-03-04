@@ -54,6 +54,8 @@ const Game = {
   /** Unlock costs in $. Must buy in order: medium → high → extreme. */
   plinkoRiskCosts: { medium: 50_000, high: 500_000, extreme: 5_000_000 },
   plinkoRiskUnlocked: { medium: false, high: false, extreme: false },
+  /** Max bet per risk level. Max win = maxBet * highest multiplier for that level. */
+  plinkoMaxBetByRisk: { low: 100, medium: 1000, high: 10000, extreme: 100000 },
 
   getMultipliers() {
     const risk = this.plinkoRisks[this.plinkoRiskLevel];
@@ -88,7 +90,8 @@ const Game = {
    */
   resolvePlinkoDrop() {
     const bet = this.getBet();
-    if (!this.canBet(bet)) return null;
+    const maxBet = this.getPlinkoMaxBet();
+    if (!this.canBet(bet) || bet > maxBet) return null;
     const slotIndex = this.getRandomSlotIndex();
     const multiplier = this.getMultiplier(slotIndex);
     this.placeBet(bet);

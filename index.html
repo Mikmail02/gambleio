@@ -12,58 +12,23 @@
 </head>
 <body>
   <div class="app">
-    <!-- Chat panel (left) -->
-    <div class="chat-panel-wrap chat-panel-wrap--closed" id="chatPanelWrap" aria-label="Chat">
-      <div class="chat-panel">
-        <div id="chatRulesOverlay" class="chat-rules-overlay hidden" aria-hidden="true">
-          <div class="chat-rules-popup">
-            <button type="button" class="chat-rules-close" id="chatRulesClose" aria-label="Close">×</button>
-            <h3 class="chat-rules-title">Chat rules</h3>
-            <ul class="chat-rules-list">
-              <li><span class="chat-rules-bullet"></span>No Spamming</li>
-              <li><span class="chat-rules-bullet"></span>Only English</li>
-              <li><span class="chat-rules-bullet"></span>No Racist Slurs</li>
-              <li><span class="chat-rules-bullet"></span>Do Not Send External Links</li>
-              <li><span class="chat-rules-bullet"></span>Do Not Advertise</li>
-              <li><span class="chat-rules-bullet"></span>Show Respect To Others</li>
-            </ul>
-            <div class="chat-rules-actions">
-              <button type="button" class="chat-rules-accept-btn chat-rules-accept-btn--locked" id="chatRulesAcceptBtn" disabled>
-                <span class="chat-rules-accept-label" id="chatRulesAcceptLabel">Accept (3s)</span>
-              </button>
-            </div>
-          </div>
-        </div>
-        <div class="chat-panel-header">
-          <h2 class="chat-panel-title">Chat</h2>
-          <button type="button" class="chat-panel-close" id="chatPanelClose" title="Close chat" aria-label="Close chat">&times;</button>
-        </div>
-        <div class="chat-messages" id="chatMessages" role="log" aria-live="polite">
-          <!-- messages injected by js/chat.js -->
-        </div>
-        <div class="chat-input-wrap">
-          <div class="chat-mute-msg hidden" id="chatMuteMsg" role="status">
-            <span class="chat-mute-msg-text" id="chatMuteMsgText"></span>
-            <button type="button" class="chat-mute-msg-dismiss" id="chatMuteMsgDismiss" aria-label="Dismiss message" title="Close">×</button>
-          </div>
-          <div class="chat-input-row">
-            <input type="text" class="chat-input" id="chatInput" placeholder="Type a message..." maxlength="500" aria-label="Chat message">
-            <button type="button" class="chat-send" id="chatSend" aria-label="Send">Send</button>
-          </div>
-        </div>
-      </div>
-      <button type="button" class="chat-toggle" id="chatToggle" title="Open chat" aria-label="Open chat">💬</button>
-    </div>
     <div class="app-body">
     <header class="header">
-      <h1 class="logo">
-        <span class="logo-icon" aria-hidden="true"></span>
-        <span class="logo-text" data-text="Gambleio">Gambleio</span>
-      </h1>
+      <div class="header-left">
+        <button type="button" class="chat-toggle chat-toggle-header" id="chatToggle" title="Open chat" aria-label="Open chat">💬</button>
+        <div class="header-logo-wrap">
+          <a href="#home" class="logo-link" aria-label="Gambleio home">
+            <h1 class="logo">
+              <span class="logo-icon" aria-hidden="true"></span>
+              <span class="logo-text" data-text="Gambleio">Gambleio</span>
+            </h1>
+          </a>
+          <a href="#patch-notes" class="btn-patch-notes" data-page="patch-notes" title="Patch notes" aria-label="Patch notes">Patch notes</a>
+        </div>
+      </div>
       <nav class="nav">
         <a href="#home" class="nav-link active" data-page="home">Home</a>
-        <a href="#plinko" class="nav-link" data-page="plinko">Plinko</a>
-        <a href="#roulette" class="nav-link" data-page="roulette">Roulette</a>
+        <a href="#board-games" class="nav-link" data-page="board-games">Board Games</a>
         <a href="#slots" class="nav-link" data-page="slots">Slots</a>
         <a href="#leaderboard" class="nav-link" data-page="leaderboard">Leaderboard</a>
         <a href="#profile" class="nav-link" data-page="profile" id="navProfile">Profile</a>
@@ -93,6 +58,45 @@
         <button type="button" class="btn-login" id="loginBtn">Login</button>
       </div>
     </header>
+
+    <div class="chat-panel-wrap chat-panel-wrap--closed" id="chatPanelWrap" aria-label="Chat">
+      <div class="chat-panel" id="chatPanel">
+        <div id="chatRulesOverlay" class="chat-rules-overlay hidden" aria-hidden="true">
+          <div class="chat-rules-popup">
+            <button type="button" class="chat-rules-close" id="chatRulesClose" aria-label="Close">×</button>
+            <h3 class="chat-rules-title">Chat rules</h3>
+            <ul class="chat-rules-list">
+              <li><span class="chat-rules-bullet"></span>No Spamming</li>
+              <li><span class="chat-rules-bullet"></span>Only English</li>
+              <li><span class="chat-rules-bullet"></span>No Racist Slurs</li>
+              <li><span class="chat-rules-bullet"></span>Do Not Send External Links</li>
+              <li><span class="chat-rules-bullet"></span>Do Not Advertise</li>
+              <li><span class="chat-rules-bullet"></span>Show Respect To Others</li>
+            </ul>
+            <div class="chat-rules-actions">
+              <button type="button" class="chat-rules-accept-btn chat-rules-accept-btn--locked" id="chatRulesAcceptBtn" disabled>
+                <span class="chat-rules-accept-label" id="chatRulesAcceptLabel">Accept (3s)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="chat-panel-header">
+          <h2 class="chat-panel-title">Chat</h2>
+          <button type="button" class="chat-panel-close" id="chatPanelClose" title="Close chat" aria-label="Close chat">&times;</button>
+        </div>
+        <div class="chat-messages" id="chatMessages" role="log" aria-live="polite"></div>
+        <div class="chat-input-wrap">
+          <div class="chat-mute-msg hidden" id="chatMuteMsg" role="status">
+            <span class="chat-mute-msg-text" id="chatMuteMsgText"></span>
+            <button type="button" class="chat-mute-msg-dismiss" id="chatMuteMsgDismiss" aria-label="Dismiss message" title="Close">×</button>
+          </div>
+          <div class="chat-input-row">
+            <input type="text" class="chat-input" id="chatInput" placeholder="Type a message..." maxlength="500" aria-label="Chat message">
+            <button type="button" class="chat-send" id="chatSend" aria-label="Send">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <main class="main">
       <!-- Home: clicker + upgrades -->
@@ -234,6 +238,7 @@
           <div class="control-group">
             <label for="bet">Bet per ball ($)</label>
             <input type="number" id="bet" min="0.01" value="10" step="0.5">
+            <p class="plinko-max-bet-error hidden" id="plinkoMaxBetError" role="alert"></p>
           </div>
           <button type="button" class="btn btn-drop" id="dropBall">
             Drop ball
@@ -294,15 +299,139 @@
               <div class="roulette-grid-wrap">
                 <div class="roulette-grid" id="rouletteGrid"></div>
               </div>
+
+              <div class="live-bets-below" id="liveBetsBelow">
+                <div class="live-bets-by-field" id="liveBetsByField"></div>
+              </div>
             </div>
           </div>
-
-          <aside class="roulette-live-bets" id="rouletteLiveBets">
-            <h4 class="live-bets-title">Live Bets</h4>
-            <div class="live-bets-list" id="liveBetsList"></div>
-          </aside>
         </div>
         <div id="rouletteBalancePopup" class="roulette-popup hidden" aria-live="polite">Not enough balance</div>
+      </section>
+
+      <!-- Crash -->
+      <section id="page-crash" class="page page-crash hidden">
+        <div class="crash-layout">
+          <aside class="crash-sidebar">
+            <div class="crash-title-row">
+              <h2 class="crash-title">Crash</h2>
+              <span class="crash-rtp" title="Return to Player" id="crashRtpTooltip">RTP — 98%</span>
+            </div>
+            <p class="crash-desc">Multiplier starts at 1.00× and rises. Place a bet, then cash out before it crashes.</p>
+            <div class="crash-multiplier-display">
+              <span class="crash-multiplier-label">Multiplier</span>
+              <span class="crash-multiplier-value" id="crashMultiplier">1.00×</span>
+            </div>
+            <p class="crash-phase" id="crashPhaseText">Next round in...</p>
+            <div class="crash-control-group">
+              <label for="crashBetAmount">Bet ($)</label>
+              <input type="number" id="crashBetAmount" min="0.01" step="0.5" value="10">
+            </div>
+            <div class="crash-buttons">
+              <button type="button" class="btn btn-crash-bet" id="crashBetBtn">Place bet</button>
+              <button type="button" class="btn btn-crash-cashout" id="crashCashOutBtn" disabled>Cash out</button>
+            </div>
+            <p class="crash-result hidden" id="crashResult" aria-live="polite"></p>
+          </aside>
+          <section class="crash-chart-wrap" aria-label="Crash multiplier chart">
+            <div class="crash-recent-bar" aria-label="Last 10 crashes">
+              <div id="crashRecentList" class="crash-recent-list"></div>
+            </div>
+            <canvas id="crashChart" class="crash-chart"></canvas>
+          </section>
+          <aside class="crash-activity-wrap" aria-label="Live cash outs and results">
+            <h3 class="crash-activity-title">Round results</h3>
+            <div id="crashActivityList" class="crash-activity-list"></div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- Board Games listing (Plinko, Roulette, etc.) -->
+      <section id="page-board-games" class="page page-board-games hidden">
+        <div class="slots-container board-games-container">
+          <h2 class="slots-title">Board Games</h2>
+          <div class="board-games-search-wrap">
+            <input type="search" id="boardGamesSearch" class="board-games-search" placeholder="Søk spill..." aria-label="Søk board games">
+          </div>
+          <div class="slots-grid" id="boardGamesGrid">
+            <!-- Board game cards rendered by js/board-games.js -->
+          </div>
+        </div>
+      </section>
+
+      <!-- Patch notes page -->
+      <section id="page-patch-notes" class="page page-patch-notes hidden">
+        <div class="patch-notes-container">
+          <h2 class="patch-notes-page-title">Patch notes</h2>
+          <div class="patch-notes-grid">
+            <article class="patch-note-card slot-game-card" id="patch-v1-1" tabindex="0" role="button" data-expanded="false" aria-label="Patch notes v1.1, click to open">
+              <div class="patch-note-card-preview slot-game-card-image">
+                <span class="patch-note-card-preview-label">Patch notes v1.1</span>
+                <span class="slot-game-card-play">View</span>
+              </div>
+              <div class="patch-note-card-expanded-content">
+                <header class="patch-note-card-header">
+                  <h3 class="patch-note-card-title">Patch notes v1.1</h3>
+                  <p class="patch-note-card-meta">Since release</p>
+                </header>
+                <div class="patch-note-card-body">
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">Plinko</h4>
+                  <p class="patch-note-section-desc">We adjusted odds and mechanics so payouts match intended probabilities — not to make the game harder, but so the experience is fair and transparent. Risk selection is now clearer and session stats are visible.</p>
+                  <ul class="patch-note-list">
+                    <li>Fixed odds so multipliers and landings match correct probabilities</li>
+                    <li>Risk level selection changed to dropdown for clarity</li>
+                    <li>Session profit/loss now shown so you can track your run</li>
+                    <li>New intro sequence for first-time players</li>
+                    <li>Automatic mode added for continuous drops</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">Roulette</h4>
+                  <p class="patch-note-section-desc">Roulette got a full pass: new UI, server-authoritative spins, and a clear view of who’s betting what and who’s winning.</p>
+                  <ul class="patch-note-list">
+                    <li>Complete UI redesign (CS:GO-style slider, modern board)</li>
+                    <li>Spins are now server-sided so results are fair and consistent</li>
+                    <li>Live bets view under the board: which fields have action and who bet how much (by display name only)</li>
+                    <li>Recent winners feed</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">Clicker</h4>
+                  <p class="patch-note-section-desc">The clicker is the heart of the home screen; we tightened the layout and made the menu easier to use.</p>
+                  <ul class="patch-note-list">
+                    <li>Updated clicker menu and overall appearance after release</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">UI</h4>
+                  <p class="patch-note-section-desc">General polish so the site feels more cohesive and readable.</p>
+                  <ul class="patch-note-list">
+                    <li>New backgrounds and cleaner layout across pages</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">Chat</h4>
+                  <p class="patch-note-section-desc">We added a global chat so players can talk in one place, with simple rules and moderation support.</p>
+                  <ul class="patch-note-list">
+                    <li>Chat panel with message history</li>
+                    <li>Rules overlay and mute system (admin-controlled)</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">Admin panel</h4>
+                  <p class="patch-note-section-desc">For moderators and admins to manage users and keep the platform in order.</p>
+                  <ul class="patch-note-list">
+                    <li>Admin panel with user overview</li>
+                    <li>Mute users, assign roles (member, mod, admin, owner)</li>
+                    <li>Admin logs for accountability</li>
+                  </ul>
+                </section>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
       </section>
 
       <!-- Slots listing page -->
@@ -475,14 +604,6 @@
     </main>
     <footer class="site-footer">
       <div class="site-footer-inner">
-        <span class="site-footer-brand">Gambleio</span>
-        <span class="site-footer-links">
-          <a href="#home">Home</a>
-          <a href="#plinko">Plinko</a>
-          <a href="#roulette">Roulette</a>
-          <a href="#slots">Slots</a>
-          <a href="#leaderboard">Leaderboard</a>
-        </span>
         <span class="site-footer-copy">&copy; 2025 Gambleio</span>
       </div>
     </footer>
@@ -631,6 +752,7 @@
   <script src="js/plinko.js"></script>
   <script src="js/plinko-intro.js"></script>
   <script src="js/roulette.js"></script>
+  <script src="js/crash.js"></script>
   <script>
     console.log('[index.html] About to load slot-integration.js...');
   </script>
@@ -641,6 +763,7 @@
       hasInitialize: !!(window.SlotIntegration && typeof window.SlotIntegration.initialize === 'function')
     });
   </script>
+  <script src="js/board-games.js"></script>
   <script src="js/slots.js"></script>
   <script src="js/main.js"></script>
   <script>

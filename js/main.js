@@ -10,7 +10,10 @@
   const pageHome = document.getElementById('page-home');
   const pagePlinko = document.getElementById('page-plinko');
   const pageRoulette = document.getElementById('page-roulette');
+  const pageCrash = document.getElementById('page-crash');
   const pageSlots = document.getElementById('page-slots');
+  const pageBoardGames = document.getElementById('page-board-games');
+  const pagePatchNotes = document.getElementById('page-patch-notes');
   const pageSlotGame = document.getElementById('page-slot-game');
   const navLinks = document.querySelectorAll('.nav-link');
   const clickerBtn = document.getElementById('clickerBtn');
@@ -25,6 +28,7 @@
   const plinkoModeAutomaticBtn = document.getElementById('plinkoModeAutomatic');
   const plinkoAutoBetsGroup = document.getElementById('plinkoAutoBetsGroup');
   const plinkoAutoBetsInput = document.getElementById('plinkoAutoBets');
+  const plinkoMaxBetErrorEl = document.getElementById('plinkoMaxBetError');
   const LAST_MULTIPLIERS_MAX = 10;
   const PLINKO_AUTO_DROP_DELAY_MS = 200; // 5 balls per second
   let lastMultipliers = [];
@@ -189,11 +193,16 @@
     if (pageHome) pageHome.classList.toggle('hidden', pageId !== 'home');
     if (pagePlinko) pagePlinko.classList.toggle('hidden', pageId !== 'plinko');
     if (pageRoulette) pageRoulette.classList.toggle('hidden', pageId !== 'roulette');
+    if (pageCrash) pageCrash.classList.toggle('hidden', pageId !== 'crash');
     if (pageSlots) pageSlots.classList.toggle('hidden', pageId !== 'slots');
+    if (pageBoardGames) pageBoardGames.classList.toggle('hidden', pageId !== 'board-games');
     if (pageSlotGame) pageSlotGame.classList.toggle('hidden', pageId !== 'slot-game');
     if (pageProfile) pageProfile.classList.toggle('hidden', pageId !== 'profile');
     if (pageLeaderboard) pageLeaderboard.classList.toggle('hidden', pageId !== 'leaderboard');
+    if (pagePatchNotes) pagePatchNotes.classList.toggle('hidden', pageId !== 'patch-notes');
     navLinks.forEach((a) => a.classList.toggle('active', a.getAttribute('data-page') === pageId));
+    const btnPatchNotes = document.querySelector('.btn-patch-notes');
+    if (btnPatchNotes) btnPatchNotes.classList.toggle('active', pageId === 'patch-notes');
     if (pageId === 'plinko') {
       const onIntroDone = () => {
         document.querySelectorAll('.plinko-content').forEach((el) => el.classList.add('plinko-content-visible'));
@@ -211,6 +220,7 @@
         }
       };
       document.querySelectorAll('.plinko-content').forEach((el) => el.classList.remove('plinko-content-visible'));
+      if (typeof clampPlinkoBetToMax === 'function') clampPlinkoBetToMax();
       if (window.PlinkoIntro && window.PlinkoIntro.runIntro) {
         window.PlinkoIntro.runIntro(onIntroDone);
       } else {
@@ -228,6 +238,12 @@
         window.Roulette.updateSpinButton();
         if (window.Roulette.onShow) window.Roulette.onShow();
       }
+    }
+    if (pageId === 'crash') {
+      if (window.Crash && window.Crash.onShow) window.Crash.onShow();
+    }
+    if (pageId !== 'crash' && window.Crash && window.Crash.onHide) {
+      window.Crash.onHide();
     }
     if (pageId === 'profile') {
       updateBalance();
@@ -260,7 +276,7 @@
 
   function onHashChange() {
     const hash = (window.location.hash || '#home').slice(1);
-    const validPages = ['home', 'plinko', 'roulette', 'slots', 'slot-game', 'profile', 'leaderboard'];
+    const validPages = ['home', 'board-games', 'plinko', 'roulette', 'crash', 'slots', 'slot-game', 'profile', 'leaderboard', 'patch-notes'];
     let page = validPages.includes(hash) ? hash : 'home';
     if (hash.startsWith('profile/')) {
       page = 'profile';
@@ -272,6 +288,14 @@
       if (page === 'slots' && window.Slots && window.Slots.onShow) {
         window.Slots.onShow();
       }
+      if (page === 'board-games' && window.BoardGames && window.BoardGames.onShow) {
+        window.BoardGames.onShow();
+      }
+      if (page === 'crash' && window.Crash && window.Crash.onShow) {
+        window.Crash.onShow();
+      }
+    }, 0);
+    setTimeout(() => {
     if (page === 'slot-game') {
       console.log('[main.js] slot-game page detected, initializing...');
       // Initialize slot game when page is shown
@@ -304,7 +328,8 @@
 
   async function handleDrop() {
     const bet = Game.getBet();
-    if (!Game.canBet(bet)) return false;
+    const maxBet = typeof Game.getPlinkoMaxBet === 'function' ? Game.getPlinkoMaxBet() : 1e9;
+    if (!Game.canBet(bet) || bet > maxBet) return false;
 
     const useResolve = window.Stats && window.Stats.plinkoResolve && window.Stats.getPlinkoPathsReady;
     let pathsReady = false;
@@ -409,9 +434,17 @@
   }
 
   function onBetInput() {
-    const val = parseFloat(betInput.value);
-    if (!Number.isNaN(val)) Game.setBet(val);
+    let val = parseFloat(betInput.value);
+    if (Number.isNaN(val)) return;
+    const pagePlinkoEl = document.getElementById('page-plinko');
+    if (pagePlinkoEl && !pagePlinkoEl.classList.contains('hidden')) {
+      const maxBet = Game.getPlinkoMaxBet();
+      val = Math.min(val, maxBet);
+      if (parseFloat(betInput.value) !== val) betInput.value = val;
+    }
+    Game.setBet(val);
     updateDropButton();
+    updatePlinkoMaxBetError();
   }
 
   // Clicker: accumulate locally, send to server every 10s; rate limit >10/sec -> block 5–20s
@@ -646,6 +679,7 @@
         closeRiskDropdown();
         updateBalance();
         updateRiskLevelUI();
+        clampPlinkoBetToMax();
         if (window.Plinko && window.Plinko.updateMultipliers) window.Plinko.updateMultipliers();
         return;
       }
@@ -659,6 +693,7 @@
         closeRiskDropdown();
         updateBalance();
         updateRiskLevelUI();
+        clampPlinkoBetToMax();
         if (window.Plinko && window.Plinko.updateMultipliers) window.Plinko.updateMultipliers();
         return;
       }
@@ -668,6 +703,7 @@
           closeRiskDropdown();
           updateBalance();
           updateRiskLevelUI();
+          clampPlinkoBetToMax();
           if (window.Plinko && window.Plinko.updateMultipliers) window.Plinko.updateMultipliers();
         } else if (result && result.error) {
           if (typeof alert === 'function') alert(result.error);
@@ -677,11 +713,24 @@
           closeRiskDropdown();
           updateBalance();
           updateRiskLevelUI();
+          clampPlinkoBetToMax();
           if (window.Plinko && window.Plinko.updateMultipliers) window.Plinko.updateMultipliers();
         }
       }
     });
   });
+
+  function clampPlinkoBetToMax() {
+    if (!betInput || typeof Game.getPlinkoMaxBet !== 'function') return;
+    const maxBet = Game.getPlinkoMaxBet();
+    const current = Game.getBet();
+    if (current > maxBet) {
+      Game.setBet(maxBet);
+      betInput.value = maxBet;
+      updateDropButton();
+    }
+    updatePlinkoMaxBetError();
+  }
 
   window.addEventListener('hashchange', onHashChange);
   document.addEventListener('visibilitychange', () => {
@@ -690,6 +739,17 @@
   window.addEventListener('beforeunload', () => stopPlinkoAuto());
   window.showPage = showPage;
   onHashChange();
+
+  document.body.addEventListener('click', function patchNoteCardClick(e) {
+    const card = e.target.closest('.patch-note-card');
+    if (!card) return;
+    const pagePatchNotesEl = document.getElementById('page-patch-notes');
+    if (!pagePatchNotesEl || pagePatchNotesEl.classList.contains('hidden')) return;
+    const expanded = card.getAttribute('data-expanded') === 'true';
+    card.setAttribute('data-expanded', !expanded);
+    card.classList.toggle('patch-note-card--expanded', !expanded);
+    card.setAttribute('aria-expanded', !expanded);
+  });
 
   setInterval(updateDropButton, 300);
   setInterval(updateRiskLevelUI, 500);
