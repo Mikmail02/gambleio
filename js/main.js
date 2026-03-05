@@ -12,6 +12,7 @@
   const pageRoulette = document.getElementById('page-roulette');
   const pageCrash = document.getElementById('page-crash');
   const pageMines = document.getElementById('page-mines');
+  const pageBlackjack = document.getElementById('page-blackjack');
   const pageSlots = document.getElementById('page-slots');
   const pageBoardGames = document.getElementById('page-board-games');
   const pagePatchNotes = document.getElementById('page-patch-notes');
@@ -212,6 +213,7 @@
     if (pageRoulette) pageRoulette.classList.toggle('hidden', pageId !== 'roulette');
     if (pageCrash) pageCrash.classList.toggle('hidden', pageId !== 'crash');
     if (pageMines) pageMines.classList.toggle('hidden', pageId !== 'mines');
+    if (pageBlackjack) pageBlackjack.classList.toggle('hidden', pageId !== 'blackjack');
     if (pageSlots) pageSlots.classList.toggle('hidden', pageId !== 'slots');
     if (pageBoardGames) pageBoardGames.classList.toggle('hidden', pageId !== 'board-games');
     if (pageSlotGame) pageSlotGame.classList.toggle('hidden', pageId !== 'slot-game');
@@ -261,6 +263,9 @@
     if (pageId === 'crash') {
       if (window.Crash && window.Crash.onShow) window.Crash.onShow();
     }
+    if (pageId === 'blackjack') {
+      if (window.Blackjack && window.Blackjack.onShow) window.Blackjack.onShow();
+    }
     if (pageId !== 'crash' && window.Crash && window.Crash.onHide) {
       window.Crash.onHide();
     }
@@ -298,7 +303,7 @@
 
   function onHashChange() {
     const hash = (window.location.hash || '#home').slice(1);
-    const validPages = ['home', 'board-games', 'plinko', 'roulette', 'crash', 'mines', 'slots', 'slot-game', 'case-battle', 'profile', 'leaderboard', 'patch-notes'];
+    const validPages = ['home', 'board-games', 'plinko', 'roulette', 'crash', 'mines', 'blackjack', 'slots', 'slot-game', 'case-battle', 'profile', 'leaderboard', 'patch-notes'];
     let page = validPages.includes(hash) ? hash : 'home';
     if (hash.startsWith('profile/')) {
       page = 'profile';
@@ -318,6 +323,9 @@
       }
       if (page === 'mines' && window.Mines && window.Mines.onShow) {
         window.Mines.onShow();
+      }
+      if (page === 'blackjack' && window.Blackjack && window.Blackjack.onShow) {
+        window.Blackjack.onShow();
       }
       if (page === 'case-battle' && window.CaseBattle && window.CaseBattle.onShow) {
         window.CaseBattle.onShow();

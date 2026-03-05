@@ -429,6 +429,57 @@
         </div>
       </section>
 
+      <!-- Blackjack -->
+      <section id="page-blackjack" class="page page-blackjack hidden">
+        <div class="blackjack-layout">
+          <aside class="blackjack-sidebar">
+            <h2 class="blackjack-title">Blackjack</h2>
+            <p class="blackjack-desc">Classic 21. 6-deck shoe, standard rules. Hit, Stand, Double, Split, Surrender, Insurance.</p>
+            <span class="blackjack-rtp" title="Return to Player">RTP — ~99.5%</span>
+            <div class="blackjack-control-group">
+              <label for="blackjackBetAmount">Bet ($)</label>
+              <div class="blackjack-bet-row">
+                <input type="number" id="blackjackBetAmount" min="0.5" step="0.5" value="10">
+                <button type="button" class="blackjack-bet-shortcut" id="blackjackBetHalf" title="Half">½</button>
+                <button type="button" class="blackjack-bet-shortcut" id="blackjackBetDouble" title="Double">2×</button>
+              </div>
+            </div>
+            <div class="blackjack-buttons">
+              <button type="button" class="btn btn-blackjack-bet" id="blackjackBetBtn">Deal</button>
+              <div class="blackjack-action-buttons hidden" id="blackjackActionButtons">
+                <button type="button" class="btn btn-blackjack-hit" id="blackjackHitBtn">Hit</button>
+                <button type="button" class="btn btn-blackjack-stand" id="blackjackStandBtn">Stand</button>
+                <button type="button" class="btn btn-blackjack-double" id="blackjackDoubleBtn">Double</button>
+                <button type="button" class="btn btn-blackjack-split" id="blackjackSplitBtn">Split</button>
+                <button type="button" class="btn btn-blackjack-surrender" id="blackjackSurrenderBtn">Surrender</button>
+              </div>
+              <div class="blackjack-insurance-buttons hidden" id="blackjackInsuranceButtons">
+                <button type="button" class="btn btn-blackjack-insurance" id="blackjackInsuranceBtn">Insurance (½ bet)</button>
+                <button type="button" class="btn btn-blackjack-no-insurance" id="blackjackNoInsuranceBtn">No Insurance</button>
+              </div>
+            </div>
+            <div class="blackjack-result" id="blackjackResult" aria-live="polite"></div>
+            <button type="button" class="live-stats-trigger" data-game-id="blackjack" title="Live Stats">📊</button>
+          </aside>
+          <section class="blackjack-table-wrap">
+            <div class="blackjack-table">
+              <div class="blackjack-shoe" id="blackjackShoe" aria-hidden="true">
+                <div class="blackjack-shoe-stack"></div>
+              </div>
+              <div class="blackjack-dealer-area">
+                <p class="blackjack-area-label">Dealer</p>
+                <div id="blackjackDealerHand" class="blackjack-hand"></div>
+                <p id="blackjackDealerTotal" class="blackjack-hand-total"></p>
+              </div>
+              <div class="blackjack-player-area">
+                <p class="blackjack-area-label">Your hand(s)</p>
+                <div id="blackjackPlayerHands" class="blackjack-hands-container"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
       <!-- Board Games listing (Plinko, Roulette, etc.) -->
       <section id="page-board-games" class="page page-board-games hidden">
         <div class="slots-container board-games-container">
@@ -1113,6 +1164,7 @@
   <script src="js/roulette.js"></script>
   <script src="js/crash.js"></script>
   <script src="js/mines.js"></script>
+  <script src="js/blackjack.js"></script>
   <script src="js/live-stats.js"></script>
   <script>
     console.log('[index.html] About to load slot-integration.js...');

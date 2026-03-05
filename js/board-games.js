@@ -33,6 +33,13 @@
       description: 'Multiplier rises from 1.00×. Cash out before it crashes to multiply your bet.',
       emoji: '🚀',
       href: '#crash'
+    },
+    {
+      id: 'blackjack',
+      name: 'Blackjack',
+      description: 'Classic 21. Hit, Stand, Double, Split, Surrender. 6-deck shoe, standard rules.',
+      emoji: '🃏',
+      href: '#blackjack'
     }
   ];
 

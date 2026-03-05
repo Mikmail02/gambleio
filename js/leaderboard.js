@@ -176,6 +176,24 @@ const Leaderboard = {
           <div class="leaderboard-detail-card-value">${fmtDollar(detail.netByGame?.slots)}</div>
         </div>
       `);
+      cards.push(`
+        <div class="leaderboard-detail-card">
+          <div class="leaderboard-detail-card-key">From Crash</div>
+          <div class="leaderboard-detail-card-value">${fmtDollar(detail.netByGame?.crash)}</div>
+        </div>
+      `);
+      cards.push(`
+        <div class="leaderboard-detail-card">
+          <div class="leaderboard-detail-card-key">From Mines</div>
+          <div class="leaderboard-detail-card-value">${fmtDollar(detail.netByGame?.mines)}</div>
+        </div>
+      `);
+      cards.push(`
+        <div class="leaderboard-detail-card">
+          <div class="leaderboard-detail-card-key">From Blackjack</div>
+          <div class="leaderboard-detail-card-value">${fmtDollar(detail.netByGame?.blackjack)}</div>
+        </div>
+      `);
     } else if (detail.type === 'xp' || detail.type === 'level') {
       cards.push(`
         <div class="leaderboard-detail-card">
@@ -211,6 +229,24 @@ const Leaderboard = {
         <div class="leaderboard-detail-card">
           <div class="leaderboard-detail-card-key">XP from Slots</div>
           <div class="leaderboard-detail-card-value">${fmtNumber(detail.xpBySource?.slots)}</div>
+        </div>
+      `);
+      cards.push(`
+        <div class="leaderboard-detail-card">
+          <div class="leaderboard-detail-card-key">XP from Crash</div>
+          <div class="leaderboard-detail-card-value">${fmtNumber(detail.xpBySource?.crash)}</div>
+        </div>
+      `);
+      cards.push(`
+        <div class="leaderboard-detail-card">
+          <div class="leaderboard-detail-card-key">XP from Mines</div>
+          <div class="leaderboard-detail-card-value">${fmtNumber(detail.xpBySource?.mines)}</div>
+        </div>
+      `);
+      cards.push(`
+        <div class="leaderboard-detail-card">
+          <div class="leaderboard-detail-card-key">XP from Blackjack</div>
+          <div class="leaderboard-detail-card-value">${fmtNumber(detail.xpBySource?.blackjack)}</div>
         </div>
       `);
     }

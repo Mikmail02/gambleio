@@ -36,6 +36,7 @@ const useDb = !!process.env.DATABASE_URL;
 const db = useDb ? require('./db') : null;
 const caseBattleMath = require('./lib/case-battle-math');
 const caseBattleProvably = require('./lib/case-battle-provably-fair');
+const blackjackCore = require('./lib/blackjack-core');
 
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -221,18 +222,18 @@ const PLINKO_MULTIPLIERS = {
   high: [50, 25, 10, 3, 1, 0.5, 0.3, 0.2, 0.1, 0.1, 0.2, 0.3, 0.5, 1, 3, 10, 25, 50],
   extreme: [1000, 100, 20, 5, 1, 0.2, 0.1, 0.05, 0.01, 0.01, 0.05, 0.1, 0.2, 1, 5, 20, 100, 1000],
 };
-const TRACKED_GAME_SOURCES = ['click', 'plinko', 'roulette', 'slots', 'crash', 'mines'];
+const TRACKED_GAME_SOURCES = ['click', 'plinko', 'roulette', 'slots', 'crash', 'mines', 'blackjack'];
 
 function emptyGameNet() {
-  return { click: 0, plinko: 0, roulette: 0, slots: 0, crash: 0, mines: 0 };
+  return { click: 0, plinko: 0, roulette: 0, slots: 0, crash: 0, mines: 0, blackjack: 0 };
 }
 
 function emptyGamePlayCounts() {
-  return { click: 0, plinko: 0, roulette: 0, slots: 0, crash: 0, mines: 0 };
+  return { click: 0, plinko: 0, roulette: 0, slots: 0, crash: 0, mines: 0, blackjack: 0 };
 }
 
 function emptyXpBySource() {
-  return { click: 0, plinko: 0, roulette: 0, slots: 0, crash: 0, mines: 0 };
+  return { click: 0, plinko: 0, roulette: 0, slots: 0, crash: 0, mines: 0, blackjack: 0 };
 }
 
 function normalizeGameSource(source) {
@@ -318,6 +319,7 @@ function ensureFields(user) {
       slots: Number(user.gameNet.slots) || 0,
       crash: Number(user.gameNet.crash) || 0,
       mines: Number(user.gameNet.mines) || 0,
+      blackjack: Number(user.gameNet.blackjack) || 0,
     };
   }
   if (!user.gamePlayCounts || typeof user.gamePlayCounts !== 'object') {
@@ -330,6 +332,7 @@ function ensureFields(user) {
       slots: Number(user.gamePlayCounts.slots) || 0,
       crash: Number(user.gamePlayCounts.crash) || 0,
       mines: Number(user.gamePlayCounts.mines) || 0,
+      blackjack: Number(user.gamePlayCounts.blackjack) || 0,
     };
   }
   if (!user.xpBySource || typeof user.xpBySource !== 'object') {
@@ -342,6 +345,7 @@ function ensureFields(user) {
       slots: Number(user.xpBySource.slots) || 0,
       crash: Number(user.xpBySource.crash) || 0,
       mines: Number(user.xpBySource.mines) || 0,
+      blackjack: Number(user.xpBySource.blackjack) || 0,
     };
   }
   if (!user.biggestWinMeta || typeof user.biggestWinMeta !== 'object') {
@@ -1541,6 +1545,7 @@ function getTopGamesFromCounts(gamePlayCounts) {
     if (key === 'slots') return 'Slots';
     if (key === 'crash') return 'Crash';
     if (key === 'mines') return 'Mines';
+    if (key === 'blackjack') return 'Blackjack';
     if (key === 'click') return 'Click';
     return key;
   };
@@ -1582,6 +1587,7 @@ app.get('/api/leaderboard/:type/user/:slug', async (req, res) => {
     if (key === 'slots') return 'Slots';
     if (key === 'crash') return 'Crash';
     if (key === 'mines') return 'Mines';
+    if (key === 'blackjack') return 'Blackjack';
     if (key === 'click') return 'Click';
     return key || null;
   };
@@ -2480,6 +2486,462 @@ app.post('/api/crash/cash-out', async (req, res) => {
   await saveUser(user);
   crashState.cashOuts.set(user.username, { amount: myBet.amount, multiplier, winAmount });
   res.json({ balance: user.balance, multiplier, winAmount });
+});
+
+// ===== BLACKJACK (6-deck shoe, provably fair, full rules) =====
+const blackjackGames = new Map(); // username -> game state
+const BLACKJACK_MIN_BET = 0.5;
+const BLACKJACK_MAX_BET = 999999999; // No practical limit
+const BLACKJACK_SHOE_RESHUFFLE_AT = 60; // reshuffle when ~60 cards left
+const DEALER_HIT_SOFT_17 = true;
+
+function getBlackjackGame(username) {
+  return blackjackGames.get((username || '').toLowerCase());
+}
+
+function setBlackjackGame(username, game) {
+  blackjackGames.set((username || '').toLowerCase(), game);
+}
+
+function drawFromShoe(game) {
+  if (!game.shoe || game.shoe.length < 1) {
+    const serverSeed = crypto.randomBytes(32).toString('hex');
+    const clientSeed = (game.clientSeed || crypto.randomBytes(16).toString('hex')) + '_' + Date.now();
+    game.shoe = blackjackCore.shuffleShoe(serverSeed, clientSeed);
+    game.serverSeed = serverSeed;
+    game.clientSeed = clientSeed;
+  }
+  return game.shoe.length > 0 ? game.shoe.pop() : null;
+}
+
+function blackjackEvaluateHand(cards) {
+  return blackjackCore.evaluateHand(cards.map((c) => c.rank));
+}
+
+function runDealerTurn(game) {
+  const { evaluateHand } = blackjackCore;
+  let dealerHand = game.dealerHand;
+  while (true) {
+    const ev = evaluateHand(dealerHand.map((c) => c.rank));
+    if (ev.bust) break;
+    const hitSoft17 = DEALER_HIT_SOFT_17 && ev.soft && ev.total === 17;
+    if (ev.total >= 17 && !hitSoft17) break;
+    const card = drawFromShoe(game);
+    if (!card) break;
+    dealerHand.push(card);
+  }
+  game.dealerHand = dealerHand;
+}
+
+function resolveBlackjackHands(game, user) {
+  const { evaluateHand } = blackjackCore;
+  const dealerEv = evaluateHand(game.dealerHand.map((c) => c.rank));
+  const results = [];
+
+  for (let h = 0; h < game.hands.length; h++) {
+    const hand = game.hands[h];
+    const bet = hand.bet;
+    const insurance = hand.insurance || 0;
+    const ev = evaluateHand(hand.cards.map((c) => c.rank));
+    let netChange = 0;
+
+    if (hand.surrendered) {
+      netChange = bet * 0.5;
+    } else if (hand.insurance) {
+      if (game.dealerBlackjack) {
+        netChange += insurance * 2;
+      } else {
+        netChange -= insurance;
+      }
+    }
+
+    if (hand.surrendered) {
+      results.push({ handIndex: h, outcome: 'surrender', netChange });
+      continue;
+    }
+
+    if (ev.bust) {
+      netChange -= bet;
+      results.push({ handIndex: h, outcome: 'bust', netChange });
+      continue;
+    }
+
+    if (game.dealerBlackjack) {
+      if (ev.blackjack) {
+        netChange += bet;
+        results.push({ handIndex: h, outcome: 'push', netChange });
+      } else {
+        netChange -= bet;
+        results.push({ handIndex: h, outcome: 'lose', netChange });
+      }
+      continue;
+    }
+
+    if (ev.blackjack) {
+      netChange += bet * 2.5;
+      results.push({ handIndex: h, outcome: 'blackjack', netChange });
+      continue;
+    }
+
+    if (dealerEv.bust) {
+      netChange += bet;
+      results.push({ handIndex: h, outcome: 'win', netChange });
+      continue;
+    }
+
+    if (ev.total > dealerEv.total) {
+      netChange += bet;
+      results.push({ handIndex: h, outcome: 'win', netChange });
+    } else if (ev.total < dealerEv.total) {
+      netChange -= bet;
+      results.push({ handIndex: h, outcome: 'lose', netChange });
+    } else {
+      results.push({ handIndex: h, outcome: 'push', netChange });
+    }
+  }
+
+  let totalNet = 0;
+  for (const r of results) totalNet += r.netChange;
+  user.balance += totalNet;
+  user.gameNet.blackjack = (user.gameNet.blackjack || 0) + totalNet;
+  user.gamePlayCounts.blackjack = (user.gamePlayCounts.blackjack || 0) + 1;
+  if (totalNet > 0) {
+    user.totalGamblingWins = (user.totalGamblingWins || 0) + totalNet;
+    user.xpBySource.blackjack = (user.xpBySource.blackjack || 0) + 3;
+    const totalBet = game.hands.reduce((s, h) => s + h.bet, 0);
+    if (totalNet > 0 && totalNet > totalBet) {
+      user.totalProfitWins = (user.totalProfitWins || 0) + (totalNet - totalBet);
+      user.totalWinsCount = (user.totalWinsCount || 0) + 1;
+      if (totalNet > (user.biggestWinAmount || 0)) {
+        user.biggestWinAmount = Math.min(totalNet, MAX_BIGGEST_WIN_AMOUNT);
+        user.biggestWinMultiplier = 1;
+        user.biggestWinMeta = { game: 'blackjack', betAmount: totalBet, multiplier: 1, timestamp: Date.now() };
+      }
+    }
+  }
+  game.results = results;
+  game.totalNet = totalNet;
+  return results;
+}
+
+function sanitizeGameState(game, forUser) {
+  if (!game) return null;
+  const g = { ...game };
+  g.hands = (g.hands || []).map((h) => ({
+    cards: h.cards,
+    bet: h.bet,
+    insurance: h.insurance,
+    surrendered: h.surrendered,
+    doubled: h.doubled,
+    splitFromAces: h.splitFromAces,
+  }));
+  g.dealerHand = g.dealerHand || [];
+  delete g.shoe;
+  delete g.serverSeed;
+  delete g.clientSeed;
+  return g;
+}
+
+app.get('/api/blackjack/state', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  const game = getBlackjackGame(user.username);
+  res.json({
+    balance: user.balance,
+    game: sanitizeGameState(game, user.username),
+  });
+});
+
+app.post('/api/blackjack/bet', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  if (!checkGambleLock(user, res)) return;
+  const existing = getBlackjackGame(user.username);
+  if (existing && existing.phase !== 'idle' && existing.phase !== 'resolved') {
+    return res.status(400).json({ error: 'Game in progress' });
+  }
+  const amount = Number(req.body.amount);
+  if (!Number.isFinite(amount) || amount < BLACKJACK_MIN_BET || amount > BLACKJACK_MAX_BET) {
+    return res.status(400).json({ error: `Bet must be at least $${BLACKJACK_MIN_BET}` });
+  }
+  if (amount > (user.balance ?? 0)) {
+    return res.status(400).json({ error: 'Insufficient balance' });
+  }
+
+  user.balance -= amount;
+  user.totalBets += 1;
+  user.gameNet.blackjack = (user.gameNet.blackjack || 0) - amount;
+  user.gamePlayCounts.blackjack = (user.gamePlayCounts.blackjack || 0) + 1;
+  user.xpBySource.blackjack = (user.xpBySource.blackjack || 0) + 3;
+
+  let game = existing;
+  if (!game || game.phase === 'resolved' || game.phase === 'idle') {
+    const serverSeed = crypto.randomBytes(32).toString('hex');
+    const clientSeed = crypto.randomBytes(16).toString('hex') + '_' + Date.now();
+    game = {
+      phase: 'dealing',
+      shoe: blackjackCore.shuffleShoe(serverSeed, clientSeed),
+      serverSeed,
+      clientSeed,
+      hands: [],
+      dealerHand: [],
+      currentHandIndex: 0,
+      hasActed: false,
+    };
+  }
+
+  const card1 = drawFromShoe(game);
+  const card2 = drawFromShoe(game);
+  const dealerCard1 = drawFromShoe(game);
+  const dealerCard2 = drawFromShoe(game);
+  if (!card1 || !card2 || !dealerCard1 || !dealerCard2) {
+    user.balance += amount;
+    user.gameNet.blackjack += amount;
+    return res.status(500).json({ error: 'Deck error' });
+  }
+
+  game.hands = [{ cards: [card1, card2], bet: amount, insurance: 0, surrendered: false, doubled: false, splitFromAces: false }];
+  game.dealerHand = [dealerCard1, dealerCard2];
+  game.currentHandIndex = 0;
+  game.hasActed = false;
+
+  const dealerEv = blackjackEvaluateHand(game.dealerHand);
+  const playerEv = blackjackEvaluateHand(game.hands[0].cards);
+
+  if (dealerEv.blackjack && playerEv.blackjack) {
+    game.phase = 'resolved';
+    user.balance += amount;
+    user.gameNet.blackjack += amount;
+    game.dealerBlackjack = true;
+    game.results = [{ handIndex: 0, outcome: 'push', netChange: 0 }];
+    game.totalNet = 0;
+  } else if (dealerEv.blackjack) {
+    game.phase = 'resolved';
+    game.dealerBlackjack = true;
+    game.results = [{ handIndex: 0, outcome: 'lose', netChange: -amount }];
+    game.totalNet = -amount;
+  } else if (playerEv.blackjack) {
+    game.phase = 'resolved';
+    const winAmount = amount * 2.5;
+    user.balance += winAmount;
+    user.gameNet.blackjack += winAmount;
+    user.totalGamblingWins = (user.totalGamblingWins || 0) + winAmount;
+    user.totalProfitWins = (user.totalProfitWins || 0) + (winAmount - amount);
+    user.totalWinsCount = (user.totalWinsCount || 0) + 1;
+    user.xpBySource.blackjack = (user.xpBySource.blackjack || 0) + 3;
+    if (winAmount > (user.biggestWinAmount || 0)) {
+      user.biggestWinAmount = Math.min(winAmount, MAX_BIGGEST_WIN_AMOUNT);
+      user.biggestWinMeta = { game: 'blackjack', betAmount: amount, multiplier: 1.5, timestamp: Date.now() };
+    }
+    game.results = [{ handIndex: 0, outcome: 'blackjack', netChange: amount * 1.5 }];
+    game.totalNet = amount * 1.5;
+  } else if (dealerCard1.rank === 'A') {
+    game.phase = 'insurance';
+    game.dealerBlackjack = false;
+  } else {
+    game.phase = 'waiting_for_player';
+    game.dealerBlackjack = false;
+  }
+
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
+  setBlackjackGame(user.username, game);
+
+  res.json({
+    balance: user.balance,
+    game: sanitizeGameState(game, user.username),
+  });
+});
+
+app.post('/api/blackjack/insurance', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  const game = getBlackjackGame(user.username);
+  if (!game || game.phase !== 'insurance') {
+    return res.status(400).json({ error: 'Insurance not available' });
+  }
+  const amount = Number(req.body.amount);
+  const maxInsurance = game.hands[0].bet / 2;
+  const insuranceAmount = Number.isFinite(amount) && amount >= 0 ? Math.min(amount, maxInsurance) : 0;
+  if (insuranceAmount > 0 && insuranceAmount > (user.balance ?? 0)) {
+    return res.status(400).json({ error: 'Insufficient balance for insurance' });
+  }
+  user.balance -= insuranceAmount;
+  game.hands[0].insurance = insuranceAmount;
+  const dealerEv = blackjackEvaluateHand(game.dealerHand);
+  if (dealerEv.blackjack) {
+    game.phase = 'resolved';
+    game.dealerBlackjack = true;
+    resolveBlackjackHands(game, user);
+  } else {
+    game.phase = 'waiting_for_player';
+  }
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
+  setBlackjackGame(user.username, game);
+  res.json({ balance: user.balance, game: sanitizeGameState(game, user.username) });
+});
+
+app.post('/api/blackjack/no-insurance', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  const game = getBlackjackGame(user.username);
+  if (!game || game.phase !== 'insurance') {
+    return res.status(400).json({ error: 'Wrong phase' });
+  }
+  const dealerEv = blackjackEvaluateHand(game.dealerHand);
+  if (dealerEv.blackjack) {
+    game.phase = 'resolved';
+    game.dealerBlackjack = true;
+    resolveBlackjackHands(game, user);
+  } else {
+    game.phase = 'waiting_for_player';
+  }
+  if (!useDb) users.set(user.username, user);
+  await saveUser(user);
+  setBlackjackGame(user.username, game);
+  res.json({ balance: user.balance, game: sanitizeGameState(game, user.username) });
+});
+
+app.post('/api/blackjack/action', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  const game = getBlackjackGame(user.username);
+  if (!game || (game.phase !== 'waiting_for_player' && game.phase !== 'player_turn')) {
+    return res.status(400).json({ error: 'No action available' });
+  }
+  const action = String(req.body.action || '').toLowerCase();
+  const handIndex = Math.max(0, parseInt(req.body.handIndex, 10) || 0);
+  if (handIndex >= game.hands.length) {
+    return res.status(400).json({ error: 'Invalid hand' });
+  }
+  const hand = game.hands[handIndex];
+  const canFirstAction = !game.hasActed && hand.cards.length === 2;
+
+  if (action === 'surrender') {
+    if (!canFirstAction) return res.status(400).json({ error: 'Surrender only on first action' });
+    hand.surrendered = true;
+    user.balance += hand.bet * 0.5;
+    user.gameNet.blackjack += hand.bet * 0.5;
+    game.hasActed = true;
+    game.results = [{ handIndex, outcome: 'surrender', netChange: hand.bet * 0.5 }];
+    game.totalNet = hand.bet * 0.5;
+    game.phase = 'resolved';
+    if (!useDb) users.set(user.username, user);
+    await saveUser(user);
+    setBlackjackGame(user.username, game);
+    return res.json({ balance: user.balance, game: sanitizeGameState(game, user.username) });
+  }
+
+  if (action === 'double') {
+    if (!canFirstAction) return res.status(400).json({ error: 'Double only on first two cards' });
+    if (hand.doubled || hand.splitFromAces) return res.status(400).json({ error: 'Cannot double' });
+    if (hand.bet > (user.balance ?? 0)) return res.status(400).json({ error: 'Insufficient balance' });
+    user.balance -= hand.bet;
+    user.gameNet.blackjack -= hand.bet;
+    hand.bet *= 2;
+    hand.doubled = true;
+    const card = drawFromShoe(game);
+    if (card) hand.cards.push(card);
+    const ev = blackjackEvaluateHand(hand.cards);
+    if (ev.bust) {
+      user.gameNet.blackjack -= hand.bet;
+      game.results = [{ handIndex, outcome: 'bust', netChange: -hand.bet }];
+      game.totalNet = -hand.bet;
+      game.phase = 'resolved';
+    } else {
+      game.hasActed = true;
+      game.currentHandIndex = handIndex + 1;
+      if (game.currentHandIndex >= game.hands.length) {
+        game.phase = 'dealer_turn';
+        runDealerTurn(game);
+        resolveBlackjackHands(game, user);
+        game.phase = 'resolved';
+      }
+    }
+    if (!useDb) users.set(user.username, user);
+    await saveUser(user);
+    setBlackjackGame(user.username, game);
+    return res.json({ balance: user.balance, game: sanitizeGameState(game, user.username) });
+  }
+
+  if (action === 'split') {
+    if (!canFirstAction) return res.status(400).json({ error: 'Split only on first two cards' });
+    if (!blackjackCore.canSplit(hand.cards[0], hand.cards[1])) return res.status(400).json({ error: 'Cannot split' });
+    if (hand.bet > (user.balance ?? 0)) return res.status(400).json({ error: 'Insufficient balance' });
+    user.balance -= hand.bet;
+    user.gameNet.blackjack -= hand.bet;
+    const isAces = blackjackCore.isPairOfAces(hand.cards);
+    const newHand = { cards: [hand.cards[1]], bet: hand.bet, insurance: 0, surrendered: false, doubled: false, splitFromAces: isAces };
+    hand.cards = [hand.cards[0]];
+    hand.splitFromAces = isAces;
+    const card1 = drawFromShoe(game);
+    const card2 = drawFromShoe(game);
+    if (card1) hand.cards.push(card1);
+    if (card2) newHand.cards.push(card2);
+    game.hands.splice(handIndex + 1, 0, newHand);
+    hand.insurance = 0;
+    game.currentHandIndex = handIndex;
+    game.hasActed = true;
+    if (isAces) {
+      game.phase = 'dealer_turn';
+      runDealerTurn(game);
+      resolveBlackjackHands(game, user);
+      game.phase = 'resolved';
+    }
+    if (!useDb) users.set(user.username, user);
+    await saveUser(user);
+    setBlackjackGame(user.username, game);
+    return res.json({ balance: user.balance, game: sanitizeGameState(game, user.username) });
+  }
+
+  if (action === 'hit') {
+    const card = drawFromShoe(game);
+    if (card) hand.cards.push(card);
+    const ev = blackjackEvaluateHand(hand.cards);
+    const doneWithHand = ev.bust || (hand.splitFromAces && hand.cards.length >= 2);
+    if (doneWithHand) {
+      game.currentHandIndex = handIndex + 1;
+      if (game.currentHandIndex >= game.hands.length) {
+        game.phase = 'dealer_turn';
+        runDealerTurn(game);
+        resolveBlackjackHands(game, user);
+        game.phase = 'resolved';
+      }
+    }
+    game.hasActed = true;
+    if (!useDb) users.set(user.username, user);
+    await saveUser(user);
+    setBlackjackGame(user.username, game);
+    return res.json({ balance: user.balance, game: sanitizeGameState(game, user.username) });
+  }
+
+  if (action === 'stand') {
+    if (hand.splitFromAces && hand.cards.length < 2) return res.status(400).json({ error: 'Must take first card on split Aces' });
+    game.hasActed = true;
+    game.currentHandIndex = handIndex + 1;
+    if (game.currentHandIndex >= game.hands.length) {
+      game.phase = 'dealer_turn';
+      runDealerTurn(game);
+      resolveBlackjackHands(game, user);
+      game.phase = 'resolved';
+    }
+    if (!useDb) users.set(user.username, user);
+    await saveUser(user);
+    setBlackjackGame(user.username, game);
+    return res.json({ balance: user.balance, game: sanitizeGameState(game, user.username) });
+  }
+
+  return res.status(400).json({ error: 'Invalid action' });
 });
 
 // ===== CASE BATTLE (in-memory cases + battles, bots supported) =====
