@@ -3057,18 +3057,13 @@ async function runCaseBattle(battleId) {
   }
   battle.nonce = nonce;
 
-  // Calculate the full pot as if all sides paid (bots count as paying players)
-  let entryCostPerSide = 0;
-  for (const { caseId, count } of battle.cases || []) {
-    const c = caseBattleCases.get(String(caseId));
-    if (c) entryCostPerSide += c.price * (parseInt(count, 10) || 1);
-  }
-  const sideCount = new Set(battle.participants.map((p) => p.teamIndex)).size;
-  const totalPot = entryCostPerSide * sideCount;
-  const mode = battle.mode || 'standard';
+  // Pot to distribute = sum of ALL items opened (total value of all players), NEVER entry cost
+  const totalValueOfAllItems = battle.participants.reduce((s, p) => s + (p.totalValue || 0), 0);
+  const mode = (battle.mode || 'standard').toLowerCase();
+  const crazyMode = !!(battle.crazyMode && mode !== 'coop');
+  const payoutOpts = { totalValueOfAllItems, crazyMode };
   let result;
   if (mode === 'jackpot') {
-    const totalPotValue = battle.participants.reduce((s, p) => s + (p.totalValue || 0), 0);
     const byTeam = new Map();
     for (const p of battle.participants) {
       const t = p.teamIndex;
@@ -3076,17 +3071,17 @@ async function runCaseBattle(battleId) {
       byTeam.get(t).totalValue += p.totalValue || 0;
     }
     const teamTotals = Array.from(byTeam.values());
-    const winnerTeam = caseBattleMath.resolveJackpotWinner(teamTotals, totalPotValue, roll());
+    const winnerTeam = caseBattleMath.resolveJackpotWinner(teamTotals, totalValueOfAllItems, roll(), { crazyMode });
     battle.nonce = nonce + 1;
-    result = caseBattleMath.resolveBattleResult(battle.participants, totalPot, mode, { totalPotValue });
+    result = caseBattleMath.resolveBattleResult(battle.participants, mode, payoutOpts);
     result.winnerTeamIndex = winnerTeam;
     result.payouts = battle.participants.map((p) => ({
       teamIndex: p.teamIndex,
       slotIndex: p.slotIndex,
-      amount: p.teamIndex === winnerTeam ? totalPot / Math.max(1, battle.participants.filter((x) => x.teamIndex === winnerTeam).length) : 0,
+      amount: p.teamIndex === winnerTeam ? totalValueOfAllItems / Math.max(1, battle.participants.filter((x) => x.teamIndex === winnerTeam).length) : 0,
     }));
   } else {
-    result = caseBattleMath.resolveBattleResult(battle.participants, totalPot, mode);
+    result = caseBattleMath.resolveBattleResult(battle.participants, mode, payoutOpts);
   }
 
   for (const pay of result.payouts || []) {
@@ -3101,8 +3096,9 @@ async function runCaseBattle(battleId) {
     }
   }
 
-  battle.totalPot = totalPot;
+  battle.totalPot = totalValueOfAllItems;
   battle.status = 'finished';
+  battle.finishedAt = Date.now();
   battle.result = { ...result, roundResults };
 }
 
@@ -3201,8 +3197,15 @@ async function enrichBattleParticipants(battle) {
   return out;
 }
 
+const FINISHED_BATTLE_VISIBLE_MS = 10 * 1000; // 10 sec after finished
+
 app.get('/api/case-battle/battles', async (req, res) => {
-  const active = Array.from(caseBattleBattles.values()).filter((b) => b.status === 'waiting' || b.status === 'in_progress');
+  const now = Date.now();
+  const active = Array.from(caseBattleBattles.values()).filter((b) => {
+    if (b.status === 'waiting' || b.status === 'in_progress') return true;
+    if (b.status === 'finished' && (b.finishedAt == null || now - b.finishedAt < FINISHED_BATTLE_VISIBLE_MS)) return true;
+    return false;
+  });
   const enriched = await Promise.all(active.map(enrichBattleParticipants));
   res.json({ battles: enriched });
 });
@@ -3212,10 +3215,12 @@ app.post('/api/case-battle/battles', async (req, res) => {
   const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
-  const { format, mode, caseIds, botCount } = req.body || {};
+  const { format, mode, caseIds, botCount, crazyMode } = req.body || {};
   if (!format || !mode || !Array.isArray(caseIds) || caseIds.length === 0) {
     return res.status(400).json({ error: 'format, mode, and caseIds (array of { caseId, count }) required' });
   }
+  const modeLower = (mode || '').toLowerCase();
+  const isCrazy = !!(crazyMode && modeLower !== 'coop');
   const slotsPerSide = format.split('v').map((n) => parseInt(n, 10)).filter((n) => Number.isFinite(n));
   if (!caseBattleMath.isAllowedFormat(slotsPerSide)) {
     return res.status(400).json({ error: 'Invalid format (e.g. 1v1, 2v2, 3v3)' });
@@ -3260,8 +3265,13 @@ app.post('/api/case-battle/battles', async (req, res) => {
   let added = 0;
   for (let i = 0; i < participants.length && added < addBots; i++) {
     if (participants[i].username) continue;
-    let botName = getBotDisplayName();
-    while (usedNames.has(botName)) botName = getBotDisplayName() + ' ' + (i + 1);
+    const baseName = getBotDisplayName();
+    let botName = baseName;
+    let suffix = 1;
+    while (usedNames.has(botName)) {
+      botName = baseName + ' ' + suffix;
+      suffix++;
+    }
     usedNames.add(botName);
     participants[i].username = botName;
     participants[i].isBot = true;
@@ -3271,7 +3281,8 @@ app.post('/api/case-battle/battles', async (req, res) => {
     id: battleId,
     createdBy: user.username,
     format,
-    mode,
+    mode: modeLower || mode,
+    crazyMode: isCrazy,
     entryCostPerSide: entryCost,
     totalPot: entryCost * slotsPerSide.length,
     status: participants.every((p) => p.username) ? 'in_progress' : 'waiting',
@@ -3333,14 +3344,24 @@ app.post('/api/case-battle/battles/:id/add-bot', async (req, res) => {
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   const battle = caseBattleBattles.get(req.params.id);
   if (!battle) return res.status(404).json({ error: 'Battle not found' });
-  const emptySlot = battle.participants.findIndex((p) => !p.username);
-  if (emptySlot < 0) return res.status(400).json({ error: 'No empty slot' });
+  const slotIndex = req.body?.slotIndex != null ? parseInt(req.body.slotIndex, 10) : -1;
+  const targetSlot = slotIndex >= 0 && slotIndex < battle.participants.length && !battle.participants[slotIndex].username
+    ? slotIndex
+    : battle.participants.findIndex((p) => !p.username);
+  if (targetSlot < 0 || battle.participants[targetSlot].username) {
+    return res.status(400).json({ error: 'No empty slot' });
+  }
   const usedNames = new Set(battle.participants.map((p) => p.username).filter(Boolean));
-  let botName = getBotDisplayName();
-  while (usedNames.has(botName)) botName = getBotDisplayName() + ' ' + Date.now();
-  const teamSlot = battle.participants[emptySlot].teamIndex;
+  const baseName = getBotDisplayName();
+  let botName = baseName;
+  let suffix = 1;
+  while (usedNames.has(botName)) {
+    botName = baseName + ' ' + suffix;
+    suffix++;
+  }
+  const teamSlot = battle.participants[targetSlot].teamIndex;
   const slotInTeam = battle.participants.filter((p) => p.teamIndex === teamSlot && p.username).length;
-  battle.participants[emptySlot] = {
+  battle.participants[targetSlot] = {
     teamIndex: teamSlot,
     slotIndex: slotInTeam,
     username: botName,

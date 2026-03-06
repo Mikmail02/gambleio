@@ -524,7 +524,7 @@
                   <p class="patch-note-section-desc">Open cases against other players or bots. Pick a case, set the format (1v1, 1v1v1, 2v2, etc.), and create a battle. Everyone opens the same cases; the highest total value wins the pot. Multiple modes: Standard (highest total wins), Terminal (last round only), Co-op (split the pot), Jackpot (win chance based on your total).</p>
                   <ul class="patch-note-list">
                     <li><strong>Formats</strong> — 1v1, 1v1v1, 1v1v1v1, 2v2, 2v2v2, 3v3</li>
-                    <li><strong>Modes</strong> — Standard, Terminal, Co-op, Crazy Standard, Crazy Terminal, Jackpot</li>
+                    <li><strong>Modes</strong> — Standard, Terminal, Co-op, Jackpot; Crazy mode toggle (lowest wins) for all except Co-op</li>
                     <li><strong>Custom cases</strong> — Owners and admins can create cases with custom items and RTP</li>
                     <li><strong>Pot distribution</strong> — Payouts based on total value of items opened, not entry price</li>
                   </ul>
@@ -721,32 +721,6 @@
               <h2 class="case-battle-title">Casebattle</h2>
               <button type="button" class="btn btn-cb-create-new" id="cbCreateNewBtn">Create battle</button>
             </div>
-            <div id="cbCreateFormWrap" class="cb-create-form-wrap hidden">
-              <h3 class="case-battle-subtitle">New battle</h3>
-              <div class="case-battle-create-form">
-                <label>Format</label>
-                <select id="cbFormat">
-                  <option value="1v1">1v1</option>
-                  <option value="1v1v1">1v1v1</option>
-                  <option value="2v2">2v2</option>
-                  <option value="2v2v2">2v2v2</option>
-                  <option value="3v3">3v3</option>
-                </select>
-                <label>Mode</label>
-                <select id="cbMode">
-                  <option value="standard">Standard (highest wins)</option>
-                  <option value="terminal">Terminal (last case only)</option>
-                  <option value="coop">Co-op (split)</option>
-                  <option value="crazy_standard">Crazy (lowest wins)</option>
-                  <option value="jackpot">Jackpot</option>
-                </select>
-                <label>Cases in battle</label>
-                <div id="cbBattleCases" class="cb-battle-cases"></div>
-                <button type="button" class="btn btn-cb-add-cases" id="cbAddCasesBtn">Add cases</button>
-                <p id="cbEntryTotal" class="cb-entry-total"></p>
-                <button type="button" class="btn btn-cb-create-battle" id="cbCreateBattle">Create battle</button>
-              </div>
-            </div>
             <div class="cb-battles-list-wrap">
               <div id="caseBattleList" class="case-battle-list"></div>
             </div>
@@ -755,6 +729,51 @@
           <div id="cbDetailView" class="cb-detail-view hidden">
             <button type="button" class="btn btn-cb-back" id="cbBackToList">← Back to battles</button>
             <div id="cbDetailContent" class="cb-detail-content"></div>
+          </div>
+        </div>
+
+        <!-- Create Battle modal -->
+        <div id="cbCreateBattleModal" class="cb-create-battle-modal hidden" aria-modal="true" role="dialog" aria-label="Create battle">
+          <div class="cb-create-battle-backdrop"></div>
+          <div class="cb-create-battle-content">
+            <div class="cb-create-battle-head">
+              <h3 class="cb-create-battle-title">New battle</h3>
+              <button type="button" class="cb-create-battle-close" id="cbCreateBattleClose" aria-label="Close">×</button>
+            </div>
+            <div class="cb-create-battle-body">
+              <div class="cb-create-battle-field">
+                <label for="cbFormat">Format</label>
+                <select id="cbFormat">
+                  <option value="1v1">1v1</option>
+                  <option value="1v1v1">1v1v1</option>
+                  <option value="2v2">2v2</option>
+                  <option value="2v2v2">2v2v2</option>
+                  <option value="3v3">3v3</option>
+                </select>
+              </div>
+              <div class="cb-create-battle-field">
+                <label for="cbMode">Mode</label>
+                <select id="cbMode">
+                  <option value="standard">Standard (highest wins)</option>
+                  <option value="terminal">Terminal (last case only)</option>
+                  <option value="coop">Co-op (split)</option>
+                  <option value="jackpot">Jackpot</option>
+                </select>
+              </div>
+              <div class="cb-crazy-mode-row" id="cbCrazyModeRow">
+                <span class="cb-crazy-mode-label">Crazy mode (lowest wins)</span>
+                <button type="button" class="cb-toggle-slider" id="cbCrazyModeToggle" role="switch" aria-checked="false" title="Lowest total wins instead of highest">
+                  <span class="cb-toggle-thumb"></span>
+                </button>
+              </div>
+              <div class="cb-create-battle-field">
+                <label>Cases in battle</label>
+                <div id="cbBattleCases" class="cb-battle-cases"></div>
+                <button type="button" class="btn btn-cb-add-cases" id="cbAddCasesBtn">Add cases</button>
+                <p id="cbEntryTotal" class="cb-entry-total"></p>
+              </div>
+              <button type="button" class="btn btn-cb-create-battle" id="cbCreateBattle">Create battle</button>
+            </div>
           </div>
         </div>
 
@@ -813,8 +832,8 @@
               <h3 class="cb-add-cases-title">Add cases</h3>
               <button type="button" class="cb-add-cases-close" id="cbAddCasesClose" aria-label="Close">×</button>
             </div>
-            <div class="cb-add-cases-sort">
-              <label for="cbCasesSort">Sort by</label>
+            <div class="cb-add-cases-toolbar">
+              <input type="text" id="cbCasesSearch" class="cb-add-cases-search" placeholder="Search cases..." aria-label="Search cases">
               <select id="cbCasesSort">
                 <option value="price_high_low">Price: high → low</option>
                 <option value="price_low_high">Price: low → high</option>
@@ -822,6 +841,9 @@
               </select>
             </div>
             <div id="cbAddCasesList" class="cb-add-cases-list"></div>
+            <div class="cb-add-cases-footer">
+              <button type="button" class="btn btn-cb-add-cases-confirm" id="cbAddCasesConfirmBtn">Add cases</button>
+            </div>
           </div>
         </div>
       </section>

@@ -29,6 +29,7 @@
   let currentReplayRound = 0;
   let lastDetailBattle = null;
   let openStripsAnimationRunning = false;
+  let jackpotSliderAnimationRunning = false;
   let jackpotRevealShownForBattleId = null;
   const itemsScrollIndexByKey = {};
   const itemsCountByKey = {};
@@ -44,6 +45,8 @@
   const addItemBtn = document.getElementById('cbAddItem');
   const formatSelect = document.getElementById('cbFormat');
   const modeSelect = document.getElementById('cbMode');
+  const crazyModeToggle = document.getElementById('cbCrazyModeToggle');
+  const crazyModeRow = document.getElementById('cbCrazyModeRow');
   const battleCasesEl = document.getElementById('cbBattleCases');
   const addCasesBtn = document.getElementById('cbAddCasesBtn');
   const addCasesModal = document.getElementById('cbAddCasesModal');
@@ -55,7 +58,10 @@
   const battleListEl = document.getElementById('caseBattleList');
   const listView = document.getElementById('cbListView');
   const detailView = document.getElementById('cbDetailView');
-  const createFormWrap = document.getElementById('cbCreateFormWrap');
+  const createBattleModal = document.getElementById('cbCreateBattleModal');
+  const createBattleClose = document.getElementById('cbCreateBattleClose');
+  const addCasesConfirmBtn = document.getElementById('cbAddCasesConfirmBtn');
+  const casesSearchInput = document.getElementById('cbCasesSearch');
   const createNewBtn = document.getElementById('cbCreateNewBtn');
   const backToList = document.getElementById('cbBackToList');
   const detailContent = document.getElementById('cbDetailContent');
@@ -71,6 +77,18 @@
 
   function formatDollars(n) {
     return '$' + new Intl.NumberFormat('en', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(n) || 0);
+  }
+
+  function formatModeDisplay(mode, crazyMode) {
+    const m = (mode || '').toLowerCase();
+    let label = '';
+    if (m === 'standard') label = 'Standard';
+    else if (m === 'terminal') label = 'Terminal';
+    else if (m === 'coop') label = 'Co-op';
+    else if (m === 'jackpot') label = 'Jackpot';
+    else label = mode || '';
+    if (crazyMode && m !== 'coop') label += ' (Crazy)';
+    return label;
   }
 
   function syncCaseFormFromDom() {
@@ -261,7 +279,7 @@
                   <span class="cb-card-total-cases">${totalCases} cases</span>
                   <span class="cb-card-pot">${formatDollars(b.totalPot)}</span>
                 </div>
-                <div class="cb-card-format-mode">${escapeHtml(b.format)} · ${escapeHtml(b.mode)}</div>
+                <div class="cb-card-format-mode">${escapeHtml(b.format)} · ${escapeHtml(formatModeDisplay(b.mode, b.crazyMode))}</div>
                 <div class="cb-card-slots-row">
                   <div class="cb-card-slots">${b.participants.map((p) => `<span class="cb-card-slot ${p.username ? 'filled' : ''}">${p.username ? '✓' : ''}</span>`).join('')}</div>
                   ${hasEmpty ? `<span class="cb-card-waiting">${filled}/${b.totalSlots} slots</span>` : ''}
@@ -334,6 +352,7 @@
 
   function showListView() {
     currentBattleId = null;
+    jackpotSliderAnimationRunning = false;
     if (detailPollInterval) {
       clearInterval(detailPollInterval);
       detailPollInterval = null;
@@ -359,7 +378,7 @@
   }
 
   async function loadAndRenderDetail(id) {
-    if (openStripsAnimationRunning) return;
+    if (openStripsAnimationRunning || jackpotSliderAnimationRunning) return;
     try {
       const res = await fetch(API + '/battles/' + encodeURIComponent(id), { headers: getAuthHeaders() });
       const data = await res.json();
@@ -451,15 +470,15 @@
     } else {
       totalDisplay = 0;
     }
-    const battleCost = (battle.entryCostPerSide ?? 0) * sideCount;
-    const battleCostStr = battleCost > 0 ? formatDollars(battleCost) : '';
+    const entryPerSide = battle.entryCostPerSide ?? 0;
+    const entryCostStr = entryPerSide > 0 ? formatDollars(entryPerSide) : '';
     detailContent.classList.remove('cb-detail-open');
     const remakeBtnHtml = (battle.status === 'finished' && isFullyRevealed)
       ? `<button type="button" class="btn btn-cb-remake" id="cbRemakeBtn">Remake</button>`
       : '';
     detailContent.innerHTML = `
       <div class="cb-detail-top">
-        <h3 class="cb-detail-title">${escapeHtml(battle.format)} · ${escapeHtml(battle.mode)}${battleCostStr ? ' · ' + battleCostStr : ''}</h3>
+        <h3 class="cb-detail-title">${escapeHtml(battle.format)} · ${escapeHtml(formatModeDisplay(battle.mode, battle.crazyMode))}${entryCostStr ? ' · ' + entryCostStr : ''}</h3>
         ${remakeBtnHtml}
         <div class="cb-detail-total">Total: ${formatDollars(totalDisplay)}</div>
       </div>
@@ -491,10 +510,22 @@
       }, 1000);
     }
     if (battle.status === 'finished' && battle.participants.some((p) => p.username === username)) {
-      if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
+      if (!isJackpotMode || jackpotRevealShown) {
+        if (window.Stats && window.Stats.loadStats) {
+          window.Stats.loadStats().then(() => {
+            if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
+          });
+        } else if (window.Auth && window.Auth.updateBalance) {
+          window.Auth.updateBalance();
+        }
+      }
     }
     detailContent.querySelectorAll('.cb-detail-slot-add-bot').forEach((el) => {
-      el.addEventListener('click', (e) => { e.stopPropagation(); addBot(el.getAttribute('data-id')); });
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const slot = el.getAttribute('data-slot');
+        addBot(el.getAttribute('data-id'), slot != null ? parseInt(slot, 10) : undefined);
+      });
     });
     const joinBtn = document.getElementById('cbDetailJoinBtn');
     if (joinBtn) joinBtn.addEventListener('click', () => joinBattle(battle.id));
@@ -529,7 +560,10 @@
       const winnerTeamIndex = battle.result && battle.result.winnerTeamIndex != null ? battle.result.winnerTeamIndex : null;
       const containerEl = document.getElementById('cbJackpotSliderContainer');
       if (containerEl && winnerTeamIndex != null) {
+        if (jackpotSliderAnimationRunning) return;
+        jackpotSliderAnimationRunning = true;
         runJackpotSliderAnimation(battle, winnerTeamIndex, containerEl).then(() => {
+          jackpotSliderAnimationRunning = false;
           if (!currentBattleId || !lastDetailBattle || lastDetailBattle.id !== currentBattleId) return;
           jackpotRevealShownForBattleId = battle.id;
           renderDetailView(lastDetailBattle);
@@ -612,7 +646,7 @@
     if (caseItems.length === 0) return;
     openStripsAnimationRunning = true;
     const STRIP_REPEAT = 25;
-    const ITEM_WIDTH = 88;
+    const ITEM_WIDTH = 56;
     const DURATION_MS = 5500;
     const SETTLE_MS = 220;
     const PAUSE_AFTER_LAND_MS = 150;
@@ -753,6 +787,14 @@
     return out;
   }
 
+  const JACKPOT_TEAM_COLORS = [
+    'rgba(59, 130, 246, 0.16)',   /* blue */
+    'rgba(34, 197, 94, 0.16)',   /* green */
+    'rgba(234, 179, 8, 0.16)',   /* amber */
+    'rgba(239, 68, 68, 0.16)',   /* red */
+    'rgba(168, 85, 247, 0.16)',  /* purple */
+  ];
+
   function runJackpotSliderAnimation(battle, winnerTeamIndex, containerEl) {
     if (!containerEl || winnerTeamIndex == null) return Promise.resolve();
     const byTeam = groupParticipantsByTeam(battle.participants);
@@ -772,9 +814,10 @@
     const stopAt = winnerIndices.find((i) => i >= midStart) ?? winnerIndices[winnerIndices.length - 1] ?? Math.floor(flatLabels.length / 2);
     const stripEl = document.createElement('div');
     stripEl.className = 'cb-jackpot-slider-strip';
-    stripEl.innerHTML = flatLabels.map((x, idx) =>
-      `<div class="cb-jackpot-slider-cell" data-team="${x.teamIndex}">${escapeHtml(x.label)}</div>`
-    ).join('');
+    stripEl.innerHTML = flatLabels.map((x, idx) => {
+      const color = JACKPOT_TEAM_COLORS[x.teamIndex % JACKPOT_TEAM_COLORS.length];
+      return `<div class="cb-jackpot-slider-cell cb-jackpot-slider-cell--team-${x.teamIndex}" data-team="${x.teamIndex}" style="background:${color}">${escapeHtml(x.label)}</div>`;
+    }).join('');
     stripEl.style.width = flatLabels.length * (CELL_WIDTH + CELL_GAP) + 'px';
     stripEl.style.transform = 'translateX(0)';
     const viewport = document.createElement('div');
@@ -783,22 +826,21 @@
     viewport.appendChild(stripEl);
     containerEl.innerHTML = '';
     containerEl.appendChild(viewport);
-    containerEl.offsetHeight;
     const viewportWidth = viewport.offsetWidth || 400;
     const DURATION_MS = 5000;
     const baseX = viewportWidth / 2 - (stopAt * (CELL_WIDTH + CELL_GAP) + (CELL_WIDTH + CELL_GAP) / 2);
     stripEl.style.transition = `transform ${DURATION_MS}ms cubic-bezier(0.06, 0.65, 0.2, 1)`;
-    stripEl.style.transform = 'translateX(' + baseX + 'px)';
     return new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          stripEl.style.transform = 'translateX(' + baseX + 'px)';
+        });
+      });
       setTimeout(() => {
         stripEl.querySelectorAll('.cb-jackpot-slider-cell').forEach((c) => c.classList.remove('cb-jackpot-slider-cell--winner'));
-        const txMatch = stripEl.style.transform.match(/translateX\(([^)]+)\)/);
-        const txVal = txMatch ? parseFloat(txMatch[1]) : 0;
-        const centerIdx = Math.round((viewportWidth / 2 - txVal) / (CELL_WIDTH + CELL_GAP));
-        const cells = stripEl.querySelectorAll('.cb-jackpot-slider-cell');
-        const idx = Math.max(0, Math.min(Math.floor(centerIdx), cells.length - 1));
-        if (cells[idx]) cells[idx].classList.add('cb-jackpot-slider-cell--winner');
-        resolve();
+        const winnerCell = stripEl.querySelector(`.cb-jackpot-slider-cell:nth-child(${stopAt + 1})`);
+        if (winnerCell) winnerCell.classList.add('cb-jackpot-slider-cell--winner');
+        setTimeout(() => resolve(), 2500);
       }, DURATION_MS + 300);
     });
   }
@@ -866,7 +908,7 @@
           const isCreator = battle.createdBy === username;
           slotHtml = `<div class="cb-detail-slot empty">
             <div class="cb-detail-slot-name">Empty</div>
-            ${isCreator ? `<button type="button" class="cb-detail-slot-add-bot" data-id="${escapeHtml(battle.id)}">Add bot</button>` : ''}
+            ${isCreator ? `<button type="button" class="cb-detail-slot-add-bot" data-id="${escapeHtml(battle.id)}" data-slot="${pi}">Add bot</button>` : ''}
           </div>`;
         } else {
           const name = participantDisplayName(p);
@@ -874,9 +916,9 @@
           const pctLine = isJackpot && currentBattleTotal > 0
             ? `<div class="cb-detail-slot-pct">${(100 * displayTotal / currentBattleTotal).toFixed(1)}% of total</div>`
             : '';
-          slotHtml = `<div class="cb-detail-slot ${battleFullyFinished && isWinner && (jackpotRevealShown || !isJackpot) ? 'cb-detail-slot-winner' : ''}">
+          const teamColorClass = isJackpot ? ` cb-jackpot-team-${p.teamIndex}` : '';
+          slotHtml = `<div class="cb-detail-slot${teamColorClass} ${battleFullyFinished && isWinner && (jackpotRevealShown || !isJackpot) ? 'cb-detail-slot-winner' : ''}">
             <div class="cb-detail-slot-name">${escapeHtml(name)}</div>
-            ${p.isBot ? '<div class="cb-detail-slot-bot">Bot</div>' : ''}
             ${battle.status === 'finished' ? `<div class="cb-detail-slot-total">Total value: ${escapeHtml(valueStr)}</div>${pctLine}` : ''}
           </div>`;
         }
@@ -1026,6 +1068,8 @@
     }
   }
 
+  let addCasesTempCounts = {};
+
   function getSortedCases() {
     const sort = addCasesSort?.value || 'price_high_low';
     const list = [...casesList];
@@ -1035,46 +1079,82 @@
     return list;
   }
 
+  function getFilteredCases() {
+    const search = (casesSearchInput?.value || '').toLowerCase().trim();
+    let list = getSortedCases();
+    if (search) {
+      list = list.filter((c) => (c.name || '').toLowerCase().includes(search) || (c.id || '').toString().includes(search));
+    }
+    return list;
+  }
+
   function renderAddCasesModalList() {
     if (!addCasesList) return;
-    const sorted = getSortedCases();
-    if (sorted.length === 0) {
-      addCasesList.innerHTML = '<p class="cb-add-cases-empty">No cases available. Add a custom case (owner) or wait for admin to add some.</p>';
+    const filtered = getFilteredCases();
+    if (filtered.length === 0) {
+      addCasesList.innerHTML = '<p class="cb-add-cases-empty">No cases match. Add a custom case (owner) or try a different search.</p>';
       return;
     }
-    addCasesList.innerHTML = sorted
+    addCasesList.innerHTML = filtered
       .map(
         (c) => {
           const usage = c.usageCount ?? 0;
+          const count = addCasesTempCounts[c.id] ?? 0;
           return `<div class="cb-add-cases-item" data-case-id="${escapeHtml(c.id)}">
             <div class="cb-add-cases-item-info">
               <div class="cb-add-cases-item-name">${escapeHtml(c.name)}</div>
               <div class="cb-add-cases-item-meta">${formatDollars(c.price)} · Used ${usage}×</div>
             </div>
-            <input type="number" class="cb-add-cases-item-count" min="1" value="1" data-case-id="${escapeHtml(c.id)}" aria-label="Count for ${escapeHtml(c.name)}">
-            <button type="button" class="cb-add-cases-item-add" data-case-id="${escapeHtml(c.id)}">Add</button>
+            <div class="cb-add-cases-item-counter">
+              <button type="button" class="cb-add-cases-item-minus" data-case-id="${escapeHtml(c.id)}" aria-label="Decrease">−</button>
+              <span class="cb-add-cases-item-count-display" data-case-id="${escapeHtml(c.id)}">${count}</span>
+              <button type="button" class="cb-add-cases-item-plus" data-case-id="${escapeHtml(c.id)}" aria-label="Increase">+</button>
+            </div>
           </div>`;
         }
       )
       .join('');
-    addCasesList.querySelectorAll('.cb-add-cases-item-add').forEach((el) => {
+    addCasesList.querySelectorAll('.cb-add-cases-item-plus').forEach((el) => {
       el.addEventListener('click', () => {
         const caseId = el.getAttribute('data-case-id');
-        const row = el.closest('.cb-add-cases-item');
-        const countInput = row?.querySelector('.cb-add-cases-item-count');
-        const count = Math.max(1, parseInt(countInput?.value, 10) || 1);
-        battleCasesForCreate.push({ caseId, count });
-        renderBattleCasesForCreate();
-        updateEntryTotal();
+        addCasesTempCounts[caseId] = (addCasesTempCounts[caseId] ?? 0) + 1;
+        const display = addCasesList.querySelector(`.cb-add-cases-item-count-display[data-case-id="${caseId}"]`);
+        if (display) display.textContent = addCasesTempCounts[caseId];
+      });
+    });
+    addCasesList.querySelectorAll('.cb-add-cases-item-minus').forEach((el) => {
+      el.addEventListener('click', () => {
+        const caseId = el.getAttribute('data-case-id');
+        const cur = addCasesTempCounts[caseId] ?? 0;
+        if (cur > 0) {
+          addCasesTempCounts[caseId] = cur - 1;
+          const display = addCasesList.querySelector(`.cb-add-cases-item-count-display[data-case-id="${caseId}"]`);
+          if (display) display.textContent = addCasesTempCounts[caseId];
+        }
       });
     });
   }
 
+  function applyAddCasesAndClose() {
+    battleCasesForCreate = [];
+    for (const [caseId, count] of Object.entries(addCasesTempCounts)) {
+      if (count > 0) battleCasesForCreate.push({ caseId, count });
+    }
+    renderBattleCasesForCreate();
+    updateEntryTotal();
+    closeAddCasesModal();
+  }
+
   function openAddCasesModal() {
+    addCasesTempCounts = {};
+    for (const { caseId, count } of battleCasesForCreate) {
+      addCasesTempCounts[caseId] = (addCasesTempCounts[caseId] ?? 0) + count;
+    }
     loadCases().then(() => {
       if (addCasesModal) {
         addCasesModal.classList.remove('hidden');
-        addCasesSort?.focus();
+        renderAddCasesModalList();
+        casesSearchInput?.focus();
       }
     });
   }
@@ -1165,6 +1245,7 @@
         body: JSON.stringify({
           format: formatSelect?.value || '1v1',
           mode: modeSelect?.value || 'standard',
+          crazyMode: crazyModeToggle?.classList.contains('is-on') && (modeSelect?.value || 'standard').toLowerCase() !== 'coop',
           caseIds,
           botCount: 0,
         }),
@@ -1178,7 +1259,7 @@
       if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
       battleCasesForCreate = [];
       renderBattleCasesForCreate();
-      if (createFormWrap) createFormWrap.classList.add('hidden');
+      closeCreateBattleModal();
       if (data.battle && data.battle.id) await showBattleDetail(data.battle.id);
       else await loadBattles();
     } catch (e) {
@@ -1196,6 +1277,7 @@
         body: JSON.stringify({
           format: battle.format || '1v1',
           mode: battle.mode || 'standard',
+          crazyMode: !!(battle.crazyMode && (battle.mode || 'standard').toLowerCase() !== 'coop'),
           caseIds,
           botCount: 0,
         }),
@@ -1234,12 +1316,12 @@
     }
   }
 
-  async function addBot(id) {
+  async function addBot(id, slotIndex) {
     try {
       const res = await fetch(API + '/battles/' + encodeURIComponent(id) + '/add-bot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({}),
+        body: JSON.stringify(slotIndex != null ? { slotIndex } : {}),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1255,8 +1337,7 @@
 
   function onShow() {
     if (addCustomCaseBtn) addCustomCaseBtn.classList.toggle('hidden', !isAdminOrOwner());
-    showListView();
-    if (createFormWrap) createFormWrap.classList.add('hidden');
+    if (createBattleModal) createBattleModal.classList.add('hidden');
     loadCases();
     loadBattles();
     renderCaseFormItems();
@@ -1268,8 +1349,12 @@
     const hash = (window.location.hash || '').slice(1);
     if (hash.startsWith('case-battle/')) {
       const battleId = decodeURIComponent(hash.slice('case-battle/'.length));
-      if (battleId) showBattleDetail(battleId);
+      if (battleId) {
+        showBattleDetail(battleId);
+        return;
+      }
     }
+    showListView();
   }
 
   function onHide() {
@@ -1278,6 +1363,35 @@
       pollTimer = null;
     }
   }
+
+  function syncFromHash() {
+    const hash = (window.location.hash || '').slice(1);
+    if (!hash.startsWith('case-battle/')) return;
+    const battleId = decodeURIComponent(hash.slice('case-battle/'.length));
+    if (!battleId) return;
+    if (currentBattleId !== battleId) {
+      showBattleDetail(battleId);
+    } else if (detailView && !detailView.classList.contains('hidden')) {
+      loadAndRenderDetail(battleId);
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      const pageEl = document.getElementById('page-case-battle');
+      if (pageEl && !pageEl.classList.contains('hidden')) syncFromHash();
+    }
+  });
+  window.addEventListener('popstate', () => {
+    const hash = (window.location.hash || '').slice(1);
+    if (hash.startsWith('case-battle/')) {
+      const battleId = decodeURIComponent(hash.slice('case-battle/'.length));
+      if (battleId) showBattleDetail(battleId);
+    } else if (hash === 'case-battle') {
+      showListView();
+      loadBattles();
+    }
+  });
 
   if (addItemBtn) addItemBtn.addEventListener('click', () => {
     syncCaseFormFromDom();
@@ -1300,15 +1414,42 @@
     if (backdrop) backdrop.addEventListener('click', closeAddCasesModal);
   }
   if (addCasesSort) addCasesSort.addEventListener('change', renderAddCasesModalList);
+  if (casesSearchInput) casesSearchInput.addEventListener('input', renderAddCasesModalList);
+  if (addCasesConfirmBtn) addCasesConfirmBtn.addEventListener('click', applyAddCasesAndClose);
   if (createNewBtn) createNewBtn.addEventListener('click', () => {
-    if (createFormWrap) createFormWrap.classList.toggle('hidden');
+    if (createBattleModal) createBattleModal.classList.toggle('hidden');
+    updateCrazyModeRow();
   });
+  function closeCreateBattleModal() {
+    if (createBattleModal) createBattleModal.classList.add('hidden');
+  }
+  if (createBattleClose) createBattleClose.addEventListener('click', closeCreateBattleModal);
+  if (createBattleModal) {
+    const backdrop = createBattleModal.querySelector('.cb-create-battle-backdrop');
+    if (backdrop) backdrop.addEventListener('click', closeCreateBattleModal);
+  }
+  function updateCrazyModeRow() {
+    const mode = (modeSelect?.value || 'standard').toLowerCase();
+    const isCoop = mode === 'coop';
+    if (crazyModeRow) crazyModeRow.classList.toggle('hidden', isCoop);
+    if (isCoop && crazyModeToggle) {
+      crazyModeToggle.classList.remove('is-on');
+      crazyModeToggle.setAttribute('aria-checked', 'false');
+    }
+  }
+  if (modeSelect) modeSelect.addEventListener('change', updateCrazyModeRow);
+  if (crazyModeToggle) crazyModeToggle.addEventListener('click', () => {
+    const mode = (modeSelect?.value || 'standard').toLowerCase();
+    if (mode === 'coop') return;
+    crazyModeToggle.classList.toggle('is-on');
+    crazyModeToggle.setAttribute('aria-checked', crazyModeToggle.classList.contains('is-on'));
+  });
+  updateCrazyModeRow();
   if (backToList) backToList.addEventListener('click', () => {
-    if (currentBattleId && window.history.length > 1) {
-      window.history.back();
-    } else {
-      showListView();
-      loadBattles();
+    showListView();
+    loadBattles();
+    if (window.location.hash.startsWith('#case-battle/')) {
+      window.history.replaceState(null, '', '#case-battle');
     }
   });
   setupBattleListDelegation();
