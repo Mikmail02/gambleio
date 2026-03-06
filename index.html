@@ -679,69 +679,116 @@
 
       <!-- Casebattle -->
       <section id="page-case-battle" class="page page-case-battle hidden">
-        <div class="case-battle-wip-wrapper">
-          <div class="case-battle-blur-content">
+        <button type="button" class="cb-add-custom-case-btn hidden" id="cbAddCustomCaseBtn" aria-label="Add custom case">+ Add Custom Case</button>
         <div class="case-battle-container">
-          <h2 class="case-battle-title">Casebattle</h2>
-
-          <div class="case-battle-admin-wrap hidden" id="caseBattleAdminWrap">
-            <h3 class="case-battle-subtitle">Case management (Admin)</h3>
-            <div class="case-battle-case-form">
-              <label>Case name</label>
-              <input type="text" id="cbCaseName" placeholder="e.g. Starter Case">
-              <label>RTP (%)</label>
-              <input type="number" id="cbRtp" min="1" max="100" step="0.5" value="95" placeholder="95">
-              <div class="cb-items-header">
-                <span>Items (image URL, value $, percent %)</span>
-                <button type="button" class="btn btn-cb-add-item" id="cbAddItem">+ Item</button>
+          <!-- List view: battles + create button -->
+          <div id="cbListView" class="cb-list-view">
+            <div class="cb-list-head">
+              <h2 class="case-battle-title">Casebattle</h2>
+              <button type="button" class="btn btn-cb-create-new" id="cbCreateNewBtn">Create battle</button>
+            </div>
+            <div id="cbCreateFormWrap" class="cb-create-form-wrap hidden">
+              <h3 class="case-battle-subtitle">New battle</h3>
+              <div class="case-battle-create-form">
+                <label>Format</label>
+                <select id="cbFormat">
+                  <option value="1v1">1v1</option>
+                  <option value="1v1v1">1v1v1</option>
+                  <option value="2v2">2v2</option>
+                  <option value="2v2v2">2v2v2</option>
+                  <option value="3v3">3v3</option>
+                </select>
+                <label>Mode</label>
+                <select id="cbMode">
+                  <option value="standard">Standard (highest wins)</option>
+                  <option value="terminal">Terminal (last case only)</option>
+                  <option value="coop">Co-op (split)</option>
+                  <option value="crazy_standard">Crazy (lowest wins)</option>
+                  <option value="jackpot">Jackpot</option>
+                </select>
+                <label>Cases in battle</label>
+                <div id="cbBattleCases" class="cb-battle-cases"></div>
+                <button type="button" class="btn btn-cb-add-cases" id="cbAddCasesBtn">Add cases</button>
+                <p id="cbEntryTotal" class="cb-entry-total"></p>
+                <button type="button" class="btn btn-cb-create-battle" id="cbCreateBattle">Create battle</button>
               </div>
-              <div id="cbItemsList" class="cb-items-list"></div>
-              <p id="cbCaseCost" class="cb-case-cost"></p>
-              <button type="button" class="btn btn-cb-save-case" id="cbSaveCase">Save case</button>
             </div>
-            <hr class="case-battle-hr">
-          </div>
-          <h3 class="case-battle-subtitle">Create battle</h3>
-          <div class="case-battle-create-form">
-            <label>Format</label>
-            <select id="cbFormat">
-              <option value="1v1">1v1</option>
-              <option value="1v1v1">1v1v1</option>
-              <option value="2v2">2v2</option>
-              <option value="2v2v2">2v2v2</option>
-              <option value="3v3">3v3</option>
-            </select>
-            <label>Mode</label>
-            <select id="cbMode">
-              <option value="standard">Standard (highest wins)</option>
-              <option value="terminal">Terminal (last case only)</option>
-              <option value="coop">Co-op (split)</option>
-              <option value="crazy_standard">Crazy (lowest wins)</option>
-              <option value="jackpot">Jackpot</option>
-            </select>
-            <label>Cases in battle</label>
-            <div id="cbBattleCases" class="cb-battle-cases"></div>
-            <div class="cb-add-case-row">
-              <select id="cbSelectCase">
-                <option value="">-- Select case --</option>
-              </select>
-              <input type="number" id="cbCaseCount" min="1" value="1" placeholder="Count">
-              <button type="button" class="btn btn-cb-add-case-to-battle" id="cbAddCaseToBattle">+ Add case</button>
+            <div class="cb-battles-list-wrap">
+              <div id="caseBattleList" class="case-battle-list"></div>
             </div>
-            <label>Add bots (fill slots)</label>
-            <input type="number" id="cbBotCount" min="0" value="0" placeholder="0">
-            <p id="cbEntryTotal" class="cb-entry-total"></p>
-            <button type="button" class="btn btn-cb-create-battle" id="cbCreateBattle">Create battle</button>
           </div>
-
-          <div class="case-battle-list-wrap">
-            <h3 class="case-battle-subtitle">Active battles</h3>
-            <div id="caseBattleList" class="case-battle-list"></div>
-          </div>
+          <!-- Battle detail view -->
+          <div id="cbDetailView" class="cb-detail-view hidden">
+            <button type="button" class="btn btn-cb-back" id="cbBackToList">← Back to battles</button>
+            <div id="cbDetailContent" class="cb-detail-content"></div>
           </div>
         </div>
-        <div class="case-battle-wip-overlay" aria-hidden="true">
-          <h2 class="case-battle-wip-title">Work in progress...</h2>
+
+        <!-- Add Custom Case modal (admin/owner) -->
+        <div id="cbAddCaseModal" class="cb-add-case-modal hidden" aria-modal="true" role="dialog" aria-label="Add custom case">
+          <div class="cb-add-case-backdrop"></div>
+          <div class="cb-add-case-content">
+            <div class="cb-add-case-head">
+              <h3 class="cb-add-case-title">Add Custom Case</h3>
+              <button type="button" class="cb-add-case-close" id="cbAddCaseClose" aria-label="Close">×</button>
+            </div>
+            <div class="cb-add-case-body">
+              <div class="cb-add-case-field">
+                <label for="cbCaseName">Case name</label>
+                <input type="text" id="cbCaseName" placeholder="e.g. Starter Case">
+              </div>
+              <div class="cb-add-case-field">
+                <label for="cbRtp">RTP (%)</label>
+                <input type="number" id="cbRtp" min="1" max="100" step="0.5" value="95" placeholder="95">
+              </div>
+              <div class="cb-add-case-items-wrap">
+                <div class="cb-add-case-items-head">
+                  <span>Items</span>
+                </div>
+                <div class="cb-add-case-table-wrap">
+                  <table class="cb-add-case-table">
+                    <thead>
+                      <tr>
+                        <th>Item name</th>
+                        <th>Image URL</th>
+                        <th>Value ($)</th>
+                        <th>%</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="cbItemsList"></tbody>
+                  </table>
+                </div>
+                <div class="cb-add-case-add-row">
+                  <button type="button" class="btn btn-cb-add-item" id="cbAddItem">+ Add item</button>
+                </div>
+                <p id="cbCaseCost" class="cb-case-cost"></p>
+              </div>
+              <div class="cb-add-case-actions">
+                <button type="button" class="btn btn-cb-save-case" id="cbSaveCase">Save case</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Add cases modal -->
+        <div id="cbAddCasesModal" class="cb-add-cases-modal hidden" aria-modal="true" role="dialog" aria-label="Add cases to battle">
+          <div class="cb-add-cases-backdrop"></div>
+          <div class="cb-add-cases-content">
+            <div class="cb-add-cases-head">
+              <h3 class="cb-add-cases-title">Add cases</h3>
+              <button type="button" class="cb-add-cases-close" id="cbAddCasesClose" aria-label="Close">×</button>
+            </div>
+            <div class="cb-add-cases-sort">
+              <label for="cbCasesSort">Sort by</label>
+              <select id="cbCasesSort">
+                <option value="price_high_low">Price: high → low</option>
+                <option value="price_low_high">Price: low → high</option>
+                <option value="most_played">Most played</option>
+              </select>
+            </div>
+            <div id="cbAddCasesList" class="cb-add-cases-list"></div>
+          </div>
         </div>
       </section>
 

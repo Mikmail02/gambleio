@@ -68,3 +68,18 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_muted_until BIGINT;
 
 -- Chat rules acceptance (one-time popup)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_rules_accepted BOOLEAN DEFAULT FALSE;
+
+-- Case Battle: custom cases (persisted when DATABASE_URL is set)
+CREATE TABLE IF NOT EXISTS case_battle_cases (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(255),
+  rtp_decimal DECIMAL(10,4) NOT NULL,
+  price DECIMAL(20,2) NOT NULL,
+  expected_value DECIMAL(20,2) NOT NULL,
+  items JSONB NOT NULL DEFAULT '[]',
+  created_at BIGINT NOT NULL,
+  created_by VARCHAR(255),
+  is_active BOOLEAN DEFAULT TRUE,
+  usage_count INTEGER DEFAULT 0
+);

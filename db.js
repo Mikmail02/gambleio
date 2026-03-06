@@ -243,6 +243,75 @@ async function ensureTables() {
   }
 }
 
+function rowToCaseBattleCase(row) {
+  if (!row) return null;
+  const items = Array.isArray(row.items) ? row.items : (typeof row.items === 'string' ? JSON.parse(row.items || '[]') : []);
+  return {
+    id: String(row.id),
+    name: row.name || '',
+    slug: row.slug || '',
+    rtpDecimal: Number(row.rtp_decimal ?? 0),
+    price: Number(row.price ?? 0),
+    expectedValue: Number(row.expected_value ?? 0),
+    items,
+    createdAt: row.created_at != null ? Number(row.created_at) : Date.now(),
+    createdBy: row.created_by || null,
+    isActive: row.is_active !== false,
+    usageCount: Number(row.usage_count ?? 0),
+  };
+}
+
+async function getCaseBattleCases() {
+  const res = await getPool().query(
+    'SELECT id, name, slug, rtp_decimal, price, expected_value, items, created_at, created_by, is_active, usage_count FROM case_battle_cases WHERE is_active = TRUE ORDER BY id'
+  );
+  return res.rows.map(rowToCaseBattleCase);
+}
+
+async function saveCaseBattleCase(doc) {
+  const items = Array.isArray(doc.items) ? doc.items : [];
+  const slug = (doc.slug || '').trim() || null;
+  if (doc.id && /^\d+$/.test(String(doc.id))) {
+    await getPool().query(
+      `UPDATE case_battle_cases SET name = $1, slug = $2, rtp_decimal = $3, price = $4, expected_value = $5, items = $6, created_by = $7, is_active = $8, usage_count = $9 WHERE id = $10`,
+      [
+        doc.name || '',
+        slug,
+        doc.rtpDecimal ?? 0,
+        doc.price ?? 0,
+        doc.expectedValue ?? 0,
+        JSON.stringify(items),
+        doc.createdBy || null,
+        doc.isActive !== false,
+        doc.usageCount ?? 0,
+        doc.id,
+      ]
+    );
+    return doc.id;
+  }
+  const res = await getPool().query(
+    `INSERT INTO case_battle_cases (name, slug, rtp_decimal, price, expected_value, items, created_at, created_by, is_active, usage_count)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+    [
+      doc.name || '',
+      slug,
+      doc.rtpDecimal ?? 0,
+      doc.price ?? 0,
+      doc.expectedValue ?? 0,
+      JSON.stringify(items),
+      doc.createdAt ?? Date.now(),
+      doc.createdBy || null,
+      doc.isActive !== false,
+      doc.usageCount ?? 0,
+    ]
+  );
+  return String(res.rows[0].id);
+}
+
+async function updateCaseBattleCaseUsageCount(caseId, usageCount) {
+  await getPool().query('UPDATE case_battle_cases SET usage_count = $1 WHERE id = $2', [Number(usageCount) || 0, caseId]);
+}
+
 module.exports = {
   getPool,
   getUserByUsername,
@@ -258,4 +327,7 @@ module.exports = {
   addAdminLog,
   getAdminLogs,
   ensureTables,
+  getCaseBattleCases,
+  saveCaseBattleCase,
+  updateCaseBattleCaseUsageCount,
 };

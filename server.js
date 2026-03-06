@@ -698,6 +698,27 @@ app.get('/api/admin/users/:username', requireAdmin, async (req, res) => {
   }
 });
 
+// Local dev only: set all users to owner (for testing with a single user)
+const allowGiveAllOwner = process.env.NODE_ENV !== 'production' || process.env.LOCAL_DEV === '1';
+app.post('/api/dev/give-all-owner', async (req, res) => {
+  if (!allowGiveAllOwner) return res.status(404).json({ error: 'Not available' });
+  try {
+    const list = await getAllUsersList();
+    for (const user of list) {
+      ensureFields(user);
+      user.role = 'owner';
+      user.isOwner = true;
+      user.isAdmin = true;
+      if (!useDb) users.set(user.username, user);
+      await saveUser(user);
+    }
+    res.json({ updated: list.length, message: 'All users set to owner (local dev only).' });
+  } catch (e) {
+    console.error('Give all owner error:', e);
+    res.status(500).json({ error: 'Failed to update users' });
+  }
+});
+
 app.get('/api/admin/users/:username/chat-logs', requireAdmin, async (req, res) => {
   try {
     const key = (req.params.username || '').toLowerCase().trim();
@@ -2944,10 +2965,38 @@ app.post('/api/blackjack/action', async (req, res) => {
   return res.status(400).json({ error: 'Invalid action' });
 });
 
-// ===== CASE BATTLE (in-memory cases + battles, bots supported) =====
+// ===== CASE BATTLE (cases: DB when useDb/production, else file-backed; battles in-memory) =====
+const CASE_BATTLE_CASES_FILE = path.join(DATA_DIR, 'case-battle-cases.json');
 const caseBattleCases = new Map();
 const caseBattleBattles = new Map();
 let caseBattleCaseIdNext = 1;
+
+function loadCaseBattleCasesFromFile() {
+  try {
+    if (fs.existsSync(CASE_BATTLE_CASES_FILE)) {
+      const raw = fs.readFileSync(CASE_BATTLE_CASES_FILE, 'utf8');
+      const arr = JSON.parse(raw);
+      for (const c of arr) {
+        if (c && c.id) {
+          caseBattleCases.set(String(c.id), c);
+          const n = parseInt(c.id, 10);
+          if (!Number.isNaN(n) && n >= caseBattleCaseIdNext) caseBattleCaseIdNext = n + 1;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Could not load case battle cases from file:', e.message);
+  }
+}
+
+function saveCaseBattleCasesToFile() {
+  try {
+    const arr = Array.from(caseBattleCases.values());
+    fs.writeFileSync(CASE_BATTLE_CASES_FILE, JSON.stringify(arr, null, 0), 'utf8');
+  } catch (e) {
+    console.warn('Could not save case battle cases to file:', e.message);
+  }
+}
 const BOT_NAMES = ['Ace', 'Blaze', 'Chip', 'Dice', 'Echo', 'Flux', 'Gale', 'Hex', 'Ivy', 'Jade', 'Kite', 'Luna', 'Nova', 'Onyx', 'Pepper', 'Quinn', 'Rex', 'Sky', 'Tank', 'Vex'];
 
 function getBotDisplayName() {
@@ -2955,8 +3004,117 @@ function getBotDisplayName() {
   return 'Bot ' + name;
 }
 
+/** Pick one item from a case by probability. roll01 in [0, 1). Case items have probability 0–100. */
+function pickItemFromCase(caseDoc, roll01) {
+  const items = caseDoc?.items || [];
+  if (items.length === 0) return { value: 0, name: '', image: '' };
+  const sum = items.reduce((s, i) => s + (Number(i.probability) || 0), 0);
+  let cum = 0;
+  const r = Math.max(0, Math.min(1, Number(roll01) || 0));
+  for (const it of items) {
+    const p = sum > 0 ? (Number(it.probability) || 0) / sum : 0;
+    cum += p;
+    if (r < cum) return { value: Number(it.value) || 0, name: it.name || '', image: it.image || '' };
+  }
+  const last = items[items.length - 1];
+  return { value: Number(last?.value) || 0, name: last?.name || '', image: last?.image || '' };
+}
+
+/** Run battle: open cases for all participants, resolve winner, apply payouts. Call after short delay when status becomes in_progress. */
+async function runCaseBattle(battleId) {
+  const battle = caseBattleBattles.get(battleId);
+  if (!battle || battle.status !== 'in_progress') return;
+  const { serverSeed, clientSeed } = battle;
+  let nonce = battle.nonce ?? 0;
+  const roll = () => {
+    const r = caseBattleProvably.roll01(serverSeed, clientSeed, nonce);
+    nonce += 1;
+    return r;
+  };
+
+  for (const p of battle.participants) {
+    p.totalValue = 0;
+    p.terminalValue = 0;
+  }
+
+  const roundResults = [];
+  for (const { caseId, count } of battle.cases || []) {
+    const caseDoc = caseBattleCases.get(String(caseId));
+    if (!caseDoc) continue;
+    const n = Math.max(1, parseInt(count, 10) || 1);
+    for (let openIndex = 0; openIndex < n; openIndex++) {
+      const roundItems = [];
+      for (let i = 0; i < battle.participants.length; i++) {
+        const p = battle.participants[i];
+        const r = roll();
+        const item = pickItemFromCase(caseDoc, r);
+        p.totalValue = (p.totalValue || 0) + item.value;
+        p.terminalValue = item.value;
+        roundItems.push({ value: item.value, name: item.name, image: item.image });
+      }
+      roundResults.push({ caseId: String(caseId), items: roundItems });
+    }
+  }
+  battle.nonce = nonce;
+
+  // Calculate the full pot as if all sides paid (bots count as paying players)
+  let entryCostPerSide = 0;
+  for (const { caseId, count } of battle.cases || []) {
+    const c = caseBattleCases.get(String(caseId));
+    if (c) entryCostPerSide += c.price * (parseInt(count, 10) || 1);
+  }
+  const sideCount = new Set(battle.participants.map((p) => p.teamIndex)).size;
+  const totalPot = entryCostPerSide * sideCount;
+  const mode = battle.mode || 'standard';
+  let result;
+  if (mode === 'jackpot') {
+    const totalPotValue = battle.participants.reduce((s, p) => s + (p.totalValue || 0), 0);
+    const byTeam = new Map();
+    for (const p of battle.participants) {
+      const t = p.teamIndex;
+      if (!byTeam.has(t)) byTeam.set(t, { teamIndex: t, totalValue: 0 });
+      byTeam.get(t).totalValue += p.totalValue || 0;
+    }
+    const teamTotals = Array.from(byTeam.values());
+    const winnerTeam = caseBattleMath.resolveJackpotWinner(teamTotals, totalPotValue, roll());
+    battle.nonce = nonce + 1;
+    result = caseBattleMath.resolveBattleResult(battle.participants, totalPot, mode, { totalPotValue });
+    result.winnerTeamIndex = winnerTeam;
+    result.payouts = battle.participants.map((p) => ({
+      teamIndex: p.teamIndex,
+      slotIndex: p.slotIndex,
+      amount: p.teamIndex === winnerTeam ? totalPot / Math.max(1, battle.participants.filter((x) => x.teamIndex === winnerTeam).length) : 0,
+    }));
+  } else {
+    result = caseBattleMath.resolveBattleResult(battle.participants, totalPot, mode);
+  }
+
+  for (const pay of result.payouts || []) {
+    const p = battle.participants.find((x) => x.teamIndex === pay.teamIndex && x.slotIndex === pay.slotIndex);
+    if (!p || p.isBot || (pay.amount || 0) <= 0) continue;
+    const u = await getUserByKeyOrSlug(p.username);
+    if (u) {
+      ensureFields(u);
+      u.balance = (u.balance ?? 0) + pay.amount;
+      if (!useDb) users.set(u.username, u);
+      await saveUser(u);
+    }
+  }
+
+  battle.totalPot = totalPot;
+  battle.status = 'finished';
+  battle.result = { ...result, roundResults };
+}
+
+function scheduleCaseBattleRun(battleId) {
+  setTimeout(() => runCaseBattle(battleId), 2500);
+}
+
 app.get('/api/case-battle/cases', async (req, res) => {
-  const list = Array.from(caseBattleCases.values()).filter((c) => c.isActive !== false);
+  const list = Array.from(caseBattleCases.values()).filter((c) => c.isActive !== false).map((c) => ({
+    ...c,
+    usageCount: c.usageCount ?? 0,
+  }));
   res.json({ cases: list });
 });
 
@@ -2991,10 +3149,8 @@ app.post('/api/case-battle/cases', requireAdmin, async (req, res) => {
   }));
   const result = caseBattleMath.calculateCasePrice(normalized, rtp);
   if (!result.success) return res.status(400).json({ error: result.error });
-  const id = String(caseBattleCaseIdNext++);
-  const slug = (name || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'case-' + id;
+  const slug = (name || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'case-' + Date.now();
   const doc = {
-    id,
     name: String(name).trim(),
     slug,
     rtpDecimal: rtp,
@@ -3004,14 +3160,51 @@ app.post('/api/case-battle/cases', requireAdmin, async (req, res) => {
     createdAt: Date.now(),
     createdBy: req.adminUser?.username,
     isActive: true,
+    usageCount: 0,
   };
+  let id;
+  if (useDb) {
+    try {
+      id = await db.saveCaseBattleCase(doc);
+      doc.id = id;
+      const n = parseInt(id, 10);
+      if (!Number.isNaN(n) && n >= caseBattleCaseIdNext) caseBattleCaseIdNext = n + 1;
+    } catch (e) {
+      console.error('Save case battle case failed:', e.message || e);
+      return res.status(500).json({ error: 'Failed to save case' });
+    }
+  } else {
+    id = String(caseBattleCaseIdNext++);
+    doc.id = id;
+    saveCaseBattleCasesToFile();
+  }
   caseBattleCases.set(id, doc);
   res.json({ case: doc });
 });
 
+async function enrichBattleParticipants(battle) {
+  const participants = await Promise.all(
+    (battle.participants || []).map(async (p) => {
+      if (!p.username || p.isBot) return { ...p, displayName: p.username || '' };
+      const u = await getUserByKeyOrSlug(p.username);
+      return { ...p, displayName: (u && (u.displayName || u.username)) ? (u.displayName || u.username) : p.username };
+    })
+  );
+  const out = { ...battle, participants };
+  if (battle.cases && battle.cases.length > 0) {
+    out.caseDefs = {};
+    for (const { caseId } of battle.cases) {
+      const c = caseBattleCases.get(String(caseId));
+      if (c) out.caseDefs[caseId] = { name: c.name, items: c.items || [] };
+    }
+  }
+  return out;
+}
+
 app.get('/api/case-battle/battles', async (req, res) => {
   const active = Array.from(caseBattleBattles.values()).filter((b) => b.status === 'waiting' || b.status === 'in_progress');
-  res.json({ battles: active });
+  const enriched = await Promise.all(active.map(enrichBattleParticipants));
+  res.json({ battles: enriched });
 });
 
 app.post('/api/case-battle/battles', async (req, res) => {
@@ -3062,7 +3255,7 @@ app.post('/api/case-battle/battles', async (req, res) => {
   user.balance -= entryCost;
   if (!useDb) users.set(user.username, user);
   await saveUser(user);
-  const addBots = Math.min(Number(botCount) || 0, totalSlots - 1);
+  const addBots = Math.min(Number(botCount) ?? 0, totalSlots - 1);
   const usedNames = new Set([user.username]);
   let added = 0;
   for (let i = 0; i < participants.length && added < addBots; i++) {
@@ -3076,10 +3269,12 @@ app.post('/api/case-battle/battles', async (req, res) => {
   }
   const battle = {
     id: battleId,
+    createdBy: user.username,
     format,
     mode,
-    totalPot: entryCost,
-    status: participants.length >= totalSlots ? 'in_progress' : 'waiting',
+    entryCostPerSide: entryCost,
+    totalPot: entryCost * slotsPerSide.length,
+    status: participants.every((p) => p.username) ? 'in_progress' : 'waiting',
     cases: casesInBattle,
     participants,
     totalSlots,
@@ -3089,7 +3284,15 @@ app.post('/api/case-battle/battles', async (req, res) => {
     nonce: 0,
   };
   caseBattleBattles.set(battleId, battle);
-  res.json({ battle, balance: user.balance });
+  if (battle.status === 'in_progress') scheduleCaseBattleRun(battleId);
+  for (const { caseId, count } of casesInBattle) {
+    const c = caseBattleCases.get(String(caseId));
+    if (c) {
+      c.usageCount = (c.usageCount ?? 0) + count;
+      if (useDb) db.updateCaseBattleCaseUsageCount(c.id, c.usageCount).catch((e) => console.error('Update case usage failed:', e.message));
+    }
+  }
+  res.json({ battle: await enrichBattleParticipants(battle), balance: user.balance });
 });
 
 app.post('/api/case-battle/battles/:id/join', async (req, res) => {
@@ -3100,23 +3303,28 @@ app.post('/api/case-battle/battles/:id/join', async (req, res) => {
   const battle = caseBattleBattles.get(req.params.id);
   if (!battle) return res.status(404).json({ error: 'Battle not found' });
   if (battle.status !== 'waiting') return res.status(400).json({ error: 'Battle already started' });
-  const realCount = battle.participants.filter((p) => p.username && !p.isBot).length;
-  const entryCost = battle.totalPot / Math.max(1, realCount);
+  let entryCost = 0;
+  for (const { caseId, count } of battle.cases || []) {
+    const c = caseBattleCases.get(String(caseId));
+    if (c) entryCost += c.price * (parseInt(count, 10) || 1);
+  }
   if ((user.balance ?? 0) < entryCost) return res.status(400).json({ error: 'Insufficient balance' });
   const emptySlot = battle.participants.findIndex((p) => !p.username);
   if (emptySlot < 0) return res.status(400).json({ error: 'No empty slot' });
   user.balance -= entryCost;
-  battle.totalPot += entryCost;
   battle.participants[emptySlot] = {
     ...battle.participants[emptySlot],
     username: user.username,
     isBot: false,
     entryPaid: entryCost,
   };
-  if (battle.participants.every((p) => p.username)) battle.status = 'in_progress';
+  if (battle.participants.every((p) => p.username)) {
+    battle.status = 'in_progress';
+    scheduleCaseBattleRun(battle.id);
+  }
   if (!useDb) users.set(user.username, user);
   await saveUser(user);
-  res.json({ battle, balance: user.balance });
+  res.json({ battle: await enrichBattleParticipants(battle), balance: user.balance });
 });
 
 app.post('/api/case-battle/battles/:id/add-bot', async (req, res) => {
@@ -3125,7 +3333,6 @@ app.post('/api/case-battle/battles/:id/add-bot', async (req, res) => {
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   const battle = caseBattleBattles.get(req.params.id);
   if (!battle) return res.status(404).json({ error: 'Battle not found' });
-  if (battle.status !== 'waiting') return res.status(400).json({ error: 'Battle already started' });
   const emptySlot = battle.participants.findIndex((p) => !p.username);
   if (emptySlot < 0) return res.status(400).json({ error: 'No empty slot' });
   const usedNames = new Set(battle.participants.map((p) => p.username).filter(Boolean));
@@ -3142,13 +3349,48 @@ app.post('/api/case-battle/battles/:id/add-bot', async (req, res) => {
     totalValue: 0,
     terminalValue: 0,
   };
-  if (battle.participants.every((p) => p.username)) battle.status = 'in_progress';
-  res.json({ battle });
+  if (battle.participants.every((p) => p.username)) {
+    battle.status = 'in_progress';
+    scheduleCaseBattleRun(battle.id);
+  }
+  res.json({ battle: await enrichBattleParticipants(battle) });
+});
+
+app.get('/api/case-battle/battles/:id', async (req, res) => {
+  const battle = caseBattleBattles.get(req.params.id);
+  if (!battle) return res.status(404).json({ error: 'Battle not found' });
+  res.json({ battle: await enrichBattleParticipants(battle) });
+});
+
+app.delete('/api/case-battle/battles/:id', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  ensureFields(user);
+  const battle = caseBattleBattles.get(req.params.id);
+  if (!battle) return res.status(404).json({ error: 'Battle not found' });
+  if (battle.status !== 'waiting') return res.status(400).json({ error: 'Battle already started' });
+  if (battle.createdBy !== user.username) return res.status(403).json({ error: 'Only the creator can delete this battle' });
+  for (const p of battle.participants) {
+    if (p.username && !p.isBot && p.entryPaid > 0) {
+      const u = await getUserByKeyOrSlug(p.username);
+      if (u) {
+        ensureFields(u);
+        u.balance = (u.balance ?? 0) + p.entryPaid;
+        if (!useDb) users.set(u.username, u);
+        await saveUser(u);
+        if (u.username === user.username) user.balance = u.balance;
+      }
+    }
+  }
+  caseBattleBattles.delete(req.params.id);
+  res.json({ ok: true, balance: user.balance });
 });
 
 async function start() {
   loadData();
   runCrashNextRound();
+  if (!useDb) loadCaseBattleCasesFromFile();
   if (useDb) {
     try {
       await db.ensureTables();
@@ -3156,6 +3398,13 @@ async function start() {
       plinkoStats.totalBalls = ps.totalBalls ?? 0;
       plinkoStats.landings = Array.isArray(ps.landings) ? ps.landings : Array(19).fill(0);
       while (plinkoStats.landings.length < 19) plinkoStats.landings.push(0);
+      const savedCases = await db.getCaseBattleCases();
+      for (const c of savedCases) {
+        caseBattleCases.set(c.id, c);
+        const n = parseInt(c.id, 10);
+        if (!Number.isNaN(n) && n >= caseBattleCaseIdNext) caseBattleCaseIdNext = n + 1;
+      }
+      if (savedCases.length) console.log('Case Battle: loaded ' + savedCases.length + ' cases from database');
     } catch (e) {
       console.error('Database startup failed:', e.message || e);
       console.error('Stack:', e.stack);
