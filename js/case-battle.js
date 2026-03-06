@@ -29,6 +29,9 @@
   let currentReplayRound = 0;
   let lastDetailBattle = null;
   let openStripsAnimationRunning = false;
+  let jackpotRevealShownForBattleId = null;
+  const itemsScrollIndexByKey = {};
+  const itemsCountByKey = {};
 
   const addCustomCaseBtn = document.getElementById('cbAddCustomCaseBtn');
   const addCaseModal = document.getElementById('cbAddCaseModal');
@@ -337,6 +340,9 @@
     }
     if (listView) { listView.classList.remove('hidden'); listView.style.display = ''; }
     if (detailView) { detailView.classList.add('hidden'); detailView.style.display = 'none'; }
+    if (window.location.hash.startsWith('#case-battle/')) {
+      window.history.replaceState(null, '', '#case-battle');
+    }
   }
 
   async function showBattleDetail(id) {
@@ -345,6 +351,10 @@
     currentBattleId = id;
     if (listView) { listView.classList.add('hidden'); listView.style.display = 'none'; }
     if (detailView) { detailView.classList.remove('hidden'); detailView.style.display = 'flex'; }
+    const newHash = '#case-battle/' + encodeURIComponent(id);
+    if (window.location.hash !== newHash) {
+      window.history.pushState(null, '', newHash);
+    }
     await loadAndRenderDetail(id);
   }
 
@@ -421,15 +431,42 @@
       ? escapeHtml(roundCaseList[currentCaseCarouselIndex].name) : '';
     const roundCasePrice = totalRounds > 0 && !isFullyRevealed && roundCaseList[currentCaseCarouselIndex] && roundCaseList[currentCaseCarouselIndex].price != null
       ? formatDollars(roundCaseList[currentCaseCarouselIndex].price) : '';
+    const isJackpotMode = (battle.mode || '').toLowerCase() === 'jackpot';
+    const jackpotRevealShown = isJackpotMode && jackpotRevealShownForBattleId === battle.id;
+    const showJackpotSlider = battle.status === 'finished' && isFullyRevealed && isJackpotMode && !jackpotRevealShown;
     const openingMsg = battle.status === 'in_progress' ? '<div class="cb-detail-opening-msg">Opening cases…</div>' : '';
-    const finishedMsg = battle.status === 'finished' && isFullyRevealed ? '<div class="cb-detail-finished-msg">Battle finished</div>' : '';
+    const finishedMsg = battle.status === 'finished' && isFullyRevealed && !showJackpotSlider ? '<div class="cb-detail-finished-msg">Battle finished</div>' : '';
+    const jackpotSliderHtml = showJackpotSlider ? '<div class="cb-jackpot-slider-wrap" id="cbJackpotSliderWrap"><div class="cb-jackpot-slider-label">Jackpot winner</div><div class="cb-jackpot-slider-container" id="cbJackpotSliderContainer"></div></div>' : '';
     const byTeam = groupParticipantsByTeam(battle.participants);
     const slotsHtmlGrouped = buildSlotsGroupedByTeam(byTeam, battle, payoutsBySlot, username, currentCaseCarouselIndex);
+    const roundResults = (battle.result && battle.result.roundResults) || [];
+    let totalDisplay;
+    if (battle.status === 'finished' && isFullyRevealed && (battle.result?.payouts?.length)) {
+      totalDisplay = battle.result.payouts.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    } else if (roundResults.length > 0) {
+      const revealedCount = isFullyRevealed ? roundResults.length : currentCaseCarouselIndex;
+      totalDisplay = roundResults.slice(0, revealedCount).reduce((sum, r) => {
+        return sum + (r.items || []).reduce((s, it) => s + (Number(it?.value) || 0), 0);
+      }, 0);
+    } else {
+      totalDisplay = 0;
+    }
+    const battleCost = (battle.entryCostPerSide ?? 0) * sideCount;
+    const battleCostStr = battleCost > 0 ? formatDollars(battleCost) : '';
     detailContent.classList.remove('cb-detail-open');
+    const remakeBtnHtml = (battle.status === 'finished' && isFullyRevealed)
+      ? `<button type="button" class="btn btn-cb-remake" id="cbRemakeBtn">Remake</button>`
+      : '';
     detailContent.innerHTML = `
       <div class="cb-detail-top">
-        <h3 class="cb-detail-title">${escapeHtml(battle.format)} · ${escapeHtml(battle.mode)}</h3>
-        <div class="cb-detail-total">Total: ${formatDollars(battle.totalPot)}</div>
+        <h3 class="cb-detail-title">${escapeHtml(battle.format)} · ${escapeHtml(battle.mode)}${battleCostStr ? ' · ' + battleCostStr : ''}</h3>
+        ${remakeBtnHtml}
+        <div class="cb-detail-total">Total: ${formatDollars(totalDisplay)}</div>
+      </div>
+      <div class="cb-detail-round-bar" id="cbDetailRoundBar">
+        <span class="cb-round-bar-label">${roundLabel}</span>
+        ${roundCaseName ? `<span class="cb-round-bar-sep">|</span><span class="cb-round-bar-case">${roundCaseName}</span>` : ''}
+        ${roundCasePrice ? `<span class="cb-round-bar-sep">|</span><span class="cb-round-bar-price">${roundCasePrice}</span>` : ''}
       </div>
       <div class="cb-detail-main-layout">
         <div class="cb-detail-slots-column">
@@ -440,13 +477,9 @@
           <div class="cb-detail-slots-grouped">${slotsHtmlGrouped}</div>
         </div>
         <div class="cb-detail-open-column">
-          <div class="cb-detail-round-bar" id="cbDetailRoundBar">
-            <span class="cb-round-bar-label">${roundLabel}</span>
-            ${roundCaseName ? `<span class="cb-round-bar-sep">|</span><span class="cb-round-bar-case">${roundCaseName}</span>` : ''}
-            ${roundCasePrice ? `<span class="cb-round-bar-sep">|</span><span class="cb-round-bar-price">${roundCasePrice}</span>` : ''}
-          </div>
           ${openingMsg}
           ${finishedMsg}
+          ${jackpotSliderHtml}
         </div>
       </div>
       <div class="cb-detail-actions">${actionsHtml}</div>
@@ -467,11 +500,95 @@
     if (joinBtn) joinBtn.addEventListener('click', () => joinBattle(battle.id));
     const deleteBtn = document.getElementById('cbDeleteBattleBtn');
     if (deleteBtn) deleteBtn.addEventListener('click', () => deleteBattle(battle.id));
+    const remakeBtn = document.getElementById('cbRemakeBtn');
+    if (remakeBtn) remakeBtn.addEventListener('click', () => remakeBattle(battle));
     const viewCasesBtn = document.getElementById('cbViewCasesBtn');
     const openCasesModal = () => openBattleCasesPopover(detailCaseItems, battle.totalPot);
     if (viewCasesBtn) viewCasesBtn.addEventListener('click', (e) => { e.stopPropagation(); openCasesModal(); });
+    detailContent.querySelectorAll('.cb-detail-items-scroll-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (btn.disabled) return;
+        const bid = btn.getAttribute('data-battle-id');
+        const pi = parseInt(btn.getAttribute('data-pi'), 10);
+        const dir = parseInt(btn.getAttribute('data-dir'), 10) || 1;
+        const key = `${bid}_${pi}`;
+        const roundResults = (lastDetailBattle && lastDetailBattle.result && lastDetailBattle.result.roundResults) || [];
+        const itemsCount = roundResults.filter((r) => r.items && r.items[pi]).length;
+        const maxScroll = Math.max(0, itemsCount - 5);
+        let scrollIndex = (itemsScrollIndexByKey[key] ?? 0) + dir * 5;
+        scrollIndex = Math.min(Math.max(0, scrollIndex), maxScroll);
+        itemsScrollIndexByKey[key] = scrollIndex;
+        updateItemsColumnOnly(lastDetailBattle, pi);
+      });
+    });
     if (battle.status === 'finished' && (battle.result && battle.result.roundResults && battle.result.roundResults.length > 0)) {
       requestAnimationFrame(() => { runOpenStripsAnimation(battle, currentCaseCarouselIndex); });
+    }
+    if (showJackpotSlider) {
+      const winnerTeamIndex = battle.result && battle.result.winnerTeamIndex != null ? battle.result.winnerTeamIndex : null;
+      const containerEl = document.getElementById('cbJackpotSliderContainer');
+      if (containerEl && winnerTeamIndex != null) {
+        runJackpotSliderAnimation(battle, winnerTeamIndex, containerEl).then(() => {
+          if (!currentBattleId || !lastDetailBattle || lastDetailBattle.id !== currentBattleId) return;
+          jackpotRevealShownForBattleId = battle.id;
+          renderDetailView(lastDetailBattle);
+        });
+      } else if (containerEl && winnerTeamIndex == null) {
+        jackpotRevealShownForBattleId = battle.id;
+        renderDetailView(lastDetailBattle);
+      }
+    }
+  }
+
+  function updateItemsColumnOnly(battle, pi) {
+    if (!battle || !detailContent) return;
+    const roundResults = (battle.result && battle.result.roundResults) || [];
+    const totalRounds = roundResults.length;
+    const replayInProgress = battle.status === 'finished' && totalRounds > 0 && currentCaseCarouselIndex < totalRounds;
+    const revealedCount = replayInProgress ? currentCaseCarouselIndex : totalRounds;
+    const itemsForParticipant = roundResults.slice(0, revealedCount).map((r) => (r.items && r.items[pi]) ? r.items[pi] : null).filter(Boolean);
+    const itemsDisplayOrder = itemsForParticipant;
+    const itemsCount = itemsDisplayOrder.length;
+    const scrollKey = `${battle.id}_${pi}`;
+    const maxScroll = Math.max(0, itemsCount - 5);
+    let scrollIndex = itemsScrollIndexByKey[scrollKey] ?? maxScroll;
+    scrollIndex = Math.min(Math.max(0, scrollIndex), maxScroll);
+    itemsScrollIndexByKey[scrollKey] = scrollIndex;
+    const visibleItems = itemsDisplayOrder.slice(scrollIndex, scrollIndex + 5);
+    const showArrows = itemsCount > 5;
+    const canScrollLeft = scrollIndex > 0;
+    const canScrollRight = scrollIndex < maxScroll;
+    const html = `${showArrows ? `<button type="button" class="cb-detail-items-scroll-btn cb-detail-items-scroll-left" data-pi="${pi}" data-battle-id="${escapeHtml(battle.id)}" data-dir="-1" ${!canScrollLeft ? 'disabled' : ''} aria-label="Previous items">‹</button>` : ''}
+      <div class="cb-detail-items-row">
+        ${visibleItems.map((it) => `
+        <div class="cb-detail-item-card">
+          ${it.image ? `<img src="${escapeHtml(it.image)}" alt="" class="cb-detail-item-card-img" onerror="this.style.display='none'">` : '<div class="cb-detail-item-card-placeholder">' + escapeHtml(it.name || '') + '</div>'}
+          <div class="cb-detail-item-card-price">${formatDollars(it.value || 0)}</div>
+        </div>`).join('')}
+      </div>
+      ${showArrows ? `<button type="button" class="cb-detail-items-scroll-btn cb-detail-items-scroll-right" data-pi="${pi}" data-battle-id="${escapeHtml(battle.id)}" data-dir="1" ${!canScrollRight ? 'disabled' : ''} aria-label="Next items">›</button>` : ''}`;
+    const cols = detailContent.querySelectorAll('.cb-detail-items-column');
+    const col = cols[pi];
+    if (col) {
+      col.innerHTML = html;
+      col.querySelectorAll('.cb-detail-items-scroll-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (btn.disabled) return;
+          const bid = btn.getAttribute('data-battle-id');
+          const p = parseInt(btn.getAttribute('data-pi'), 10);
+          const dir = parseInt(btn.getAttribute('data-dir'), 10) || 1;
+          const key = `${bid}_${p}`;
+          const rr = (lastDetailBattle && lastDetailBattle.result && lastDetailBattle.result.roundResults) || [];
+          const count = rr.filter((r) => r.items && r.items[p]).length;
+          const max = Math.max(0, count - 5);
+          let idx = (itemsScrollIndexByKey[key] ?? 0) + dir * 5;
+          idx = Math.min(Math.max(0, idx), max);
+          itemsScrollIndexByKey[key] = idx;
+          updateItemsColumnOnly(lastDetailBattle, p);
+        });
+      });
     }
   }
 
@@ -498,7 +615,7 @@
     const ITEM_WIDTH = 88;
     const DURATION_MS = 5500;
     const SETTLE_MS = 220;
-    const PAUSE_AFTER_LAND_MS = 1000;
+    const PAUSE_AFTER_LAND_MS = 150;
     const items = round.items || [];
     const stopAts = [];
     const offsetPx = [];
@@ -577,20 +694,6 @@
         openStripsAnimationRunning = false;
         return;
       }
-      // Inject newly won items into DOM immediately
-      for (let pi = 0; pi < items.length; pi++) {
-        const item = items[pi];
-        const itemsCols = detailContent.querySelectorAll('.cb-detail-items-column');
-        if (itemsCols[pi]) {
-          const card = document.createElement('div');
-          card.className = 'cb-detail-item-card';
-          card.innerHTML = (item.image
-            ? `<img src="${escapeHtml(item.image)}" alt="" class="cb-detail-item-card-img" onerror="this.style.display='none'">`
-            : `<div class="cb-detail-item-card-placeholder">${escapeHtml(item.name || '')}</div>`)
-            + `<div class="cb-detail-item-card-price">${formatDollars(item.value || 0)}</div>`;
-          itemsCols[pi].insertBefore(card, itemsCols[pi].firstChild);
-        }
-      }
       const totalRounds = (lastDetailBattle.result && lastDetailBattle.result.roundResults || []).length;
       if (currentReplayRound + 1 < totalRounds) {
         await new Promise((r) => setTimeout(r, PAUSE_AFTER_LAND_MS));
@@ -628,6 +731,78 @@
     return byTeam;
   }
 
+  function getJackpotSliderLabels(battle, byTeam) {
+    const format = (battle.format || '1v1').toLowerCase();
+    const slotsPerSide = format.split('v').map((n) => parseInt(n, 10)).filter((n) => Number.isFinite(n));
+    const useTeamNames = slotsPerSide.length > 0 && slotsPerSide.some((n) => n > 1);
+    const teamIndices = Object.keys(byTeam).map(Number).sort((a, b) => a - b);
+    return teamIndices.map((ti) => {
+      if (useTeamNames) return 'Team ' + (ti + 1);
+      const team = byTeam[ti] || [];
+      const first = team.find((p) => p.username);
+      return first ? participantDisplayName(first) : 'Team ' + (ti + 1);
+    });
+  }
+
+  function shuffleArray(arr) {
+    const out = [...arr];
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  }
+
+  function runJackpotSliderAnimation(battle, winnerTeamIndex, containerEl) {
+    if (!containerEl || winnerTeamIndex == null) return Promise.resolve();
+    const byTeam = groupParticipantsByTeam(battle.participants);
+    const labels = getJackpotSliderLabels(battle, byTeam);
+    if (labels.length === 0) return Promise.resolve();
+    const CELL_WIDTH = 100;
+    const CELL_GAP = 6;
+    const STRIP_REPEAT = 40;
+    const flatLabels = [];
+    const baseOrder = labels.map((l, i) => ({ label: l, teamIndex: i }));
+    for (let r = 0; r < STRIP_REPEAT; r++) {
+      const shuffled = shuffleArray([...baseOrder]);
+      shuffled.forEach((x) => flatLabels.push(x));
+    }
+    const winnerIndices = flatLabels.map((x, i) => (x.teamIndex === winnerTeamIndex ? i : -1)).filter((i) => i >= 0);
+    const midStart = Math.floor(flatLabels.length * 0.4);
+    const stopAt = winnerIndices.find((i) => i >= midStart) ?? winnerIndices[winnerIndices.length - 1] ?? Math.floor(flatLabels.length / 2);
+    const stripEl = document.createElement('div');
+    stripEl.className = 'cb-jackpot-slider-strip';
+    stripEl.innerHTML = flatLabels.map((x, idx) =>
+      `<div class="cb-jackpot-slider-cell" data-team="${x.teamIndex}">${escapeHtml(x.label)}</div>`
+    ).join('');
+    stripEl.style.width = flatLabels.length * (CELL_WIDTH + CELL_GAP) + 'px';
+    stripEl.style.transform = 'translateX(0)';
+    const viewport = document.createElement('div');
+    viewport.className = 'cb-jackpot-slider-viewport';
+    viewport.innerHTML = '<div class="cb-jackpot-slider-pointer"></div>';
+    viewport.appendChild(stripEl);
+    containerEl.innerHTML = '';
+    containerEl.appendChild(viewport);
+    containerEl.offsetHeight;
+    const viewportWidth = viewport.offsetWidth || 400;
+    const DURATION_MS = 5000;
+    const baseX = viewportWidth / 2 - (stopAt * (CELL_WIDTH + CELL_GAP) + (CELL_WIDTH + CELL_GAP) / 2);
+    stripEl.style.transition = `transform ${DURATION_MS}ms cubic-bezier(0.06, 0.65, 0.2, 1)`;
+    stripEl.style.transform = 'translateX(' + baseX + 'px)';
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        stripEl.querySelectorAll('.cb-jackpot-slider-cell').forEach((c) => c.classList.remove('cb-jackpot-slider-cell--winner'));
+        const txMatch = stripEl.style.transform.match(/translateX\(([^)]+)\)/);
+        const txVal = txMatch ? parseFloat(txMatch[1]) : 0;
+        const centerIdx = Math.round((viewportWidth / 2 - txVal) / (CELL_WIDTH + CELL_GAP));
+        const cells = stripEl.querySelectorAll('.cb-jackpot-slider-cell');
+        const idx = Math.max(0, Math.min(Math.floor(centerIdx), cells.length - 1));
+        if (cells[idx]) cells[idx].classList.add('cb-jackpot-slider-cell--winner');
+        resolve();
+      }, DURATION_MS + 300);
+    });
+  }
+
   function buildSlotsGroupedByTeam(byTeam, battle, payoutsBySlot, username, currentRoundIndex) {
     const roundResults = (battle.result && battle.result.roundResults) || [];
     const totalRounds = roundResults.length;
@@ -637,6 +812,12 @@
     const battleFullyFinished = battle.status === 'finished' && revealedCount === totalRounds;
     const winnerTeamIndex = battle.result && battle.result.winnerTeamIndex != null ? battle.result.winnerTeamIndex : null;
     const isCoop = (battle.mode || '').toLowerCase() === 'coop';
+    const isJackpot = (battle.mode || '').toLowerCase() === 'jackpot';
+    const jackpotRevealShown = isJackpot && jackpotRevealShownForBattleId === battle.id;
+    const currentBattleTotal = isJackpot && revealedCount > 0
+      ? roundResults.slice(0, revealedCount).reduce((sum, r) =>
+          sum + (r.items || []).reduce((s, it) => s + (Number(it?.value) || 0), 0), 0)
+      : 0;
     const teamIndices = Object.keys(byTeam).map(Number).sort((a, b) => a - b);
     let participantIndex = 0;
     const parts = [];
@@ -652,13 +833,33 @@
         const itemsForParticipant = roundResults.slice(0, revealedCount).map((r) => (r.items && r.items[pi]) ? r.items[pi] : null).filter(Boolean);
         const runningTotal = itemsForParticipant.reduce((s, it) => s + (Number(it.value) || 0), 0);
         const displayTotal = replayInProgress ? runningTotal : (p.totalValue != null ? p.totalValue : runningTotal);
-        const itemsDisplayOrder = itemsForParticipant.slice().reverse();
-        const itemsColumnHtml = `<div class="cb-detail-items-column">
-          ${itemsDisplayOrder.map((it) => `
+        const itemsDisplayOrder = itemsForParticipant;
+        const itemsCount = itemsDisplayOrder.length;
+        const scrollKey = `${battle.id}_${pi}`;
+        const maxScroll = Math.max(0, itemsCount - 5);
+        const prevCount = itemsCountByKey[scrollKey] ?? 0;
+        itemsCountByKey[scrollKey] = itemsCount;
+        let scrollIndex = itemsScrollIndexByKey[scrollKey];
+        if (scrollIndex === undefined || itemsCount > prevCount) {
+          scrollIndex = maxScroll;
+          itemsScrollIndexByKey[scrollKey] = scrollIndex;
+        }
+        scrollIndex = Math.min(Math.max(0, scrollIndex), maxScroll);
+        itemsScrollIndexByKey[scrollKey] = scrollIndex;
+        const visibleItems = itemsDisplayOrder.slice(scrollIndex, scrollIndex + 5);
+        const showArrows = itemsCount > 5;
+        const canScrollLeft = scrollIndex > 0;
+        const canScrollRight = scrollIndex < maxScroll;
+        const itemsColumnHtml = `<div class="cb-detail-items-column" data-pi="${pi}" data-battle-id="${escapeHtml(battle.id)}">
+          ${showArrows ? `<button type="button" class="cb-detail-items-scroll-btn cb-detail-items-scroll-left" data-pi="${pi}" data-battle-id="${escapeHtml(battle.id)}" data-dir="-1" ${!canScrollLeft ? 'disabled' : ''} aria-label="Previous items">‹</button>` : ''}
+          <div class="cb-detail-items-row">
+            ${visibleItems.map((it) => `
             <div class="cb-detail-item-card">
               ${it.image ? `<img src="${escapeHtml(it.image)}" alt="" class="cb-detail-item-card-img" onerror="this.style.display='none'">` : '<div class="cb-detail-item-card-placeholder">' + escapeHtml(it.name || '') + '</div>'}
               <div class="cb-detail-item-card-price">${formatDollars(it.value || 0)}</div>
             </div>`).join('')}
+          </div>
+          ${showArrows ? `<button type="button" class="cb-detail-items-scroll-btn cb-detail-items-scroll-right" data-pi="${pi}" data-battle-id="${escapeHtml(battle.id)}" data-dir="1" ${!canScrollRight ? 'disabled' : ''} aria-label="Next items">›</button>` : ''}
         </div>`;
         let slotHtml;
         if (!p.username) {
@@ -670,14 +871,19 @@
         } else {
           const name = participantDisplayName(p);
           const valueStr = formatDollars(displayTotal);
-          slotHtml = `<div class="cb-detail-slot ${battleFullyFinished && isWinner ? 'cb-detail-slot-winner' : ''}">
+          const pctLine = isJackpot && currentBattleTotal > 0
+            ? `<div class="cb-detail-slot-pct">${(100 * displayTotal / currentBattleTotal).toFixed(1)}% of total</div>`
+            : '';
+          slotHtml = `<div class="cb-detail-slot ${battleFullyFinished && isWinner && (jackpotRevealShown || !isJackpot) ? 'cb-detail-slot-winner' : ''}">
             <div class="cb-detail-slot-name">${escapeHtml(name)}</div>
             ${p.isBot ? '<div class="cb-detail-slot-bot">Bot</div>' : ''}
-            ${battle.status === 'finished' ? `<div class="cb-detail-slot-total">Total value: ${escapeHtml(valueStr)}</div>` : ''}
+            ${battle.status === 'finished' ? `<div class="cb-detail-slot-total">Total value: ${escapeHtml(valueStr)}</div>${pctLine}` : ''}
           </div>`;
         }
         let stripHtml;
-        if (battleFullyFinished) {
+        if (battleFullyFinished && isJackpot && !jackpotRevealShown) {
+          stripHtml = '<div class="cb-detail-strip-cell cb-detail-strip-placeholder"><span class="cb-detail-strip-revealing">Revealing…</span></div>';
+        } else if (battleFullyFinished) {
           if (isWinner) {
             stripHtml = `<div class="cb-detail-strip-cell cb-detail-strip-result"><span class="cb-detail-strip-win-yes">${formatDollars(payoutAmount)}</span></div>`;
           } else {
@@ -980,6 +1186,34 @@
     }
   }
 
+  async function remakeBattle(battle) {
+    if (!battle || !battle.cases || battle.cases.length === 0) return;
+    const caseIds = battle.cases.map((x) => ({ caseId: x.caseId, count: x.count || 1 }));
+    try {
+      const res = await fetch(API + '/battles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          format: battle.format || '1v1',
+          mode: battle.mode || 'standard',
+          caseIds,
+          botCount: 0,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Failed to remake battle');
+        return;
+      }
+      if (window.Game && data.balance != null) window.Game.balance = data.balance;
+      if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
+      if (data.battle && data.battle.id) await showBattleDetail(data.battle.id);
+      else await loadBattles();
+    } catch (e) {
+      alert('Network error');
+    }
+  }
+
   async function joinBattle(id) {
     try {
       const res = await fetch(API + '/battles/' + encodeURIComponent(id) + '/join', {
@@ -1031,6 +1265,11 @@
       if (currentBattleId) loadAndRenderDetail(currentBattleId);
       else loadBattles();
     }, 5000);
+    const hash = (window.location.hash || '').slice(1);
+    if (hash.startsWith('case-battle/')) {
+      const battleId = decodeURIComponent(hash.slice('case-battle/'.length));
+      if (battleId) showBattleDetail(battleId);
+    }
   }
 
   function onHide() {
@@ -1065,8 +1304,12 @@
     if (createFormWrap) createFormWrap.classList.toggle('hidden');
   });
   if (backToList) backToList.addEventListener('click', () => {
-    showListView();
-    loadBattles();
+    if (currentBattleId && window.history.length > 1) {
+      window.history.back();
+    } else {
+      showListView();
+      loadBattles();
+    }
   });
   setupBattleListDelegation();
 

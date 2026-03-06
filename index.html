@@ -498,6 +498,40 @@
         <div class="patch-notes-container">
           <h2 class="patch-notes-page-title">Patch notes</h2>
           <div class="patch-notes-grid">
+            <article class="patch-note-card slot-game-card" id="patch-v1-4" tabindex="0" role="button" data-expanded="false" aria-label="Patch notes v1.4, click to open">
+              <div class="patch-note-card-preview slot-game-card-image">
+                <span class="patch-note-card-preview-label">Patch notes v1.4</span>
+                <span class="slot-game-card-play">View</span>
+              </div>
+              <div class="patch-note-card-expanded-content">
+                <header class="patch-note-card-header">
+                  <h3 class="patch-note-card-title">Patch notes v1.4</h3>
+                  <p class="patch-note-card-meta">Latest update</p>
+                </header>
+                <div class="patch-note-card-body">
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">New game: Blackjack</h4>
+                  <p class="patch-note-section-desc">Classic blackjack is here. Place your bet, get dealt two cards, and aim for 21. Hit to draw more, stand to hold, double down or split when the odds are right. Dealer follows standard rules (hit on 16 or less, stand on 17). Insurance and surrender available. Provably fair with server-side deck handling.</p>
+                  <ul class="patch-note-list">
+                    <li><strong>Standard rules</strong> — Dealer stands on 17, hits on 16 or below</li>
+                    <li><strong>Actions</strong> — Hit, Stand, Double Down, Split, Surrender</li>
+                    <li><strong>Insurance</strong> — When dealer shows an Ace</li>
+                    <li><strong>Animations</strong> — Sequential deal, dealer hole card flip, smooth card reveals</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">New game: Case Battle</h4>
+                  <p class="patch-note-section-desc">Open cases against other players or bots. Pick a case, set the format (1v1, 1v1v1, 2v2, etc.), and create a battle. Everyone opens the same cases; the highest total value wins the pot. Multiple modes: Standard (highest total wins), Terminal (last round only), Co-op (split the pot), Jackpot (win chance based on your total).</p>
+                  <ul class="patch-note-list">
+                    <li><strong>Formats</strong> — 1v1, 1v1v1, 1v1v1v1, 2v2, 2v2v2, 3v3</li>
+                    <li><strong>Modes</strong> — Standard, Terminal, Co-op, Crazy Standard, Crazy Terminal, Jackpot</li>
+                    <li><strong>Custom cases</strong> — Owners and admins can create cases with custom items and RTP</li>
+                    <li><strong>Pot distribution</strong> — Payouts based on total value of items opened, not entry price</li>
+                  </ul>
+                </section>
+                </div>
+              </div>
+            </article>
             <article class="patch-note-card slot-game-card" id="patch-v1-3" tabindex="0" role="button" data-expanded="false" aria-label="Patch notes v1.3, click to open">
               <div class="patch-note-card-preview slot-game-card-image">
                 <span class="patch-note-card-preview-label">Patch notes v1.3</span>
@@ -506,7 +540,7 @@
               <div class="patch-note-card-expanded-content">
                 <header class="patch-note-card-header">
                   <h3 class="patch-note-card-title">Patch notes v1.3</h3>
-                  <p class="patch-note-card-meta">Latest update</p>
+                  <p class="patch-note-card-meta">Challenge system</p>
                 </header>
                 <div class="patch-note-card-body">
                 <section class="patch-note-section">
@@ -679,7 +713,7 @@
 
       <!-- Casebattle -->
       <section id="page-case-battle" class="page page-case-battle hidden">
-        <button type="button" class="cb-add-custom-case-btn hidden" id="cbAddCustomCaseBtn" aria-label="Add custom case">+ Add Custom Case</button>
+        <button type="button" class="cb-add-custom-case-btn" id="cbAddCustomCaseBtn" aria-label="Add custom case">+ Add Custom Case</button>
         <div class="case-battle-container">
           <!-- List view: battles + create button -->
           <div id="cbListView" class="cb-list-view">
