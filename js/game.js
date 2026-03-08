@@ -182,7 +182,22 @@ const Game = {
     return this.bet;
   },
 
+  _frozenBalance: null,
+
+  /** Freeze the displayed balance (used during case battle animations). */
+  freezeBalance() {
+    this._frozenBalance = this.balance;
+  },
+
+  /** Unfreeze so getBalance returns the real value again. */
+  unfreezeBalance() {
+    this._frozenBalance = null;
+  },
+
   getBalance() {
+    if (this._frozenBalance != null && window.__caseBattleBlockStatsRefresh) {
+      return this._frozenBalance;
+    }
     return this.balance;
   },
 

@@ -3197,7 +3197,7 @@ async function enrichBattleParticipants(battle) {
   return out;
 }
 
-const FINISHED_BATTLE_VISIBLE_MS = 10 * 1000; // 10 sec after finished
+const FINISHED_BATTLE_VISIBLE_MS = 5 * 1000; // 5 sec after finished
 
 app.get('/api/case-battle/battles', async (req, res) => {
   const now = Date.now();
@@ -3215,6 +3215,14 @@ app.post('/api/case-battle/battles', async (req, res) => {
   const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   ensureFields(user);
+  // Limit: one active battle per user
+  const hasActive = Array.from(caseBattleBattles.values()).some((b) =>
+    (b.status === 'waiting' || b.status === 'in_progress') &&
+    b.participants.some((p) => p.username === user.username && !p.isBot)
+  );
+  if (hasActive) {
+    return res.status(400).json({ error: 'You already have an active battle. Finish or delete it first.' });
+  }
   const { format, mode, caseIds, botCount, crazyMode } = req.body || {};
   if (!format || !mode || !Array.isArray(caseIds) || caseIds.length === 0) {
     return res.status(400).json({ error: 'format, mode, and caseIds (array of { caseId, count }) required' });

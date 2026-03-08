@@ -79,6 +79,13 @@
     return '$' + new Intl.NumberFormat('en', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(n) || 0);
   }
 
+  function getEffectiveBalance() {
+    const user = typeof window.Auth !== 'undefined' && window.Auth.getCurrentUser ? window.Auth.getCurrentUser() : null;
+    if (window.Game && typeof window.Game.getBalance === 'function') return Number(window.Game.getBalance()) || 0;
+    if (window.Game && window.Game.balance != null) return Number(window.Game.balance) || 0;
+    return Number(user?.balance) || 0;
+  }
+
   function formatModeDisplay(mode, crazyMode) {
     const m = (mode || '').toLowerCase();
     let label = '';
@@ -220,19 +227,26 @@
     updateEntryTotal();
   }
 
+  function findCaseById(caseId) {
+    if (caseId == null) return null;
+    return casesList.find((x) => String(x.id) === String(caseId)) || null;
+  }
+
   function getCaseName(caseId) {
-    const c = casesList.find((x) => x.id === caseId);
-    return c ? c.name : caseId;
+    const c = findCaseById(caseId);
+    return c ? c.name : (caseId != null ? String(caseId) : '');
   }
 
   function getCaseImage(caseId) {
-    const c = casesList.find((x) => x.id === caseId);
-    const first = c && Array.isArray(c.items) && c.items.length > 0 ? c.items[0] : null;
-    return (first && first.image) ? first.image : '';
+    const c = findCaseById(caseId);
+    if (!c || !Array.isArray(c.items) || c.items.length === 0) return '';
+    const byValue = c.items.slice().sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0));
+    const mostExpensive = byValue[0];
+    return (mostExpensive && mostExpensive.image) ? mostExpensive.image : (c.items[0] && c.items[0].image) ? c.items[0].image : '';
   }
 
   function getCasePrice(caseId) {
-    const c = casesList.find((x) => x.id === caseId);
+    const c = findCaseById(caseId);
     return c && c.price != null ? c.price : 0;
   }
 
@@ -240,11 +254,31 @@
     return (p && (p.displayName || p.username)) ? (p.displayName || p.username) : (p && p.username) || '';
   }
 
+  function updateCreateBattleButton(battles) {
+    if (!createNewBtn) return;
+    const user = typeof window.Auth !== 'undefined' && window.Auth.getCurrentUser ? window.Auth.getCurrentUser() : null;
+    const username = user?.username || user?.uid || '';
+    const hasActive = battles.some((b) =>
+      (b.status === 'waiting' || b.status === 'in_progress') &&
+      b.participants.some((p) => (p.username === username) && !p.isBot)
+    );
+    if (hasActive) {
+      createNewBtn.disabled = true;
+      createNewBtn.title = 'You already have an active battle';
+      createNewBtn.classList.add('btn-disabled');
+    } else {
+      createNewBtn.disabled = false;
+      createNewBtn.title = '';
+      createNewBtn.classList.remove('btn-disabled');
+    }
+  }
+
   function renderBattleList(battles) {
     if (!battleListEl) return;
     const user = typeof window.Auth !== 'undefined' && window.Auth.getCurrentUser ? window.Auth.getCurrentUser() : null;
-    const username = user?.username || '';
-    const balance = user?.balance ?? 0;
+    const username = user?.username || user?.uid || '';
+    const balance = getEffectiveBalance();
+    updateCreateBattleButton(battles);
     battleListEl.innerHTML = battles.length === 0
       ? '<p class="case-battle-empty">No active battles. Click "Create battle" to start one.</p>'
       : battles
@@ -264,12 +298,6 @@
                 ? `<span class="cb-card-case-thumb" title="${escapeHtml(label)}"><img src="${escapeHtml(img)}" alt="" onerror="this.style.display='none'"></span>`
                 : `<span class="cb-card-case-pill" title="${escapeHtml(label)}">${escapeHtml(name)}${x.count > 1 ? ' ×' + x.count : ''}</span>`;
             }).slice(0, 8);
-            const canAfford = balance >= entryEach;
-            const joinBtn = hasEmpty && username && !mySlot
-              ? (canAfford
-                ? `<button type="button" class="btn btn-cb-join" data-id="${escapeHtml(b.id)}">Join for ${formatDollars(entryEach)}</button>`
-                : `<button type="button" class="btn btn-cb-join-disabled" disabled>Join for ${formatDollars(entryEach)}</button>`)
-              : '';
             const watchBtn = `<button type="button" class="btn btn-cb-watch" data-id="${escapeHtml(b.id)}">${filled >= b.totalSlots ? 'Watch' : 'View'}</button>`;
             return `<div class="case-battle-card" data-id="${escapeHtml(b.id)}" role="button" tabindex="0">
               <div class="cb-card-cases">${caseThumbs.join('')}</div>
@@ -285,9 +313,8 @@
                   ${hasEmpty ? `<span class="cb-card-waiting">${filled}/${b.totalSlots} slots</span>` : ''}
                 </div>
               </div>
-              <div class="cb-card-actions" onclick="event.stopPropagation()">
+              <div class="cb-card-actions">
                 ${mySlot ? '<span class="cb-you-in">You are in</span>' : ''}
-                ${joinBtn}
                 ${watchBtn}
               </div>
             </div>`;
@@ -307,12 +334,6 @@
     const card = e.target.closest('.case-battle-card');
     if (!card) return;
     const id = card.getAttribute('data-id');
-    if (e.target.closest('.btn-cb-join')) {
-      e.preventDefault();
-      e.stopPropagation();
-      joinBattle(id);
-      return;
-    }
     if (e.target.closest('.btn-cb-watch')) {
       e.preventDefault();
       e.stopPropagation();
@@ -339,19 +360,24 @@
     showBattleDetail(card.getAttribute('data-id'));
   }
 
+  function getItemsForCase(caseId, battle) {
+    if (battle && battle.caseDefs && caseId != null && battle.caseDefs[caseId] && Array.isArray(battle.caseDefs[caseId].items)) {
+      return battle.caseDefs[caseId].items;
+    }
+    const c = findCaseById(caseId);
+    return (c && Array.isArray(c.items)) ? c.items : [];
+  }
+
   function openCasesPopover(battleId, anchor) {
     const battle = lastBattles.find((b) => b.id === battleId);
     if (!battle || !battle.cases || battle.cases.length === 0) return;
-    const items = battle.cases.map((x) => ({
-      name: getCaseName(x.caseId),
-      count: x.count || 1,
-      image: getCaseImage(x.caseId),
-    }));
-    showCasesModal(items, null);
+    openBattleCasesPopup(battle);
   }
 
   function showListView() {
     currentBattleId = null;
+    window.__caseBattleBlockStatsRefresh = false;
+    if (window.Game && window.Game.unfreezeBalance) window.Game.unfreezeBalance();
     jackpotSliderAnimationRunning = false;
     if (detailPollInterval) {
       clearInterval(detailPollInterval);
@@ -368,11 +394,13 @@
     if (!id) return;
     if (id !== currentBattleId) currentReplayRound = 0;
     currentBattleId = id;
+    window.__caseBattleBlockStatsRefresh = true;
+    if (window.Game && window.Game.freezeBalance) window.Game.freezeBalance();
     if (listView) { listView.classList.add('hidden'); listView.style.display = 'none'; }
     if (detailView) { detailView.classList.remove('hidden'); detailView.style.display = 'flex'; }
     const newHash = '#case-battle/' + encodeURIComponent(id);
     if (window.location.hash !== newHash) {
-      window.history.pushState(null, '', newHash);
+      window.history.replaceState(null, '', newHash);
     }
     await loadAndRenderDetail(id);
   }
@@ -387,7 +415,13 @@
         await loadBattles();
         return;
       }
-      renderDetailView(data.battle);
+      const battle = data.battle;
+      // Never refresh stats/balance while we are on the battle detail view (any game mode).
+      // Balance is updated only when battle is finished AND "Won" / "0$" is visible – from
+      // runOpenStripsAnimation (standard/terminal/coop/crazy) or jackpot slider callback (jackpot).
+      const skipStatsRefresh = currentBattleId != null;
+      if (window.Stats && window.Stats.loadStats && !skipStatsRefresh) await window.Stats.loadStats();
+      renderDetailView(battle);
     } catch (e) {
       showListView();
       await loadBattles();
@@ -402,7 +436,7 @@
     }
     const user = typeof window.Auth !== 'undefined' && window.Auth.getCurrentUser ? window.Auth.getCurrentUser() : null;
     const username = user?.username || '';
-    const balance = user?.balance ?? 0;
+    const balance = getEffectiveBalance();
     const isCreator = battle.createdBy === username;
     const sideCount = new Set(battle.participants.map((p) => p.teamIndex)).size;
     const entryEach = battle.totalPot / Math.max(1, sideCount);
@@ -416,15 +450,11 @@
       return acc;
     }, {});
     let actionsHtml = '';
-    if (!mySlot && hasEmpty) {
-      actionsHtml += canAfford
-        ? `<button type="button" class="btn btn-cb-join-detail" id="cbDetailJoinBtn">Join for ${formatDollars(entryEach)}</button>`
-        : `<button type="button" class="btn btn-cb-join-detail disabled" disabled>Join for ${formatDollars(entryEach)} (insufficient balance)</button>`;
-    }
     if (isCreator && battle.status === 'waiting') {
       actionsHtml += `<button type="button" class="btn btn-cb-delete-battle" id="cbDeleteBattleBtn">Delete battle</button>`;
     }
     const detailCaseItems = (battle.cases || []).map((x) => ({
+      caseId: x.caseId != null ? String(x.caseId) : '',
       name: getCaseName(x.caseId),
       count: x.count || 1,
       image: getCaseImage(x.caseId),
@@ -446,10 +476,11 @@
     const roundLabel = totalRounds > 0 && !isFullyRevealed
       ? `Round ${currentCaseCarouselIndex + 1}/${totalRounds}`
       : totalRounds > 0 ? `${totalRounds} rounds` : '—';
-    const roundCaseName = totalRounds > 0 && !isFullyRevealed && roundCaseList[currentCaseCarouselIndex]
-      ? escapeHtml(roundCaseList[currentCaseCarouselIndex].name) : '';
-    const roundCasePrice = totalRounds > 0 && !isFullyRevealed && roundCaseList[currentCaseCarouselIndex] && roundCaseList[currentCaseCarouselIndex].price != null
-      ? formatDollars(roundCaseList[currentCaseCarouselIndex].price) : '';
+    const currentRoundCase = totalRounds > 0 && !isFullyRevealed ? roundCaseList[currentCaseCarouselIndex] : null;
+    const roundCaseName = currentRoundCase ? escapeHtml(currentRoundCase.name) : '';
+    const roundCasePrice = currentRoundCase && currentRoundCase.price != null ? formatDollars(currentRoundCase.price) : '';
+    const roundCaseImage = currentRoundCase && currentRoundCase.image ? currentRoundCase.image : '';
+    const roundCaseId = currentRoundCase ? currentRoundCase.caseId : '';
     const isJackpotMode = (battle.mode || '').toLowerCase() === 'jackpot';
     const jackpotRevealShown = isJackpotMode && jackpotRevealShownForBattleId === battle.id;
     const showJackpotSlider = battle.status === 'finished' && isFullyRevealed && isJackpotMode && !jackpotRevealShown;
@@ -484,7 +515,7 @@
       </div>
       <div class="cb-detail-round-bar" id="cbDetailRoundBar">
         <span class="cb-round-bar-label">${roundLabel}</span>
-        ${roundCaseName ? `<span class="cb-round-bar-sep">|</span><span class="cb-round-bar-case">${roundCaseName}</span>` : ''}
+        ${roundCaseName ? `<span class="cb-round-bar-sep">|</span><button type="button" class="cb-round-bar-case-wrap" id="cbRoundBarCaseBtn" data-case-id="${escapeHtml(roundCaseId)}" data-case-name="${escapeHtml(currentRoundCase ? currentRoundCase.name : '')}" data-case-price="${currentRoundCase && currentRoundCase.price != null ? currentRoundCase.price : ''}"><span class="cb-round-bar-case">${roundCaseName}</span>${roundCaseImage ? `<img src="${escapeHtml(roundCaseImage)}" alt="" class="cb-round-bar-case-img" onerror="this.style.display='none'">` : ''}</button>` : ''}
         ${roundCasePrice ? `<span class="cb-round-bar-sep">|</span><span class="cb-round-bar-price">${roundCasePrice}</span>` : ''}
       </div>
       <div class="cb-detail-main-layout">
@@ -509,17 +540,6 @@
         if (currentBattleId) loadAndRenderDetail(currentBattleId);
       }, 1000);
     }
-    if (battle.status === 'finished' && battle.participants.some((p) => p.username === username)) {
-      if (!isJackpotMode || jackpotRevealShown) {
-        if (window.Stats && window.Stats.loadStats) {
-          window.Stats.loadStats().then(() => {
-            if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
-          });
-        } else if (window.Auth && window.Auth.updateBalance) {
-          window.Auth.updateBalance();
-        }
-      }
-    }
     detailContent.querySelectorAll('.cb-detail-slot-add-bot').forEach((el) => {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -527,15 +547,33 @@
         addBot(el.getAttribute('data-id'), slot != null ? parseInt(slot, 10) : undefined);
       });
     });
-    const joinBtn = document.getElementById('cbDetailJoinBtn');
-    if (joinBtn) joinBtn.addEventListener('click', () => joinBattle(battle.id));
+    detailContent.querySelectorAll('.cb-detail-slot-join').forEach((el) => {
+      if (el.disabled) return;
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = el.getAttribute('data-id');
+        const slot = el.getAttribute('data-slot');
+        joinBattle(id, slot != null ? parseInt(slot, 10) : undefined);
+      });
+    });
     const deleteBtn = document.getElementById('cbDeleteBattleBtn');
     if (deleteBtn) deleteBtn.addEventListener('click', () => deleteBattle(battle.id));
     const remakeBtn = document.getElementById('cbRemakeBtn');
     if (remakeBtn) remakeBtn.addEventListener('click', () => remakeBattle(battle));
     const viewCasesBtn = document.getElementById('cbViewCasesBtn');
-    const openCasesModal = () => openBattleCasesPopover(detailCaseItems, battle.totalPot);
-    if (viewCasesBtn) viewCasesBtn.addEventListener('click', (e) => { e.stopPropagation(); openCasesModal(); });
+    if (viewCasesBtn) viewCasesBtn.addEventListener('click', (e) => { e.stopPropagation(); openBattleCasesPopup(battle); });
+    const roundBarCaseBtn = document.getElementById('cbRoundBarCaseBtn');
+    if (roundBarCaseBtn) {
+      roundBarCaseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const caseId = roundBarCaseBtn.getAttribute('data-case-id');
+        const caseName = roundBarCaseBtn.getAttribute('data-case-name') || '';
+        const casePrice = roundBarCaseBtn.getAttribute('data-case-price');
+        const priceNum = casePrice === '' || casePrice === null ? null : parseFloat(casePrice);
+        const items = getItemsForCase(caseId, battle);
+        showCaseDetailPopup(caseName, priceNum, items);
+      });
+    }
     detailContent.querySelectorAll('.cb-detail-items-scroll-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -567,6 +605,29 @@
           if (!currentBattleId || !lastDetailBattle || lastDetailBattle.id !== currentBattleId) return;
           jackpotRevealShownForBattleId = battle.id;
           renderDetailView(lastDetailBattle);
+          const userInBattleJackpot = battle.participants && battle.participants.some((p) => {
+            const u = typeof window.Auth !== 'undefined' && window.Auth.getCurrentUser ? window.Auth.getCurrentUser() : null;
+            if (!u) return false;
+            const un = (u.username || u.uid || '').toString().toLowerCase();
+            const pn = (p.username || p.userId || '').toString().toLowerCase();
+            return un && pn && (pn === un || pn === (u.email || '').toLowerCase());
+          });
+          if (userInBattleJackpot) {
+            setTimeout(() => {
+              if (!currentBattleId || lastDetailBattle?.id !== currentBattleId) return;
+              window.__caseBattleBlockStatsRefresh = false;
+              if (window.Game && window.Game.unfreezeBalance) window.Game.unfreezeBalance();
+              if (window.Stats && window.Stats.loadStats) {
+                window.Stats.loadStats().then(() => {
+                  if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
+                  window.__caseBattleBlockStatsRefresh = true;
+                }).catch(() => { window.__caseBattleBlockStatsRefresh = true; });
+              } else {
+                if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
+                window.__caseBattleBlockStatsRefresh = true;
+              }
+            }, 400);
+          }
         });
       } else if (containerEl && winnerTeamIndex == null) {
         jackpotRevealShownForBattleId = battle.id;
@@ -598,6 +659,7 @@
         ${visibleItems.map((it) => `
         <div class="cb-detail-item-card">
           ${it.image ? `<img src="${escapeHtml(it.image)}" alt="" class="cb-detail-item-card-img" onerror="this.style.display='none'">` : '<div class="cb-detail-item-card-placeholder">' + escapeHtml(it.name || '') + '</div>'}
+          <div class="cb-detail-item-card-name">${escapeHtml(it.name || '')}</div>
           <div class="cb-detail-item-card-price">${formatDollars(it.value || 0)}</div>
         </div>`).join('')}
       </div>
@@ -716,8 +778,9 @@
         if (stripEl && stopAt != null) {
           const containerW = stripEl.parentElement ? stripEl.parentElement.offsetWidth : 280;
           const baseX = containerW / 2 - (stopAt * ITEM_WIDTH + ITEM_WIDTH / 2);
+          const exactX = baseX + (offsetPx[pi] || 0);
           stripEl.style.transition = `transform ${SETTLE_MS}ms ease-out`;
-          stripEl.style.transform = 'translateX(' + baseX + 'px)';
+          stripEl.style.transform = 'translateX(' + exactX + 'px)';
           stripEl.querySelectorAll('.cb-open-strip-item-centered').forEach((el) => el.classList.remove('cb-open-strip-item-centered'));
           const centered = stripEl.querySelector('.cb-open-strip-item[data-index="' + stopAt + '"]');
           if (centered) centered.classList.add('cb-open-strip-item-centered');
@@ -737,7 +800,37 @@
       } else {
         currentReplayRound = totalRounds;
         openStripsAnimationRunning = false;
+        const mode = (lastDetailBattle.mode || '').toLowerCase();
+        const isJackpotMode = mode === 'jackpot';
+        const userInBattle = lastDetailBattle.participants && lastDetailBattle.participants.some((p) => {
+          const u = typeof window.Auth !== 'undefined' && window.Auth.getCurrentUser ? window.Auth.getCurrentUser() : null;
+          if (!u) return false;
+          const un = (u.username || u.uid || '').toString().toLowerCase();
+          const pn = (p.username || p.userId || '').toString().toLowerCase();
+          return un && pn && (pn === un || pn === (u.email || '').toLowerCase());
+        });
         renderDetailView(lastDetailBattle);
+        // Update balance only after "Won" / "0$" is visible. Standard, Terminal, Co-op, Crazy all show it here; Jackpot updates in slider callback.
+        if (userInBattle && !isJackpotMode) {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              setTimeout(() => {
+                if (!currentBattleId || !lastDetailBattle || lastDetailBattle.id !== currentBattleId) return;
+                window.__caseBattleBlockStatsRefresh = false;
+                if (window.Game && window.Game.unfreezeBalance) window.Game.unfreezeBalance();
+                if (window.Stats && window.Stats.loadStats) {
+                  window.Stats.loadStats().then(() => {
+                    if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
+                    window.__caseBattleBlockStatsRefresh = true;
+                  }).catch(() => { window.__caseBattleBlockStatsRefresh = true; });
+                } else {
+                  if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
+                  window.__caseBattleBlockStatsRefresh = true;
+                }
+              }, 400);
+            });
+          });
+        }
       }
     };
     setTimeout(onMainAnimationEnd, DURATION_MS + 80);
@@ -860,6 +953,10 @@
       ? roundResults.slice(0, revealedCount).reduce((sum, r) =>
           sum + (r.items || []).reduce((s, it) => s + (Number(it?.value) || 0), 0), 0)
       : 0;
+    const sideCount = new Set((battle.participants || []).map((p) => p.teamIndex)).size;
+    const entryEach = (battle.totalPot || 0) / Math.max(1, sideCount);
+    const hasEmpty = battle.status === 'waiting' && (battle.participants || []).some((p) => !p.username);
+    const canAffordJoin = username && hasEmpty && getEffectiveBalance() >= entryEach;
     const teamIndices = Object.keys(byTeam).map(Number).sort((a, b) => a - b);
     let participantIndex = 0;
     const parts = [];
@@ -898,6 +995,7 @@
             ${visibleItems.map((it) => `
             <div class="cb-detail-item-card">
               ${it.image ? `<img src="${escapeHtml(it.image)}" alt="" class="cb-detail-item-card-img" onerror="this.style.display='none'">` : '<div class="cb-detail-item-card-placeholder">' + escapeHtml(it.name || '') + '</div>'}
+              <div class="cb-detail-item-card-name">${escapeHtml(it.name || '')}</div>
               <div class="cb-detail-item-card-price">${formatDollars(it.value || 0)}</div>
             </div>`).join('')}
           </div>
@@ -906,9 +1004,13 @@
         let slotHtml;
         if (!p.username) {
           const isCreator = battle.createdBy === username;
+          const showJoin = !isCreator && username && battle.status === 'waiting';
           slotHtml = `<div class="cb-detail-slot empty">
             <div class="cb-detail-slot-name">Empty</div>
             ${isCreator ? `<button type="button" class="cb-detail-slot-add-bot" data-id="${escapeHtml(battle.id)}" data-slot="${pi}">Add bot</button>` : ''}
+            ${showJoin ? (canAffordJoin
+              ? `<button type="button" class="cb-detail-slot-join" data-id="${escapeHtml(battle.id)}" data-slot="${pi}">Join for ${formatDollars(entryEach)}</button>`
+              : `<button type="button" class="cb-detail-slot-join cb-detail-slot-join-disabled" disabled>Join for ${formatDollars(entryEach)} (insufficient balance)</button>`) : ''}
           </div>`;
         } else {
           const name = participantDisplayName(p);
@@ -959,13 +1061,66 @@
 
 
   function openBattleCasesPopover(detailCaseItems, totalPot) {
-    const items = (detailCaseItems || []).map((it) => ({
-      name: it.name,
-      count: it.count || 1,
-      image: it.image,
-      price: it.price,
-    }));
-    showCasesModal(items, totalPot);
+    const battle = lastDetailBattle;
+    if (battle) openBattleCasesPopup(battle);
+    else showCasesModal(detailCaseItems || [], totalPot);
+  }
+
+  function openBattleCasesPopup(battle) {
+    if (!battle || !battle.cases || battle.cases.length === 0) return;
+    const byCase = new Map();
+    for (const x of battle.cases || []) {
+      const caseId = String(x.caseId ?? '');
+      const n = Math.max(1, x.count || 1);
+      if (!byCase.has(caseId)) {
+        byCase.set(caseId, { caseId, name: getCaseName(caseId), image: getCaseImage(caseId), price: getCasePrice(caseId), count: 0 });
+      }
+      byCase.get(caseId).count += n;
+    }
+    const casesGrouped = Array.from(byCase.values());
+    const totalPot = battle.totalPot || 0;
+    const existing = document.getElementById('cbCasesPopover');
+    if (existing) existing.remove();
+    const pop = document.createElement('div');
+    pop.id = 'cbCasesPopover';
+    pop.className = 'cb-cases-popover-overlay';
+    pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-modal', 'true');
+    pop.setAttribute('aria-label', 'Cases in this battle');
+    pop.innerHTML = `
+      <div class="cb-cases-popover-backdrop"></div>
+      <div class="cb-cases-popover-modal cb-cases-popover-battle">
+        <div class="cb-cases-popover-title">Cases in this battle</div>
+        <p class="cb-cases-popover-subtitle">Click a case to see contents, price and drop %</p>
+        <div class="cb-cases-popover-list">${casesGrouped.map((it) => `
+          <div class="cb-cases-popover-item cb-cases-popover-item-clickable" data-case-id="${escapeHtml(it.caseId)}" data-case-name="${escapeHtml(it.name)}" data-case-price="${it.price != null ? it.price : ''}" role="button" tabindex="0">
+            ${it.image ? `<img src="${escapeHtml(it.image)}" alt="" class="cb-cases-popover-img" onerror="this.style.display='none'">` : '<div class="cb-cases-popover-img-placeholder">' + escapeHtml((it.name || '').slice(0, 1)) + '</div>'}
+            <div class="cb-cases-popover-item-info">
+              <span class="cb-cases-popover-name">${escapeHtml(it.name)}${it.count > 1 ? ' × ' + it.count : ''}</span>
+              <span class="cb-cases-popover-price">${it.price != null ? formatDollars(it.price) : '—'}</span>
+            </div>
+          </div>`).join('')}
+        </div>
+        ${totalPot > 0 ? `<div class="cb-cases-popover-total">Total pot: ${formatDollars(totalPot)}</div>` : ''}
+        <button type="button" class="cb-cases-popover-close">Close</button>
+      </div>`;
+    document.body.appendChild(pop);
+    pop.classList.add('cb-cases-popover-enter');
+    const close = () => { pop.classList.remove('cb-cases-popover-enter'); pop.classList.add('cb-cases-popover-leave'); setTimeout(() => pop.remove(), 200); };
+    pop.querySelector('.cb-cases-popover-close').addEventListener('click', close);
+    pop.querySelector('.cb-cases-popover-backdrop').addEventListener('click', close);
+    pop.querySelectorAll('.cb-cases-popover-item-clickable').forEach((el) => {
+      el.addEventListener('click', () => {
+        const caseId = el.getAttribute('data-case-id');
+        const caseName = el.getAttribute('data-case-name') || '';
+        const casePrice = el.getAttribute('data-case-price');
+        const priceNum = casePrice === '' ? null : parseFloat(casePrice);
+        const items = getItemsForCase(caseId, battle);
+        close();
+        showCaseDetailPopup(caseName, priceNum, items);
+      });
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); } });
+    });
   }
 
   function showCaseDetailPopup(caseName, casePrice, items) {
@@ -978,7 +1133,8 @@
     pop.setAttribute('aria-modal', 'true');
     pop.setAttribute('aria-label', 'Case details');
     const itemsList = (items || []).map((it) => {
-      const pct = it.probability != null ? Number(it.probability).toFixed(2) + '%' : '—';
+      const raw = it.probability != null ? Number(it.probability) : null;
+      const pct = raw != null ? (raw <= 1 ? (raw * 100).toFixed(2) : raw.toFixed(2)) + '%' : '—';
       return `<div class="cb-case-detail-item">
         ${it.image ? `<img src="${escapeHtml(it.image)}" alt="" class="cb-case-detail-item-img" onerror="this.style.display='none'">` : '<div class="cb-case-detail-item-pl">' + escapeHtml(it.name || '') + '</div>'}
         <div class="cb-case-detail-item-info">
@@ -1005,22 +1161,30 @@
   function showCasesModal(items, totalPot) {
     const existing = document.getElementById('cbCasesPopover');
     if (existing) existing.remove();
+    const byKey = new Map();
+    for (const it of items || []) {
+      const key = (it.caseId != null && it.caseId !== '') ? String(it.caseId) : ((it.name || '') + '\0' + (it.price != null ? it.price : ''));
+      const n = Math.max(1, it.count || 1);
+      if (!byKey.has(key)) byKey.set(key, { ...it, count: 0 });
+      byKey.get(key).count += n;
+    }
+    const grouped = Array.from(byKey.values());
     const pop = document.createElement('div');
     pop.id = 'cbCasesPopover';
     pop.className = 'cb-cases-popover-overlay';
     pop.setAttribute('role', 'dialog');
     pop.setAttribute('aria-modal', 'true');
     pop.setAttribute('aria-label', 'Cases in this battle');
-    const hasPrices = totalPot != null && items.some((it) => it.price != null);
+    const hasPrices = totalPot != null && grouped.some((it) => it.price != null);
     pop.innerHTML = `
       <div class="cb-cases-popover-backdrop"></div>
       <div class="cb-cases-popover-modal cb-cases-popover-battle">
         <div class="cb-cases-popover-title">Cases in this battle</div>
-        <div class="cb-cases-popover-list">${items.map((it) => `
+        <div class="cb-cases-popover-list">${grouped.map((it) => `
           <div class="cb-cases-popover-item">
             ${it.image ? `<img src="${escapeHtml(it.image)}" alt="" class="cb-cases-popover-img" onerror="this.style.display='none'">` : ''}
             <div class="cb-cases-popover-item-info">
-              <span class="cb-cases-popover-name">${escapeHtml(it.name)}${it.count > 1 ? ' ×' + it.count : ''}</span>
+              <span class="cb-cases-popover-name">${escapeHtml(it.name)}${it.count > 1 ? ' × ' + it.count : ''}</span>
               ${hasPrices && it.price != null ? `<span class="cb-cases-popover-price">${formatDollars(it.price || 0)} each</span>` : ''}
             </div>
           </div>`).join('')}
@@ -1068,7 +1232,13 @@
     }
   }
 
-  let addCasesTempCounts = {};
+  let addCasesTempQueue = []; // ordered array of { caseId, count }
+  const addCasesQueueListEl = document.getElementById('cbAddCasesQueueList');
+  const addCasesQueueTotalEl = document.getElementById('cbAddCasesQueueTotal');
+
+  function getQueueTotalForCase(caseId) {
+    return addCasesTempQueue.filter((e) => String(e.caseId) === String(caseId)).reduce((s, e) => s + e.count, 0);
+  }
 
   function getSortedCases() {
     const sort = addCasesSort?.value || 'price_high_low';
@@ -1088,6 +1258,11 @@
     return list;
   }
 
+  function updateCaseCountDisplay(caseId) {
+    const display = addCasesList?.querySelector(`.cb-add-cases-item-count-display[data-case-id="${caseId}"]`);
+    if (display) display.textContent = getQueueTotalForCase(caseId);
+  }
+
   function renderAddCasesModalList() {
     if (!addCasesList) return;
     const filtered = getFilteredCases();
@@ -1099,9 +1274,9 @@
       .map(
         (c) => {
           const usage = c.usageCount ?? 0;
-          const count = addCasesTempCounts[c.id] ?? 0;
+          const count = getQueueTotalForCase(c.id);
           return `<div class="cb-add-cases-item" data-case-id="${escapeHtml(c.id)}">
-            <div class="cb-add-cases-item-info">
+            <div class="cb-add-cases-item-info" data-case-id="${escapeHtml(c.id)}" role="button" tabindex="0" title="Click to view case contents">
               <div class="cb-add-cases-item-name">${escapeHtml(c.name)}</div>
               <div class="cb-add-cases-item-meta">${formatDollars(c.price)} · Used ${usage}×</div>
             </div>
@@ -1114,46 +1289,98 @@
         }
       )
       .join('');
+    // + button: append to queue (group consecutive same-case clicks)
     addCasesList.querySelectorAll('.cb-add-cases-item-plus').forEach((el) => {
       el.addEventListener('click', () => {
         const caseId = el.getAttribute('data-case-id');
-        addCasesTempCounts[caseId] = (addCasesTempCounts[caseId] ?? 0) + 1;
-        const display = addCasesList.querySelector(`.cb-add-cases-item-count-display[data-case-id="${caseId}"]`);
-        if (display) display.textContent = addCasesTempCounts[caseId];
+        const last = addCasesTempQueue[addCasesTempQueue.length - 1];
+        if (last && String(last.caseId) === String(caseId)) {
+          last.count++;
+        } else {
+          addCasesTempQueue.push({ caseId, count: 1 });
+        }
+        updateCaseCountDisplay(caseId);
+        renderAddCasesQueue();
       });
     });
+    // − button: decrement last entry with this caseId
     addCasesList.querySelectorAll('.cb-add-cases-item-minus').forEach((el) => {
       el.addEventListener('click', () => {
         const caseId = el.getAttribute('data-case-id');
-        const cur = addCasesTempCounts[caseId] ?? 0;
-        if (cur > 0) {
-          addCasesTempCounts[caseId] = cur - 1;
-          const display = addCasesList.querySelector(`.cb-add-cases-item-count-display[data-case-id="${caseId}"]`);
-          if (display) display.textContent = addCasesTempCounts[caseId];
+        for (let i = addCasesTempQueue.length - 1; i >= 0; i--) {
+          if (String(addCasesTempQueue[i].caseId) === String(caseId)) {
+            addCasesTempQueue[i].count--;
+            if (addCasesTempQueue[i].count <= 0) addCasesTempQueue.splice(i, 1);
+            break;
+          }
         }
+        updateCaseCountDisplay(caseId);
+        renderAddCasesQueue();
+      });
+    });
+    // Click case info to show detail popup
+    addCasesList.querySelectorAll('.cb-add-cases-item-info').forEach((el) => {
+      el.addEventListener('click', () => {
+        const caseId = el.getAttribute('data-case-id');
+        const c = casesList.find((x) => String(x.id) === String(caseId));
+        if (c) showCaseDetailPopup(c.name, c.price, c.items || []);
       });
     });
   }
 
-  function applyAddCasesAndClose() {
-    battleCasesForCreate = [];
-    for (const [caseId, count] of Object.entries(addCasesTempCounts)) {
-      if (count > 0) battleCasesForCreate.push({ caseId, count });
+  function renderAddCasesQueue() {
+    if (!addCasesQueueListEl) return;
+    if (addCasesTempQueue.length === 0) {
+      addCasesQueueListEl.innerHTML = '<p class="cb-add-cases-queue-empty">Click + to add cases</p>';
+    } else {
+      addCasesQueueListEl.innerHTML = addCasesTempQueue.map((entry, i) => {
+        const c = casesList.find((x) => String(x.id) === String(entry.caseId));
+        const name = c ? c.name : String(entry.caseId);
+        return `<div class="cb-add-cases-queue-row" data-qi="${i}">
+          <span class="cb-add-cases-queue-index">${i + 1}.</span>
+          <span class="cb-add-cases-queue-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+          <span class="cb-add-cases-queue-count">×${entry.count}</span>
+          <button type="button" class="cb-add-cases-queue-remove" data-qi="${i}" aria-label="Remove">×</button>
+        </div>`;
+      }).join('');
     }
+    // Remove button handler
+    addCasesQueueListEl.querySelectorAll('.cb-add-cases-queue-remove').forEach((el) => {
+      el.addEventListener('click', () => {
+        const qi = parseInt(el.getAttribute('data-qi'), 10);
+        const removed = addCasesTempQueue.splice(qi, 1)[0];
+        if (removed) updateCaseCountDisplay(removed.caseId);
+        renderAddCasesQueue();
+      });
+    });
+    // Update total cost
+    if (addCasesQueueTotalEl) {
+      let total = 0;
+      for (const entry of addCasesTempQueue) {
+        const c = casesList.find((x) => String(x.id) === String(entry.caseId));
+        if (c) total += (c.price || 0) * entry.count;
+      }
+      const totalRounds = addCasesTempQueue.reduce((s, e) => s + e.count, 0);
+      addCasesQueueTotalEl.innerHTML = addCasesTempQueue.length > 0
+        ? `<span>${totalRounds} round${totalRounds !== 1 ? 's' : ''} · ${formatDollars(total)}</span>`
+        : '';
+    }
+  }
+
+  function applyAddCasesAndClose() {
+    battleCasesForCreate = addCasesTempQueue.map((e) => ({ caseId: e.caseId, count: e.count }));
     renderBattleCasesForCreate();
     updateEntryTotal();
     closeAddCasesModal();
   }
 
   function openAddCasesModal() {
-    addCasesTempCounts = {};
-    for (const { caseId, count } of battleCasesForCreate) {
-      addCasesTempCounts[caseId] = (addCasesTempCounts[caseId] ?? 0) + count;
-    }
+    addCasesTempQueue = battleCasesForCreate.map((e) => ({ caseId: e.caseId, count: e.count }));
     loadCases().then(() => {
       if (addCasesModal) {
         addCasesModal.classList.remove('hidden');
         renderAddCasesModalList();
+        renderAddCasesQueue();
         casesSearchInput?.focus();
       }
     });
@@ -1164,7 +1391,9 @@
   }
 
   async function loadBattles() {
+    if (currentBattleId) return;
     try {
+      if (window.Stats && window.Stats.loadStats) await window.Stats.loadStats();
       const res = await fetch(API + '/battles', { headers: getAuthHeaders() });
       const data = await res.json();
       lastBattles = data.battles || [];
@@ -1296,12 +1525,12 @@
     }
   }
 
-  async function joinBattle(id) {
+  async function joinBattle(id, slotIndex) {
     try {
       const res = await fetch(API + '/battles/' + encodeURIComponent(id) + '/join', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({}),
+        body: JSON.stringify(slotIndex != null ? { slotIndex } : {}),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1358,6 +1587,8 @@
   }
 
   function onHide() {
+    window.__caseBattleBlockStatsRefresh = false;
+    if (window.Game && window.Game.unfreezeBalance) window.Game.unfreezeBalance();
     if (pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;

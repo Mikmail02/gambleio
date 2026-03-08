@@ -155,6 +155,7 @@ const Stats = {
 
   async loadStats() {
     if (!window.Auth || !window.Auth.isAuthenticated()) return;
+    if (window.__caseBattleBlockStatsRefresh) return;
     const cached = this._restoreFromCache();
     try {
       const res = await this._fetch(`${this.apiBase}/user/stats`, {
@@ -386,7 +387,9 @@ const Stats = {
       });
       if (!res.ok) return null;
       const data = await res.json();
-      Game.balance = data.balance;
+      if (!window.__caseBattleBlockStatsRefresh) {
+        Game.balance = data.balance;
+      }
       Game.totalClickEarnings = data.totalClickEarnings ?? Game.totalClickEarnings;
       Game.totalClicks = data.totalClicks ?? Game.totalClicks;
       return data;

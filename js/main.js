@@ -307,6 +307,8 @@
     let page = validPages.includes(hash) ? hash : 'home';
     if (hash.startsWith('profile/')) {
       page = 'profile';
+    } else if (hash.startsWith('case-battle/')) {
+      page = 'case-battle';
     }
     showPage(page, hash.startsWith('profile/') ? decodeURIComponent(hash.slice(hash.indexOf('/') + 1)) : (page === 'profile' ? null : undefined));
     
@@ -598,14 +600,16 @@
         pendingClickCount += countToSend;
         updateClickerPendingDisplay();
       } else {
-        Game.balance = result.balance;
-        updateBalance();
+        if (!window.__caseBattleBlockStatsRefresh) {
+          Game.balance = result.balance;
+          updateBalance();
+        }
       }
     } else {
       Game.balance = (Game.balance || 0) + toSend;
       Game.totalClickEarnings = (Game.totalClickEarnings || 0) + toSend;
       Game.totalClicks = (Game.totalClicks || 0) + countToSend;
-      updateBalance();
+      if (!window.__caseBattleBlockStatsRefresh) updateBalance();
     }
   }
 

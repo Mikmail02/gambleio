@@ -498,6 +498,39 @@
         <div class="patch-notes-container">
           <h2 class="patch-notes-page-title">Patch notes</h2>
           <div class="patch-notes-grid">
+            <article class="patch-note-card slot-game-card" id="patch-v1-5" tabindex="0" role="button" data-expanded="false" aria-label="Patch notes v1.5, click to open">
+              <div class="patch-note-card-preview slot-game-card-image">
+                <span class="patch-note-card-preview-label">Patch notes v1.5</span>
+                <span class="slot-game-card-play">View</span>
+              </div>
+              <div class="patch-note-card-expanded-content">
+                <header class="patch-note-card-header">
+                  <h3 class="patch-note-card-title">Patch notes v1.5</h3>
+                  <p class="patch-note-card-meta">Latest update</p>
+                </header>
+                <div class="patch-note-card-body">
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">Case Battle improvements</h4>
+                  <p class="patch-note-section-desc">Major fixes and polish for case battles.</p>
+                  <ul class="patch-note-list">
+                    <li><strong>Fixed winner payout</strong> — Winner now receives the full pot (entry cost × all sides), not just the creator's entry</li>
+                    <li><strong>Fixed win display</strong> — Only the winner shows a green win amount; other players show $0</li>
+                    <li><strong>Balance stays hidden</strong> — Your balance no longer updates mid-battle; it only reveals after the animation finishes</li>
+                    <li><strong>Faster round transitions</strong> — Reduced pause between case openings</li>
+                    <li><strong>Items lock in place</strong> — Opened items stay visible after each round instead of disappearing</li>
+                    <li><strong>Shareable battle links</strong> — Copy the URL and send it on Discord to invite others directly into your battle</li>
+                    <li><strong>View/Watch button fixed</strong> — Clicking View now properly opens the battle</li>
+                    <li><strong>Compact round bar</strong> — Replaced the large case image header with a clean round indicator</li>
+                    <li><strong>Center pointer</strong> — Added a pointer indicator on the opening strip so you can see where it lands</li>
+                    <li><strong>Ordered case queue</strong> — New panel in Add Cases shows the exact round order; cases play in the sequence you add them</li>
+                    <li><strong>Case preview</strong> — Click any case in the Add Cases popup to see its items, prices, and drop rates</li>
+                    <li><strong>1 battle limit</strong> — You can only have one active battle at a time; Create button greys out until your current battle finishes</li>
+                    <li><strong>Auto-cleanup</strong> — Finished battles disappear from the list after 5 seconds</li>
+                  </ul>
+                </section>
+                </div>
+              </div>
+            </article>
             <article class="patch-note-card slot-game-card" id="patch-v1-4" tabindex="0" role="button" data-expanded="false" aria-label="Patch notes v1.4, click to open">
               <div class="patch-note-card-preview slot-game-card-image">
                 <span class="patch-note-card-preview-label">Patch notes v1.4</span>
@@ -506,7 +539,7 @@
               <div class="patch-note-card-expanded-content">
                 <header class="patch-note-card-header">
                   <h3 class="patch-note-card-title">Patch notes v1.4</h3>
-                  <p class="patch-note-card-meta">Latest update</p>
+                  <p class="patch-note-card-meta">Blackjack & Case Battle</p>
                 </header>
                 <div class="patch-note-card-body">
                 <section class="patch-note-section">
@@ -828,21 +861,28 @@
         <div id="cbAddCasesModal" class="cb-add-cases-modal hidden" aria-modal="true" role="dialog" aria-label="Add cases to battle">
           <div class="cb-add-cases-backdrop"></div>
           <div class="cb-add-cases-content">
-            <div class="cb-add-cases-head">
-              <h3 class="cb-add-cases-title">Add cases</h3>
-              <button type="button" class="cb-add-cases-close" id="cbAddCasesClose" aria-label="Close">×</button>
+            <div class="cb-add-cases-main">
+              <div class="cb-add-cases-head">
+                <h3 class="cb-add-cases-title">Add cases</h3>
+                <button type="button" class="cb-add-cases-close" id="cbAddCasesClose" aria-label="Close">×</button>
+              </div>
+              <div class="cb-add-cases-toolbar">
+                <input type="text" id="cbCasesSearch" class="cb-add-cases-search" placeholder="Search cases..." aria-label="Search cases">
+                <select id="cbCasesSort">
+                  <option value="price_high_low">Price: high → low</option>
+                  <option value="price_low_high">Price: low → high</option>
+                  <option value="most_played">Most played</option>
+                </select>
+              </div>
+              <div id="cbAddCasesList" class="cb-add-cases-list"></div>
+              <div class="cb-add-cases-footer">
+                <button type="button" class="btn btn-cb-add-cases-confirm" id="cbAddCasesConfirmBtn">Add cases</button>
+              </div>
             </div>
-            <div class="cb-add-cases-toolbar">
-              <input type="text" id="cbCasesSearch" class="cb-add-cases-search" placeholder="Search cases..." aria-label="Search cases">
-              <select id="cbCasesSort">
-                <option value="price_high_low">Price: high → low</option>
-                <option value="price_low_high">Price: low → high</option>
-                <option value="most_played">Most played</option>
-              </select>
-            </div>
-            <div id="cbAddCasesList" class="cb-add-cases-list"></div>
-            <div class="cb-add-cases-footer">
-              <button type="button" class="btn btn-cb-add-cases-confirm" id="cbAddCasesConfirmBtn">Add cases</button>
+            <div class="cb-add-cases-queue" id="cbAddCasesQueue">
+              <h4 class="cb-add-cases-queue-title">Battle order</h4>
+              <div class="cb-add-cases-queue-list" id="cbAddCasesQueueList"></div>
+              <div class="cb-add-cases-queue-total" id="cbAddCasesQueueTotal"></div>
             </div>
           </div>
         </div>
