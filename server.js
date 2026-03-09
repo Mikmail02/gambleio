@@ -2322,8 +2322,8 @@ app.post('/api/crash/bet', async (req, res) => {
   res.json({ balance: user.balance, bet: amount });
 });
 
-// --- Mines: 5x5 grid, N mines, RTP 97% ---
-const MINES_RTP = 0.97;
+// --- Mines: 5x5 grid, N mines, RTP 98% ---
+const MINES_RTP = 0.98;
 const MINES_GRID_SIZE = 25;
 const minesRounds = new Map();
 
@@ -3116,7 +3116,7 @@ async function runCaseBattle(battleId) {
   battle.finishedAt = Date.now();
   battle.animationStartedAt = Date.now();
   battle.animationDurationPerRound = 5500;
-  battle.animationPausePerRound = 800;
+  battle.animationPausePerRound = 500;
   battle.result = { ...result, roundResults, stripData };
 }
 
@@ -3153,13 +3153,14 @@ app.post('/api/case-battle/cases', requireAdmin, async (req, res) => {
   }
   const rtp = Number(rtpDecimal);
   if (!Number.isFinite(rtp) || rtp <= 0 || rtp > 1) {
-    return res.status(400).json({ error: 'RTP must be decimal 0–1 (e.g. 0.95)' });
+    return res.status(400).json({ error: 'RTP must be decimal 0–1 (e.g. 0.96)' });
   }
   const normalized = items.map((i) => ({
     value: Number(i.value) || 0,
     probability: Number(i.probability) != null ? Number(i.probability) / 100 : 0,
     name: i.name || '',
     image: i.image || '',
+    rarity: i.rarity || 'common',
   }));
   const result = caseBattleMath.calculateCasePrice(normalized, rtp);
   if (!result.success) return res.status(400).json({ error: result.error });
@@ -3194,6 +3195,56 @@ app.post('/api/case-battle/cases', requireAdmin, async (req, res) => {
   }
   caseBattleCases.set(id, doc);
   res.json({ case: doc });
+});
+
+app.put('/api/case-battle/cases/:id', requireAdmin, async (req, res) => {
+  const caseId = String(req.params.id);
+  const existing = caseBattleCases.get(caseId);
+  if (!existing) return res.status(404).json({ error: 'Case not found' });
+  const { name, rtpDecimal, items } = req.body || {};
+  if (!name || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Name and items required' });
+  }
+  const rtp = Number(rtpDecimal);
+  if (!Number.isFinite(rtp) || rtp <= 0 || rtp > 1) {
+    return res.status(400).json({ error: 'RTP must be decimal 0–1' });
+  }
+  const normalized = items.map((i) => ({
+    value: Number(i.value) || 0,
+    probability: Number(i.probability) / 100,
+    name: i.name || '',
+    image: i.image || '',
+    rarity: i.rarity || 'common',
+  }));
+  const result = caseBattleMath.calculateCasePrice(normalized, rtp);
+  if (!result.success) return res.status(400).json({ error: result.error });
+  const updated = {
+    ...existing,
+    name: String(name).trim(),
+    rtpDecimal: rtp,
+    price: result.price,
+    expectedValue: result.ev,
+    items: normalized.map((i) => ({ ...i, probability: i.probability * 100 })),
+  };
+  caseBattleCases.set(caseId, updated);
+  if (useDb) {
+    try { await db.saveCaseBattleCase({ ...updated, id: caseId }); } catch (e) { console.error('Update case failed:', e.message || e); }
+  } else {
+    saveCaseBattleCasesToFile();
+  }
+  res.json({ case: updated });
+});
+
+app.delete('/api/case-battle/cases/:id', requireAdmin, async (req, res) => {
+  const caseId = String(req.params.id);
+  if (!caseBattleCases.has(caseId)) return res.status(404).json({ error: 'Case not found' });
+  caseBattleCases.delete(caseId);
+  if (useDb) {
+    try { await db.deleteCaseBattleCase(caseId); } catch (e) { console.error('Delete case failed:', e.message || e); }
+  } else {
+    saveCaseBattleCasesToFile();
+  }
+  res.json({ ok: true });
 });
 
 async function enrichBattleParticipants(battle) {

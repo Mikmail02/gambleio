@@ -15,7 +15,6 @@
     <div class="app-body">
     <header class="header">
       <div class="header-left">
-        <button type="button" class="chat-toggle chat-toggle-header" id="chatToggle" title="Open chat" aria-label="Open chat">💬</button>
         <div class="header-logo-wrap">
           <a href="#home" class="logo-link" aria-label="Gambleio home">
             <h1 class="logo">
@@ -61,6 +60,7 @@
     </header>
 
     <div class="chat-panel-wrap chat-panel-wrap--closed" id="chatPanelWrap" aria-label="Chat">
+      <button type="button" class="chat-toggle" id="chatToggle" aria-label="Toggle chat"><span class="chat-toggle-label">Chat</span></button>
       <div class="chat-panel" id="chatPanel">
         <div id="chatRulesOverlay" class="chat-rules-overlay hidden" aria-hidden="true">
           <div class="chat-rules-popup">
@@ -746,7 +746,10 @@
 
       <!-- Casebattle -->
       <section id="page-case-battle" class="page page-case-battle hidden">
-        <button type="button" class="cb-add-custom-case-btn" id="cbAddCustomCaseBtn" aria-label="Add custom case">+ Add Custom Case</button>
+        <div class="cb-admin-btns" id="cbAdminBtns">
+          <button type="button" class="cb-add-custom-case-btn" id="cbAddCustomCaseBtn" aria-label="Add custom case">+ Add Custom Case</button>
+          <button type="button" class="cb-edit-cases-btn" id="cbEditCasesBtn" aria-label="Edit custom cases">Edit Custom Cases</button>
+        </div>
         <div class="case-battle-container">
           <!-- List view: battles + create button -->
           <div id="cbListView" class="cb-list-view">
@@ -827,7 +830,7 @@
               </div>
               <div class="cb-add-case-field">
                 <label for="cbRtp">RTP (%)</label>
-                <input type="number" id="cbRtp" min="1" max="100" step="0.5" value="95" placeholder="95">
+                <input type="number" id="cbRtp" min="1" max="100" step="0.5" value="96" placeholder="96">
               </div>
               <div class="cb-add-case-items-wrap">
                 <div class="cb-add-case-items-head">
@@ -841,6 +844,7 @@
                         <th>Image URL</th>
                         <th>Value ($)</th>
                         <th>%</th>
+                        <th>Rarity</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -856,6 +860,18 @@
                 <button type="button" class="btn btn-cb-save-case" id="cbSaveCase">Save case</button>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- Edit Custom Cases modal -->
+        <div id="cbEditCasesModal" class="cb-edit-cases-modal hidden" aria-modal="true" role="dialog" aria-label="Edit custom cases">
+          <div class="cb-edit-cases-backdrop"></div>
+          <div class="cb-edit-cases-content">
+            <div class="cb-edit-cases-head">
+              <h3 class="cb-edit-cases-title">Custom Cases</h3>
+              <button type="button" class="cb-edit-cases-close" id="cbEditCasesClose" aria-label="Close">×</button>
+            </div>
+            <div id="cbEditCasesList" class="cb-edit-cases-list"></div>
           </div>
         </div>
 

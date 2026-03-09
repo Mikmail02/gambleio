@@ -1,10 +1,10 @@
 /**
  * Mines: 5x5 grid, N mines (1-24). Click safe tiles to multiply. Hit mine = lose.
- * RTP 97%. P(nå s) = C(25-s,N)/C(25,N), Multiplier(s) = 0.97 / P(nå s).
+ * RTP 98%. P(nå s) = C(25-s,N)/C(25,N), Multiplier(s) = 0.98 / P(nå s).
  */
 (function () {
   const GRID_SIZE = 25;
-  const RTP = 0.97;
+  const RTP = 0.98;
 
   function binom(n, k) {
     if (k < 0 || k > n) return 0;
@@ -291,9 +291,6 @@
       state.roundId = null;
       if (window.Game) window.Game.balance = data.balance;
       if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
-      if (window.Stats && window.Stats.win) {
-        await window.Stats.win(data.winAmount, data.multiplier, state.bet, 'mines');
-      }
       if (window.LiveStats) window.LiveStats.recordRound('mines', state.bet, data.winAmount);
       if (fromAutobet && state.autoRunning) {
         state.autoRunning = false;

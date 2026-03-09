@@ -208,8 +208,8 @@
   function openPanel() {
     if (wrap) {
       wrap.classList.remove('chat-panel-wrap--closed');
-      if (toggleBtn) toggleBtn.setAttribute('title', 'Close chat');
       if (toggleBtn) toggleBtn.setAttribute('aria-label', 'Close chat');
+      try { localStorage.removeItem('chatClosed'); } catch (e) {}
       loadMessages();
       refreshMuteState();
       if (muteCheckTimer) clearInterval(muteCheckTimer);
@@ -222,8 +222,8 @@
   function closePanel() {
     if (wrap) {
       wrap.classList.add('chat-panel-wrap--closed');
-      if (toggleBtn) toggleBtn.setAttribute('title', 'Open chat');
       if (toggleBtn) toggleBtn.setAttribute('aria-label', 'Open chat');
+      try { localStorage.setItem('chatClosed', '1'); } catch (e) {};
       if (muteCheckTimer) { clearInterval(muteCheckTimer); muteCheckTimer = null; }
       if (messagePollTimer) { clearInterval(messagePollTimer); messagePollTimer = null; }
       if (delayClearTimer) { clearTimeout(delayClearTimer); delayClearTimer = null; }
@@ -416,6 +416,10 @@
 
   function init() {
     bind();
+    // Open by default unless user has explicitly closed it
+    let userClosed = false;
+    try { userClosed = localStorage.getItem('chatClosed') === '1'; } catch (e) {}
+    if (!userClosed) openPanel();
     if (globalMessagePollTimer) clearInterval(globalMessagePollTimer);
     globalMessagePollTimer = setInterval(loadMessages, 500);
   }

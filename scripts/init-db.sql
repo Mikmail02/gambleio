@@ -83,3 +83,7 @@ CREATE TABLE IF NOT EXISTS case_battle_cases (
   is_active BOOLEAN DEFAULT TRUE,
   usage_count INTEGER DEFAULT 0
 );
+
+-- Migration: add items/usage_count if table was created by init-case-battle.sql (no items column)
+ALTER TABLE case_battle_cases ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE case_battle_cases ADD COLUMN IF NOT EXISTS usage_count INTEGER DEFAULT 0;

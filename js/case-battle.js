@@ -59,7 +59,13 @@
   const createNewBtn = document.getElementById('cbCreateNewBtn');
   const detailContent = document.getElementById('cbDetailContent');
 
-  let caseFormItems = [{ name: '', image: '', value: '', probability: '' }];
+  let caseFormItems = [{ name: '', image: '', value: '', probability: '', rarity: 'common' }];
+  let editingCaseId = null;
+  const editCasesBtn = document.getElementById('cbEditCasesBtn');
+  const editCasesModal = document.getElementById('cbEditCasesModal');
+  const editCasesClose = document.getElementById('cbEditCasesClose');
+  const editCasesListEl = document.getElementById('cbEditCasesList');
+  const addCaseTitleEl = document.querySelector('#cbAddCaseModal .cb-add-case-title');
 
   function escapeHtml(s) {
     if (s == null) return '';
@@ -100,11 +106,13 @@
       const imgEl = row.querySelector('.cb-item-image');
       const valEl = row.querySelector('.cb-item-value');
       const pctEl = row.querySelector('.cb-item-pct');
+      const rarityEl = row.querySelector('.cb-item-rarity');
       next.push({
         name: (nameEl?.value ?? '').trim(),
         image: (imgEl?.value ?? '').trim(),
         value: valEl?.value !== '' ? String(valEl?.value) : '',
         probability: pctEl?.value !== '' && pctEl?.value != null ? String(pctEl?.value) : '',
+        rarity: rarityEl?.value || 'common',
       });
     });
     if (next.length > 0) caseFormItems = next;
@@ -116,10 +124,16 @@
       .map(
         (item, i) =>
           `<tr class="cb-item-row" data-i="${i}">
-            <td class="cb-add-case-col-name"><input type="text" class="cb-item-name" data-i="${i}" placeholder="Name" value="${escapeHtml(item.name)}"></td>
+            <td class="cb-add-case-col-name"><input type="text" class="cb-item-name" data-i="${i}" placeholder="Item name" value="${escapeHtml(item.name)}"></td>
             <td class="cb-add-case-col-image"><input type="text" class="cb-item-image" data-i="${i}" placeholder="https://..." value="${escapeHtml(item.image)}"></td>
-            <td class="cb-add-case-col-value"><input type="number" class="cb-item-value" data-i="${i}" placeholder="0" min="0" step="0.01" value="${item.value !== '' ? item.value : ''}"></td>
-            <td class="cb-add-case-col-pct"><input type="number" class="cb-item-pct" data-i="${i}" placeholder="%" min="0" max="100" step="0.01" value="${item.probability !== '' ? item.probability : ''}"></td>
+            <td class="cb-add-case-col-value"><input type="text" inputmode="decimal" class="cb-item-value" data-i="${i}" placeholder="0.00" value="${item.value !== '' ? item.value : ''}"></td>
+            <td class="cb-add-case-col-pct"><input type="text" inputmode="decimal" class="cb-item-pct" data-i="${i}" placeholder="%" value="${item.probability !== '' ? item.probability : ''}"></td>
+            <td class="cb-add-case-col-rarity"><select class="cb-item-rarity" data-i="${i}">
+              <option value="common"${(item.rarity || 'common') === 'common' ? ' selected' : ''}>Common</option>
+              <option value="rare"${item.rarity === 'rare' ? ' selected' : ''}>Rare</option>
+              <option value="epic"${item.rarity === 'epic' ? ' selected' : ''}>Epic</option>
+              <option value="legendary"${item.rarity === 'legendary' ? ' selected' : ''}>Legendary</option>
+            </select></td>
             <td class="cb-add-case-col-remove"><button type="button" class="btn-cb-remove-item" data-i="${i}" aria-label="Remove">×</button></td>
           </tr>`
       )
@@ -128,12 +142,15 @@
       el.addEventListener('input', recalcCaseCost);
       el.addEventListener('change', recalcCaseCost);
     });
+    itemsListEl.querySelectorAll('.cb-item-rarity').forEach((el) => {
+      el.addEventListener('change', syncCaseFormFromDom);
+    });
     itemsListEl.querySelectorAll('.btn-cb-remove-item').forEach((el) => {
       el.addEventListener('click', () => {
         syncCaseFormFromDom();
         const i = parseInt(el.getAttribute('data-i'), 10);
         caseFormItems.splice(i, 1);
-        if (caseFormItems.length === 0) caseFormItems = [{ name: '', image: '', value: '', probability: '' }];
+        if (caseFormItems.length === 0) caseFormItems = [{ name: '', image: '', value: '', probability: '', rarity: 'common' }];
         renderCaseFormItems();
         recalcCaseCost();
       });
@@ -272,47 +289,74 @@
     const username = user?.username || user?.uid || '';
     const balance = getEffectiveBalance();
     updateCreateBattleButton(battles);
-    battleListEl.innerHTML = battles.length === 0
-      ? '<p class="case-battle-empty">No active battles. Click "Create battle" to start one.</p>'
-      : battles
-          .map((b) => {
-            const filled = b.participants.filter((p) => p.username).length;
-            const hasEmpty = filled < b.totalSlots;
-            const mySlot = b.participants.find((p) => p.username === username);
-            const sideCount = new Set(b.participants.map((p) => p.teamIndex)).size;
-            const entryEach = b.totalPot / Math.max(1, sideCount);
-            const totalCases = (b.cases || []).reduce((sum, x) => sum + (x.count || 1), 0);
-            const battleCases = b.cases || [];
-            const caseThumbs = battleCases.map((x) => {
-              const img = getCaseImage(x.caseId);
-              const name = getCaseName(x.caseId);
-              const label = x.count > 1 ? name + ' ×' + x.count : name;
-              return img
-                ? `<span class="cb-card-case-thumb" title="${escapeHtml(label)}"><img src="${escapeHtml(img)}" alt="" onerror="this.style.display='none'"></span>`
-                : `<span class="cb-card-case-pill" title="${escapeHtml(label)}">${escapeHtml(name)}${x.count > 1 ? ' ×' + x.count : ''}</span>`;
-            }).slice(0, 8);
-            const watchBtn = `<button type="button" class="btn btn-cb-watch" data-id="${escapeHtml(b.id)}">${filled >= b.totalSlots ? 'Watch' : 'View'}</button>`;
-            return `<div class="case-battle-card" data-id="${escapeHtml(b.id)}" role="button" tabindex="0">
-              <div class="cb-card-cases">${caseThumbs.join('')}</div>
-              <button type="button" class="cb-card-cases-btn" data-id="${escapeHtml(b.id)}" title="View cases in this battle">Cases (${totalCases})</button>
-              <div class="cb-card-meta">
-                <div class="cb-card-top-row">
-                  <span class="cb-card-total-cases">${totalCases} cases</span>
-                  <span class="cb-card-pot">${formatDollars(b.totalPot)}</span>
-                </div>
-                <div class="cb-card-format-mode">${escapeHtml(b.format)} · ${escapeHtml(formatModeDisplay(b.mode, b.crazyMode))}</div>
-                <div class="cb-card-slots-row">
-                  <div class="cb-card-slots">${b.participants.map((p) => `<span class="cb-card-slot ${p.username ? 'filled' : ''}">${p.username ? '✓' : ''}</span>`).join('')}</div>
-                  ${hasEmpty ? `<span class="cb-card-waiting">${filled}/${b.totalSlots} slots</span>` : ''}
-                </div>
-              </div>
-              <div class="cb-card-actions">
-                ${mySlot ? '<span class="cb-you-in">You are in</span>' : ''}
-                ${watchBtn}
-              </div>
-            </div>`;
-          })
-          .join('');
+    if (battles.length === 0) {
+      battleListEl.innerHTML = '<p class="case-battle-empty">No active battles. Create one to get started.</p>';
+      return;
+    }
+    battleListEl.innerHTML = battles.map((b) => {
+      const filled = b.participants.filter((p) => p.username).length;
+      const hasEmpty = filled < b.totalSlots;
+      const mySlot = b.participants.find((p) => p.username === username);
+      const teamIndices = [...new Set(b.participants.map((p) => p.teamIndex))].sort((a, x) => a - x);
+      const sideCount = teamIndices.length;
+      const entryEach = b.totalPot / Math.max(1, sideCount);
+      const totalCases = (b.cases || []).reduce((s, x) => s + (x.count || 1), 0);
+      const isInProgress = b.status === 'in_progress';
+      const isWaiting = b.status === 'waiting';
+      const mode = (b.mode || 'standard').toLowerCase();
+      const modeLabel = formatModeDisplay(b.mode, b.crazyMode);
+      const modeCls = b.crazyMode ? 'crazy' : mode;
+      // Build by-team map
+      const byTeam = {};
+      for (const p of b.participants) {
+        if (!byTeam[p.teamIndex]) byTeam[p.teamIndex] = [];
+        byTeam[p.teamIndex].push(p);
+      }
+      // Players: team groups with × separators
+      const teamGroups = teamIndices.map((ti) => {
+        const team = byTeam[ti] || [];
+        const avatars = team.map((p) => {
+          if (!p.username) {
+            return `<span class="cb2-avatar cb2-avatar-empty" title="Empty slot"><span class="cb2-avatar-plus">+</span></span>`;
+          }
+          const isMe = p.username === username;
+          const init = (p.displayName || p.username || '?').charAt(0).toUpperCase();
+          return `<span class="cb2-avatar${isMe ? ' cb2-avatar-me' : ''}${p.isBot ? ' cb2-avatar-bot' : ''}" title="${escapeHtml(p.displayName || p.username)}">${init}</span>`;
+        }).join('');
+        return `<div class="cb2-team">${avatars}</div>`;
+      });
+      const playersHtml = teamGroups.join('<span class="cb2-vs">×</span>');
+      // Cases strip
+      const casesHtml = (b.cases || []).map((x) => {
+        const img = getCaseImage(x.caseId);
+        const name = getCaseName(x.caseId);
+        return `<span class="cb2-case" data-case-id="${escapeHtml(String(x.caseId))}" data-battle-id="${escapeHtml(b.id)}" title="${escapeHtml(name)}" role="button" tabindex="0">
+          ${img ? `<img src="${escapeHtml(img)}" alt="" onerror="this.style.display='none'">` : `<span class="cb2-case-letter">${escapeHtml((name || '?').charAt(0))}</span>`}
+          ${x.count > 1 ? `<span class="cb2-case-cnt">${x.count}</span>` : ''}
+        </span>`;
+      }).join('');
+      // Round / progress label
+      const roundLabel = isInProgress && b.currentRound != null && b.totalRounds != null
+        ? `Round ${b.currentRound}/${b.totalRounds}`
+        : `${totalCases} round${totalCases !== 1 ? 's' : ''}`;
+      // Button
+      const canJoin = isWaiting && hasEmpty && !mySlot && username;
+      const btnLabel = canJoin ? `Join · ${formatDollars(entryEach)}` : (filled >= b.totalSlots || isInProgress ? 'Watch' : 'View');
+      return `<div class="cb-card2${mySlot ? ' cb-card2-mine' : ''}" data-id="${escapeHtml(b.id)}" role="button" tabindex="0">
+        <div class="cb-card2-modebadge cb-modebadge-${escapeHtml(modeCls)}">${escapeHtml(modeLabel)}</div>
+        <div class="cb-card2-players">${playersHtml}</div>
+        <div class="cb-card2-cases">${casesHtml}</div>
+        <div class="cb-card2-meta">
+          <div class="cb-card2-pot">${formatDollars(b.totalPot)}</div>
+          <div class="cb-card2-sub">${escapeHtml(roundLabel)} · ${filled}/${b.totalSlots} slots</div>
+          ${isInProgress ? '<div class="cb-card2-live">Live</div>' : ''}
+          ${mySlot ? '<div class="cb-card2-youin">You\'re in</div>' : ''}
+        </div>
+        <div class="cb-card2-actions">
+          <button type="button" class="cb-card2-btn" data-id="${escapeHtml(b.id)}">${escapeHtml(btnLabel)}</button>
+        </div>
+      </div>`;
+    }).join('');
   }
 
   function setupBattleListDelegation() {
@@ -324,31 +368,40 @@
   }
 
   function handleBattleListClick(e) {
-    const card = e.target.closest('.case-battle-card');
-    if (!card) return;
-    const id = card.getAttribute('data-id');
-    if (e.target.closest('.btn-cb-watch')) {
+    // Individual case image click → show case items popup
+    const caseEl = e.target.closest('.cb2-case');
+    if (caseEl) {
       e.preventDefault();
       e.stopPropagation();
-      showBattleDetail(id);
+      const caseId = caseEl.getAttribute('data-case-id');
+      const battleId = caseEl.getAttribute('data-battle-id');
+      const battle = lastBattles.find((b) => b.id === battleId);
+      const caseName = getCaseName(caseId);
+      const casePrice = getCasePrice(caseId);
+      const items = getItemsForCase(caseId, battle);
+      showCaseDetailPopup(caseName, casePrice, items);
       return;
     }
-    if (e.target.closest('.cb-card-cases-btn')) {
+    // Watch/Join button
+    const btn = e.target.closest('.cb-card2-btn');
+    if (btn) {
       e.preventDefault();
       e.stopPropagation();
-      openCasesPopover(id, e.target);
+      showBattleDetail(btn.getAttribute('data-id'));
       return;
     }
-    if (!e.target.closest('.cb-card-actions')) {
-      showBattleDetail(id);
+    // Click card body
+    const card = e.target.closest('.cb-card2');
+    if (card && !e.target.closest('.cb-card2-actions')) {
+      showBattleDetail(card.getAttribute('data-id'));
     }
   }
 
   function handleBattleListKeydown(e) {
     if (e.key !== 'Enter' && e.key !== ' ') return;
-    const card = e.target.closest('.case-battle-card');
+    const card = e.target.closest('.cb-card2');
     if (!card) return;
-    if (e.target.closest('.cb-card-actions') || e.target.closest('.cb-card-cases-btn')) return;
+    if (e.target.closest('.cb-card2-actions') || e.target.closest('.cb2-case')) return;
     e.preventDefault();
     showBattleDetail(card.getAttribute('data-id'));
   }
@@ -371,6 +424,7 @@
     currentBattleId = null;
     window.__caseBattleBlockStatsRefresh = false;
     if (window.Game && window.Game.unfreezeBalance) window.Game.unfreezeBalance();
+    openStripsAnimationRunning = false;
     jackpotSliderAnimationRunning = false;
     if (detailPollInterval) {
       clearInterval(detailPollInterval);
@@ -392,7 +446,7 @@
     if (detailView) { detailView.classList.remove('hidden'); detailView.style.display = 'flex'; }
     const newHash = '#case-battle/' + encodeURIComponent(id);
     if (window.location.hash !== newHash) {
-      window.history.replaceState(null, '', newHash);
+      window.history.pushState(null, '', newHash);
     }
     await loadAndRenderDetail(id);
   }
@@ -556,7 +610,20 @@
           <div class="cb-battle-team-cols">${cols}</div>
         </div>`);
       }
-      playersHtml = `<div class="cb-battle-players cb-battle-teams" data-team-count="${teamIndices.length}">${teamParts.join('<div class="cb-battle-team-divider-v"></div>')}</div>`;
+      // For multi-player team formats, split into rows to avoid too-narrow columns
+      if (teamIndices.length === 4 && slotsPerSide.every((n) => n > 1)) {
+        // 2v2v2v2: 2 rows of 2 teams
+        const row1 = teamParts.slice(0, 2).join('<div class="cb-battle-team-divider-v"></div>');
+        const row2 = teamParts.slice(2, 4).join('<div class="cb-battle-team-divider-v"></div>');
+        playersHtml = `<div class="cb-battle-players-wrap"><div class="cb-battle-teams cb-battle-teams-row" data-team-count="2">${row1}</div><div class="cb-battle-team-divider-h"></div><div class="cb-battle-teams cb-battle-teams-row" data-team-count="2">${row2}</div></div>`;
+      } else if (teamIndices.length === 3 && slotsPerSide.every((n) => n > 1)) {
+        // 2v2v2: 2 teams on top, 1 team full-width on bottom
+        const row1 = teamParts.slice(0, 2).join('<div class="cb-battle-team-divider-v"></div>');
+        const row2 = teamParts[2];
+        playersHtml = `<div class="cb-battle-players-wrap"><div class="cb-battle-teams cb-battle-teams-row" data-team-count="2">${row1}</div><div class="cb-battle-team-divider-h"></div><div class="cb-battle-teams cb-battle-teams-row" data-team-count="1">${row2}</div></div>`;
+      } else {
+        playersHtml = `<div class="cb-battle-players cb-battle-teams" data-team-count="${teamIndices.length}">${teamParts.join('<div class="cb-battle-team-divider-v"></div>')}</div>`;
+      }
     } else {
       // Solo mode: flat grid
       const cols = [];
@@ -590,6 +657,19 @@
     }
 
     detailContent.classList.remove('cb-detail-open');
+    // Helper: position frozen strips after render (pause phase)
+    const _positionFrozenStrips = () => {
+      detailContent.querySelectorAll('[data-frozen-stop]').forEach((container) => {
+        const stopAt = parseInt(container.getAttribute('data-frozen-stop'), 10);
+        const iw = parseInt(container.getAttribute('data-frozen-iw'), 10);
+        const strip = container.querySelector('.cb-battle-slider-strip');
+        if (!strip) return;
+        const containerW = container.offsetWidth;
+        const endX = containerW / 2 - (stopAt * iw + iw / 2);
+        strip.style.transition = 'none';
+        strip.style.transform = 'translateX(' + endX + 'px)';
+      });
+    };
     detailContent.innerHTML = `
       <div class="cb-battle-header">
         <div class="cb-battle-header-left">
@@ -614,7 +694,7 @@
       ${playersHtml}
       ${actionsHtml ? `<div class="cb-battle-actions">${actionsHtml}</div>` : ''}
     `;
-    requestAnimationFrame(() => { detailContent.classList.add('cb-detail-open'); });
+    requestAnimationFrame(() => { _positionFrozenStrips(); detailContent.classList.add('cb-detail-open'); });
 
     // Poll for in_progress battles
     if (battle.status === 'in_progress' && currentBattleId === battle.id) {
@@ -787,9 +867,30 @@
       // Active animation round - strip will be populated by runOpenStripsAnimation
       sliderHtml = `<div class="cb-battle-slider-wrap"><div class="cb-battle-slider-container"><div class="cb-battle-slider-pointer"></div><div class="cb-battle-slider-strip" id="cbBattleStrip_${pi}"></div></div></div>`;
     } else if (battle.status === 'finished' && !battleFullyFinished && inPausePhase && roundResults[syncedRound]) {
-      // Pause phase - show the landed item from the just-finished round
+      // Pause phase - show full strip frozen at final position (won item centered under pointer)
       const landedItem = roundResults[syncedRound].items ? roundResults[syncedRound].items[pi] : null;
-      if (landedItem) {
+      const STRIP_REPEAT_P = 25;
+      const ITEM_WIDTH_P = 84; // 80px CSS width + 2px margin each side
+      const caseDef = (battle.caseDefs || {})[roundResults[syncedRound].caseId];
+      const caseItemsP = (caseDef && caseDef.items) || [];
+      const sdP = (battle.result && battle.result.stripData && battle.result.stripData[syncedRound] && battle.result.stripData[syncedRound][pi]) || { stripSeed: 0.5, stopOffset: 0.5 };
+      if (landedItem && caseItemsP.length > 0) {
+        const flatItemsP = [];
+        for (let r = 0; r < STRIP_REPEAT_P; r++) {
+          const shuffled = seededShuffle(caseItemsP, sdP.stripSeed + r * 0.001);
+          for (const k of shuffled) flatItemsP.push(k);
+        }
+        const landingRepeatP = Math.floor(STRIP_REPEAT_P / 2 - 2);
+        const landingBaseP = landingRepeatP * caseItemsP.length;
+        const landingOffsetP = Math.floor(sdP.stopOffset * caseItemsP.length);
+        const stopAtP = landingBaseP + landingOffsetP;
+        flatItemsP[stopAtP] = landedItem;
+        const stripItemsHtmlP = flatItemsP.map((it, idx) => {
+          const img = it.image ? `<img src="${escapeHtml(it.image)}" alt="">` : `<span class="cb-battle-slider-item-name">${escapeHtml(it.name || '')}</span>`;
+          return `<div class="cb-battle-slider-item${idx === stopAtP ? ' landed' : ''}" data-index="${idx}">${img}</div>`;
+        }).join('');
+        sliderHtml = `<div class="cb-battle-slider-wrap"><div class="cb-battle-slider-container" data-frozen-stop="${stopAtP}" data-frozen-iw="${ITEM_WIDTH_P}"><div class="cb-battle-slider-pointer"></div><div class="cb-battle-slider-strip" style="width:${flatItemsP.length * ITEM_WIDTH_P}px;height:100%">${stripItemsHtmlP}</div></div></div>`;
+      } else if (landedItem) {
         const img = landedItem.image ? `<img src="${escapeHtml(landedItem.image)}" alt="">` : `<span>${escapeHtml(landedItem.name || '')}</span>`;
         sliderHtml = `<div class="cb-battle-slider-wrap"><div class="cb-battle-slider-container"><div class="cb-battle-slider-pointer"></div><div class="cb-battle-slider-strip" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%"><div class="cb-battle-slider-item landed" style="width:90px">${img}</div></div></div></div>`;
       } else {
@@ -844,7 +945,7 @@
     if (caseItems.length === 0) return;
     openStripsAnimationRunning = true;
     const STRIP_REPEAT = 25;
-    const ITEM_WIDTH = 94;
+    const ITEM_WIDTH = 84; // 80px CSS width + 2px margin each side
     const DURATION_MS = battle.animationDurationPerRound || 5500;
     const items = round.items || [];
     const stripData = (battle.result && battle.result.stripData && battle.result.stripData[roundIndex]) || [];
@@ -880,7 +981,7 @@
 
         stripEl.innerHTML = flatItems.map((it, idx) => {
           const img = it.image ? `<img src="${escapeHtml(it.image)}" alt="">` : `<span class="cb-battle-slider-item-name">${escapeHtml(it.name || '')}</span>`;
-          return `<div class="cb-battle-slider-item" data-index="${idx}" style="width:${ITEM_WIDTH}px">${img}</div>`;
+          return `<div class="cb-battle-slider-item" data-index="${idx}">${img}</div>`;
         }).join('');
         stripEl.style.width = (flatItems.length * ITEM_WIDTH) + 'px';
 
@@ -1104,35 +1205,42 @@
   function showCaseDetailPopup(caseName, casePrice, items) {
     const existing = document.getElementById('cbCaseDetailPopover');
     if (existing) existing.remove();
+    const sortedItems = (items || []).slice().sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0));
+    const itemCards = sortedItems.map((it) => {
+      const raw = it.probability != null ? Number(it.probability) : null;
+      const pct = raw != null ? (raw < 1 ? raw.toFixed(3) : raw.toFixed(2)) + '%' : '—';
+      const val = Number(it.value) || 0;
+      const rarity = (it.rarity || 'common').toLowerCase();
+      const rarityClass = ['legendary','epic','rare','common'].includes(rarity) ? `rarity-${rarity}` : 'rarity-common';
+      return `<div class="cb-cdi-card ${rarityClass}">
+        <span class="cb-cdi-prob">${escapeHtml(pct)}</span>
+        ${it.image ? `<img src="${escapeHtml(it.image)}" alt="" class="cb-cdi-img" onerror="this.style.display='none'">` : `<div class="cb-cdi-noimg">${escapeHtml((it.name || '').substring(0, 1))}</div>`}
+        <div class="cb-cdi-name">${escapeHtml(it.name || '')}</div>
+        <div class="cb-cdi-value">${formatDollars(val)}</div>
+      </div>`;
+    }).join('');
     const pop = document.createElement('div');
     pop.id = 'cbCaseDetailPopover';
     pop.className = 'cb-cases-popover-overlay';
     pop.setAttribute('role', 'dialog');
     pop.setAttribute('aria-modal', 'true');
-    pop.setAttribute('aria-label', 'Case details');
-    const itemsList = (items || []).map((it) => {
-      const raw = it.probability != null ? Number(it.probability) : null;
-      const pct = raw != null ? raw.toFixed(2) + '%' : '—';
-      return `<div class="cb-case-detail-item">
-        ${it.image ? `<img src="${escapeHtml(it.image)}" alt="" class="cb-case-detail-item-img" onerror="this.style.display='none'">` : '<div class="cb-case-detail-item-pl">' + escapeHtml(it.name || '') + '</div>'}
-        <div class="cb-case-detail-item-info">
-          <span class="cb-case-detail-item-name">${escapeHtml(it.name || '')}</span>
-          <span class="cb-case-detail-item-meta">${formatDollars(it.value || 0)} · ${escapeHtml(pct)}</span>
-        </div>
-      </div>`;
-    }).join('');
+    pop.setAttribute('aria-label', 'Case contents');
     pop.innerHTML = `
       <div class="cb-cases-popover-backdrop"></div>
-      <div class="cb-cases-popover-modal cb-case-detail-modal">
-        <div class="cb-case-detail-title">${escapeHtml(caseName)}</div>
-        <div class="cb-case-detail-price">${casePrice != null ? formatDollars(casePrice) : '—'}</div>
-        <div class="cb-case-detail-items">${itemsList || '<p class="cb-case-detail-empty">No items</p>'}</div>
-        <button type="button" class="cb-cases-popover-close">Close</button>
+      <div class="cb-cdi-modal">
+        <div class="cb-cdi-header">
+          <div>
+            <div class="cb-cdi-title">${escapeHtml(caseName)}</div>
+            ${casePrice != null ? `<div class="cb-cdi-price">${formatDollars(casePrice)}</div>` : ''}
+          </div>
+          <button type="button" class="cb-cdi-close">✕</button>
+        </div>
+        <div class="cb-cdi-grid">${itemCards || '<p class="cb-case-detail-empty">No items found.</p>'}</div>
       </div>`;
     document.body.appendChild(pop);
     pop.classList.add('cb-cases-popover-enter');
     const close = () => { pop.classList.remove('cb-cases-popover-enter'); pop.classList.add('cb-cases-popover-leave'); setTimeout(() => pop.remove(), 200); };
-    pop.querySelector('.cb-cases-popover-close').addEventListener('click', close);
+    pop.querySelector('.cb-cdi-close').addEventListener('click', close);
     pop.querySelector('.cb-cases-popover-backdrop').addEventListener('click', close);
   }
 
@@ -1384,52 +1492,52 @@
 
   async function saveCase() {
     const name = (caseNameInput?.value || '').trim();
-    if (!name) {
-      alert('Enter case name');
-      return;
-    }
+    if (!name) { alert('Enter case name'); return; }
+    syncCaseFormFromDom();
     const items = caseFormItems.map((row, i) => {
       const nameEl = itemsListEl?.querySelector(`.cb-item-name[data-i="${i}"]`);
       const img = itemsListEl?.querySelector(`.cb-item-image[data-i="${i}"]`);
       const val = itemsListEl?.querySelector(`.cb-item-value[data-i="${i}"]`);
       const pct = itemsListEl?.querySelector(`.cb-item-pct[data-i="${i}"]`);
+      const rar = itemsListEl?.querySelector(`.cb-item-rarity[data-i="${i}"]`);
       return {
         name: (nameEl?.value || '').trim(),
         image: (img?.value || '').trim(),
         value: Number(val?.value) || 0,
-        probability: Number(pct?.value) != null ? Number(pct?.value) : 0,
+        probability: Number(pct?.value) || 0,
+        rarity: rar?.value || row.rarity || 'common',
       };
     });
-    const rtp = Number(rtpInput?.value) || 95;
+    const rtp = Number(rtpInput?.value) || 96;
     try {
-      const res = await fetch(API + '/cases', {
-        method: 'POST',
+      const url = editingCaseId ? `${API}/cases/${encodeURIComponent(editingCaseId)}` : `${API}/cases`;
+      const method = editingCaseId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ name, rtpDecimal: rtp / 100, items }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || 'Failed to save case');
-        return;
-      }
+      if (!res.ok) { alert(data.error || 'Failed to save case'); return; }
       await loadCases();
-      caseFormItems = [{ name: '', image: '', value: '', probability: '' }];
+      editingCaseId = null;
+      caseFormItems = [{ name: '', image: '', value: '', probability: '', rarity: 'common' }];
       renderCaseFormItems();
-      caseNameInput.value = '';
-      caseCostEl.textContent = '';
-      if (caseCostEl) caseCostEl.classList.remove('cb-case-cost-ok');
+      if (caseNameInput) caseNameInput.value = '';
+      if (caseCostEl) { caseCostEl.textContent = ''; caseCostEl.classList.remove('cb-case-cost-ok'); }
+      if (addCaseTitleEl) addCaseTitleEl.textContent = 'Add Custom Case';
       closeAddCaseModal();
-    } catch (e) {
-      alert('Network error');
-    }
+    } catch (e) { alert('Network error'); }
   }
 
   function openAddCaseModal() {
     if (addCaseModal) {
-      caseFormItems = caseFormItems.length ? caseFormItems : [{ name: '', image: '', value: '', probability: '' }];
+      editingCaseId = null;
+      if (addCaseTitleEl) addCaseTitleEl.textContent = 'Add Custom Case';
+      caseFormItems = [{ name: '', image: '', value: '', probability: '', rarity: 'common' }];
       renderCaseFormItems();
-      caseCostEl.textContent = '';
-      if (caseCostEl) caseCostEl.classList.remove('cb-case-cost-ok');
+      if (caseNameInput) caseNameInput.value = '';
+      if (caseCostEl) { caseCostEl.textContent = ''; caseCostEl.classList.remove('cb-case-cost-ok'); }
       addCaseModal.classList.remove('hidden');
       caseNameInput?.focus();
     }
@@ -1437,6 +1545,73 @@
 
   function closeAddCaseModal() {
     if (addCaseModal) addCaseModal.classList.add('hidden');
+  }
+
+  function openEditCasesModal() {
+    if (!editCasesModal || !editCasesListEl) return;
+    const cases = casesList.filter((c) => c.isActive !== false);
+    if (cases.length === 0) {
+      editCasesListEl.innerHTML = '<p class="cb-edit-cases-empty">No custom cases yet.</p>';
+    } else {
+      editCasesListEl.innerHTML = cases.map((c) => `
+        <div class="cb-edit-case-row" data-id="${escapeHtml(String(c.id))}">
+          <div class="cb-edit-case-info">
+            <span class="cb-edit-case-name">${escapeHtml(c.name)}</span>
+            <span class="cb-edit-case-price">${formatDollars(c.price || 0)}</span>
+            <span class="cb-edit-case-items">${(c.items || []).length} items</span>
+          </div>
+          <div class="cb-edit-case-actions">
+            <button type="button" class="cb-edit-case-edit-btn" data-id="${escapeHtml(String(c.id))}">Edit</button>
+            <button type="button" class="cb-edit-case-delete-btn" data-id="${escapeHtml(String(c.id))}">Delete</button>
+          </div>
+        </div>`).join('');
+      editCasesListEl.querySelectorAll('.cb-edit-case-edit-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          const c = casesList.find((x) => String(x.id) === id);
+          if (c) openCaseForEdit(c);
+        });
+      });
+      editCasesListEl.querySelectorAll('.cb-edit-case-delete-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          const c = casesList.find((x) => String(x.id) === id);
+          if (!c) return;
+          if (!confirm(`Delete case "${c.name}"? This cannot be undone.`)) return;
+          try {
+            const res = await fetch(`${API}/cases/${encodeURIComponent(id)}`, { method: 'DELETE', headers: getAuthHeaders() });
+            if (!res.ok) { const d = await res.json(); alert(d.error || 'Failed to delete'); return; }
+            await loadCases();
+            openEditCasesModal();
+          } catch (e) { alert('Network error'); }
+        });
+      });
+    }
+    editCasesModal.classList.remove('hidden');
+  }
+
+  function closeEditCasesModal() {
+    if (editCasesModal) editCasesModal.classList.add('hidden');
+  }
+
+  function openCaseForEdit(c) {
+    closeEditCasesModal();
+    editingCaseId = String(c.id);
+    if (addCaseTitleEl) addCaseTitleEl.textContent = 'Edit Case';
+    if (caseNameInput) caseNameInput.value = c.name || '';
+    if (rtpInput) rtpInput.value = c.rtpDecimal != null ? Math.round(c.rtpDecimal * 100) : 96;
+    caseFormItems = (c.items || []).map((it) => ({
+      name: it.name || '',
+      image: it.image || '',
+      value: it.value != null ? String(it.value) : '',
+      probability: it.probability != null ? String(it.probability) : '',
+      rarity: it.rarity || 'common',
+    }));
+    if (caseFormItems.length === 0) caseFormItems = [{ name: '', image: '', value: '', probability: '', rarity: 'common' }];
+    renderCaseFormItems();
+    if (caseCostEl) { caseCostEl.textContent = ''; caseCostEl.classList.remove('cb-case-cost-ok'); }
+    if (addCaseModal) { addCaseModal.classList.remove('hidden'); caseNameInput?.focus(); }
+    recalcCaseCost();
   }
 
   async function createBattle() {
@@ -1543,10 +1718,12 @@
   }
 
   function onShow() {
-    if (addCustomCaseBtn) addCustomCaseBtn.classList.toggle('hidden', !isAdminOrOwner());
+    const adminBtnsEl = document.getElementById('cbAdminBtns');
+    if (adminBtnsEl) adminBtnsEl.classList.toggle('hidden', !isAdminOrOwner());
     if (createBattleModal) createBattleModal.classList.add('hidden');
+    // Clear any existing poll timer before creating a new one (prevents duplicate timers)
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     loadCases();
-    loadBattles();
     renderCaseFormItems();
     renderBattleCasesForCreate();
     pollTimer = setInterval(() => {
@@ -1561,7 +1738,13 @@
         return;
       }
     }
+    // No battle in URL — reset state and show list
+    currentBattleId = null;
+    openStripsAnimationRunning = false;
+    jackpotSliderAnimationRunning = false;
+    if (detailPollInterval) { clearInterval(detailPollInterval); detailPollInterval = null; }
     showListView();
+    loadBattles();
   }
 
   function onHide() {
@@ -1591,20 +1774,11 @@
       if (pageEl && !pageEl.classList.contains('hidden')) syncFromHash();
     }
   });
-  window.addEventListener('popstate', () => {
-    const hash = (window.location.hash || '').slice(1);
-    if (hash.startsWith('case-battle/')) {
-      const battleId = decodeURIComponent(hash.slice('case-battle/'.length));
-      if (battleId) showBattleDetail(battleId);
-    } else if (hash === 'case-battle') {
-      showListView();
-      loadBattles();
-    }
-  });
+  // Browser back/forward is handled by main.js hashchange → onShow()
 
   if (addItemBtn) addItemBtn.addEventListener('click', () => {
     syncCaseFormFromDom();
-    caseFormItems.push({ name: '', image: '', value: '', probability: '' });
+    caseFormItems.push({ name: '', image: '', value: '', probability: '', rarity: 'common' });
     renderCaseFormItems();
     recalcCaseCost();
   });
@@ -1612,6 +1786,12 @@
   if (createBattleBtn) createBattleBtn.addEventListener('click', createBattle);
   if (addCustomCaseBtn) addCustomCaseBtn.addEventListener('click', openAddCaseModal);
   if (addCaseClose) addCaseClose.addEventListener('click', closeAddCaseModal);
+  if (editCasesBtn) editCasesBtn.addEventListener('click', openEditCasesModal);
+  if (editCasesClose) editCasesClose.addEventListener('click', closeEditCasesModal);
+  if (editCasesModal) {
+    const backdrop = editCasesModal.querySelector('.cb-edit-cases-backdrop');
+    if (backdrop) backdrop.addEventListener('click', closeEditCasesModal);
+  }
   if (addCaseModal) {
     const backdrop = addCaseModal.querySelector('.cb-add-case-backdrop');
     if (backdrop) backdrop.addEventListener('click', closeAddCaseModal);
