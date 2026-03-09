@@ -23,16 +23,10 @@
   let detailPollInterval = null;
   let currentBattleId = null;
   let lastBattles = [];
-  let lastDetailCaseItems = [];
-  let lastDetailRoundCaseList = [];
-  let currentCaseCarouselIndex = 0;
-  let currentReplayRound = 0;
   let lastDetailBattle = null;
   let openStripsAnimationRunning = false;
   let jackpotSliderAnimationRunning = false;
   let jackpotRevealShownForBattleId = null;
-  const itemsScrollIndexByKey = {};
-  const itemsCountByKey = {};
 
   const addCustomCaseBtn = document.getElementById('cbAddCustomCaseBtn');
   const addCaseModal = document.getElementById('cbAddCaseModal');
@@ -63,7 +57,6 @@
   const addCasesConfirmBtn = document.getElementById('cbAddCasesConfirmBtn');
   const casesSearchInput = document.getElementById('cbCasesSearch');
   const createNewBtn = document.getElementById('cbCreateNewBtn');
-  const backToList = document.getElementById('cbBackToList');
   const detailContent = document.getElementById('cbDetailContent');
 
   let caseFormItems = [{ name: '', image: '', value: '', probability: '' }];
@@ -392,7 +385,6 @@
 
   async function showBattleDetail(id) {
     if (!id) return;
-    if (id !== currentBattleId) currentReplayRound = 0;
     currentBattleId = id;
     window.__caseBattleBlockStatsRefresh = true;
     if (window.Game && window.Game.freezeBalance) window.Game.freezeBalance();
@@ -428,6 +420,18 @@
     }
   }
 
+  // --- Deterministic shuffle using server-provided seed ---
+  function seededShuffle(arr, seed) {
+    const a = arr.slice();
+    let s = Math.floor(seed * 2147483647) || 1;
+    for (let i = a.length - 1; i > 0; i--) {
+      s = (s * 16807) % 2147483647;
+      const j = s % (i + 1);
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
   function renderDetailView(battle) {
     if (!detailContent) return;
     if (detailPollInterval) {
@@ -440,121 +444,200 @@
     const isCreator = battle.createdBy === username;
     const sideCount = new Set(battle.participants.map((p) => p.teamIndex)).size;
     const entryEach = battle.totalPot / Math.max(1, sideCount);
-    const canAfford = balance >= entryEach;
-    const mySlot = battle.participants.find((p) => p.username === username);
     const hasEmpty = battle.participants.some((p) => !p.username);
     const result = battle.result || {};
     const payoutsBySlot = (result.payouts || []).reduce((acc, p) => {
-      const key = p.teamIndex + '_' + p.slotIndex;
-      acc[key] = p.amount || 0;
+      acc[p.teamIndex + '_' + p.slotIndex] = p.amount || 0;
       return acc;
     }, {});
+    lastDetailBattle = battle;
+    const roundCaseList = buildRoundCaseList(battle);
+    const totalRounds = roundCaseList.length;
+    const roundResults = (result.roundResults) || [];
+    const isJackpotMode = (battle.mode || '').toLowerCase() === 'jackpot';
+    const jackpotRevealShown = isJackpotMode && jackpotRevealShownForBattleId === battle.id;
+
+    // Server-synced animation state
+    let syncedRound = 0;
+    let syncedRoundElapsed = 0;
+    let isAnimComplete = false;
+    const durationPerRound = battle.animationDurationPerRound || 5500;
+    const pausePerRound = battle.animationPausePerRound || 800;
+    const msPerRound = durationPerRound + pausePerRound;
+
+    if (battle.status === 'finished' && battle.animationStartedAt && totalRounds > 0) {
+      const elapsed = Date.now() - battle.animationStartedAt;
+      syncedRound = Math.floor(elapsed / msPerRound);
+      syncedRoundElapsed = elapsed % msPerRound;
+      if (syncedRound >= totalRounds) {
+        syncedRound = totalRounds;
+        isAnimComplete = true;
+      }
+    } else if (battle.status === 'finished' && totalRounds > 0) {
+      syncedRound = totalRounds;
+      isAnimComplete = true;
+    }
+
+    // During animation of round R: revealedCount = R (rounds 0..R-1 revealed)
+    // During pause after round R's animation: revealedCount = R+1 (round R also revealed)
+    const inPausePhase = !isAnimComplete && syncedRoundElapsed >= durationPerRound;
+    const revealedCount = isAnimComplete ? totalRounds : (syncedRound + (inPausePhase ? 1 : 0));
+    const showJackpotSlider = battle.status === 'finished' && isAnimComplete && isJackpotMode && !jackpotRevealShown;
+    const battleFullyFinished = isAnimComplete && !showJackpotSlider;
+    const winnerTeamIndex = result.winnerTeamIndex != null ? result.winnerTeamIndex : null;
+    const isCoop = (battle.mode || '').toLowerCase() === 'coop';
+
+    // Current round case info
+    const currentRoundCase = !isAnimComplete && syncedRound < totalRounds ? roundCaseList[syncedRound] : null;
+    const roundLabel = totalRounds > 0 && !isAnimComplete
+      ? `Round ${syncedRound + 1} of ${totalRounds}`
+      : totalRounds > 0 ? `${totalRounds} rounds` : '';
+
+    // Total display
+    let totalDisplay;
+    if (battleFullyFinished && result.payouts?.length) {
+      totalDisplay = result.payouts.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    } else if (roundResults.length > 0) {
+      totalDisplay = roundResults.slice(0, revealedCount).reduce((sum, r) =>
+        sum + (r.items || []).reduce((s, it) => s + (Number(it?.value) || 0), 0), 0);
+    } else {
+      totalDisplay = 0;
+    }
+
+    // Round dots
+    const dotsHtml = totalRounds > 0 ? Array.from({ length: totalRounds }, (_, i) => {
+      const cls = i < revealedCount ? 'completed' : (i === syncedRound && !isAnimComplete ? 'current' : 'pending');
+      return `<div class="cb-battle-dot ${cls}"></div>`;
+    }).join('') : '';
+
+    // Build header
+    const caseDisplayHtml = currentRoundCase
+      ? `<div class="cb-battle-case-display" id="cbBattleCaseDisplay" data-case-id="${escapeHtml(currentRoundCase.caseId)}" data-case-name="${escapeHtml(currentRoundCase.name)}" data-case-price="${currentRoundCase.price != null ? currentRoundCase.price : ''}">
+          ${currentRoundCase.image ? `<img class="cb-battle-case-img" src="${escapeHtml(currentRoundCase.image)}" alt="" onerror="this.style.display='none'">` : ''}
+          <span class="cb-battle-case-name">${escapeHtml(currentRoundCase.name)}</span>
+          <span class="cb-battle-case-price">${formatDollars(currentRoundCase.price || 0)}</span>
+        </div>` : '';
+
+    const modeLabel = `${escapeHtml(battle.format)} · ${escapeHtml(formatModeDisplay(battle.mode, battle.crazyMode))}`;
+    const entryPerSide = battle.entryCostPerSide ?? 0;
+
+    // Actions
     let actionsHtml = '';
     if (isCreator && battle.status === 'waiting') {
       actionsHtml += `<button type="button" class="btn btn-cb-delete-battle" id="cbDeleteBattleBtn">Delete battle</button>`;
     }
-    const detailCaseItems = (battle.cases || []).map((x) => ({
-      caseId: x.caseId != null ? String(x.caseId) : '',
-      name: getCaseName(x.caseId),
-      count: x.count || 1,
-      image: getCaseImage(x.caseId),
-      price: getCasePrice(x.caseId),
-    }));
-    lastDetailCaseItems = detailCaseItems;
-    lastDetailBattle = battle;
-    const roundCaseList = buildRoundCaseList(battle);
-    lastDetailRoundCaseList = roundCaseList;
-    const totalRounds = roundCaseList.length;
-    if (battle.status === 'finished' && (battle.result && battle.result.roundResults)) {
-      currentReplayRound = Math.min(currentReplayRound, totalRounds);
-      currentCaseCarouselIndex = currentReplayRound;
-    } else {
-      if (totalRounds === 0) currentCaseCarouselIndex = 0;
-      else currentCaseCarouselIndex = Math.min(currentCaseCarouselIndex, totalRounds - 1);
+    if (battleFullyFinished) {
+      actionsHtml += `<button type="button" class="btn btn-cb-remake" id="cbRemakeBtn">Remake</button>`;
     }
-    const isFullyRevealed = battle.status === 'finished' && currentCaseCarouselIndex >= totalRounds;
-    const roundLabel = totalRounds > 0 && !isFullyRevealed
-      ? `Round ${currentCaseCarouselIndex + 1}/${totalRounds}`
-      : totalRounds > 0 ? `${totalRounds} rounds` : '—';
-    const currentRoundCase = totalRounds > 0 && !isFullyRevealed ? roundCaseList[currentCaseCarouselIndex] : null;
-    const roundCaseName = currentRoundCase ? escapeHtml(currentRoundCase.name) : '';
-    const roundCasePrice = currentRoundCase && currentRoundCase.price != null ? formatDollars(currentRoundCase.price) : '';
-    const roundCaseImage = currentRoundCase && currentRoundCase.image ? currentRoundCase.image : '';
-    const roundCaseId = currentRoundCase ? currentRoundCase.caseId : '';
-    const isJackpotMode = (battle.mode || '').toLowerCase() === 'jackpot';
-    const jackpotRevealShown = isJackpotMode && jackpotRevealShownForBattleId === battle.id;
-    const showJackpotSlider = battle.status === 'finished' && isFullyRevealed && isJackpotMode && !jackpotRevealShown;
-    const openingMsg = battle.status === 'in_progress' ? '<div class="cb-detail-opening-msg">Opening cases…</div>' : '';
-    const finishedMsg = battle.status === 'finished' && isFullyRevealed && !showJackpotSlider ? '<div class="cb-detail-finished-msg">Battle finished</div>' : '';
-    const jackpotSliderHtml = showJackpotSlider ? '<div class="cb-jackpot-slider-wrap" id="cbJackpotSliderWrap"><div class="cb-jackpot-slider-label">Jackpot winner</div><div class="cb-jackpot-slider-container" id="cbJackpotSliderContainer"></div></div>' : '';
+
+    // Build player columns
     const byTeam = groupParticipantsByTeam(battle.participants);
-    const slotsHtmlGrouped = buildSlotsGroupedByTeam(byTeam, battle, payoutsBySlot, username, currentCaseCarouselIndex);
-    const roundResults = (battle.result && battle.result.roundResults) || [];
-    let totalDisplay;
-    if (battle.status === 'finished' && isFullyRevealed && (battle.result?.payouts?.length)) {
-      totalDisplay = battle.result.payouts.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-    } else if (roundResults.length > 0) {
-      const revealedCount = isFullyRevealed ? roundResults.length : currentCaseCarouselIndex;
-      totalDisplay = roundResults.slice(0, revealedCount).reduce((sum, r) => {
-        return sum + (r.items || []).reduce((s, it) => s + (Number(it?.value) || 0), 0);
-      }, 0);
+    const format = (battle.format || '1v1').toLowerCase();
+    const slotsPerSide = format.split('v').map((n) => parseInt(n, 10)).filter((n) => Number.isFinite(n));
+    const useTeamMode = slotsPerSide.some((n) => n > 1);
+    const teamIndices = Object.keys(byTeam).map(Number).sort((a, b) => a - b);
+    const totalParticipants = battle.participants.length;
+
+    let playersHtml = '';
+    let participantIndex = 0;
+
+    if (useTeamMode) {
+      // Team mode: grouped columns
+      const teamParts = [];
+      for (let ti = 0; ti < teamIndices.length; ti++) {
+        const team = byTeam[teamIndices[ti]] || [];
+        const teamSlotsCount = team.length;
+        const cols = team.map((p) => {
+          const col = buildPlayerColumn(p, participantIndex++, battle, payoutsBySlot, username, balance, entryEach, revealedCount, battleFullyFinished, winnerTeamIndex, isCoop, isJackpotMode, jackpotRevealShown, roundResults, totalRounds, inPausePhase, syncedRound);
+          return col;
+        }).join('');
+        teamParts.push(`<div class="cb-battle-team-group" data-slots="${teamSlotsCount}">
+          <div class="cb-battle-team-label">Team ${teamIndices[ti] + 1}</div>
+          <div class="cb-battle-team-cols">${cols}</div>
+        </div>`);
+      }
+      playersHtml = `<div class="cb-battle-players cb-battle-teams" data-team-count="${teamIndices.length}">${teamParts.join('<div class="cb-battle-team-divider-v"></div>')}</div>`;
     } else {
-      totalDisplay = 0;
+      // Solo mode: flat grid
+      const cols = [];
+      for (let ti = 0; ti < teamIndices.length; ti++) {
+        const team = byTeam[teamIndices[ti]] || [];
+        for (const p of team) {
+          cols.push(buildPlayerColumn(p, participantIndex++, battle, payoutsBySlot, username, balance, entryEach, revealedCount, battleFullyFinished, winnerTeamIndex, isCoop, isJackpotMode, jackpotRevealShown, roundResults, totalRounds, inPausePhase, syncedRound));
+        }
+      }
+      playersHtml = `<div class="cb-battle-players" data-player-count="${totalParticipants}">${cols.join('')}</div>`;
     }
-    const entryPerSide = battle.entryCostPerSide ?? 0;
-    const entryCostStr = entryPerSide > 0 ? formatDollars(entryPerSide) : '';
+
+    // Status message
+    let statusHtml = '';
+    if (battle.status === 'in_progress') {
+      statusHtml = '<div class="cb-battle-status-msg opening">Opening cases...</div>';
+    } else if (showJackpotSlider) {
+      statusHtml = '<div class="cb-battle-jackpot-wrap" id="cbJackpotSliderWrap"><div class="cb-battle-jackpot-label">Jackpot winner</div><div class="cb-jackpot-slider-container" id="cbJackpotSliderContainer"></div></div>';
+    }
+
+    // Winner banner
+    let winnerBannerHtml = '';
+    if (battleFullyFinished && !isCoop && winnerTeamIndex != null) {
+      const winners = battle.participants.filter((p) => p.teamIndex === winnerTeamIndex);
+      const winnerName = winners.length === 1 ? participantDisplayName(winners[0]) : `Team ${winnerTeamIndex + 1}`;
+      const winAmount = (result.payouts || []).filter((p) => p.teamIndex === winnerTeamIndex).reduce((s, p) => s + (p.amount || 0), 0);
+      winnerBannerHtml = `<div class="cb-battle-result"><div class="cb-battle-winner-banner"><span class="cb-battle-winner-name">${escapeHtml(winnerName)} wins!</span><span class="cb-battle-winner-amount">${formatDollars(winAmount)}</span></div></div>`;
+    } else if (battleFullyFinished && isCoop) {
+      const totalPayout = (result.payouts || []).reduce((s, p) => s + (p.amount || 0), 0);
+      winnerBannerHtml = `<div class="cb-battle-result"><div class="cb-battle-winner-banner"><span class="cb-battle-winner-name">Co-op split</span><span class="cb-battle-winner-amount">${formatDollars(totalPayout)}</span></div></div>`;
+    }
+
     detailContent.classList.remove('cb-detail-open');
-    const remakeBtnHtml = (battle.status === 'finished' && isFullyRevealed)
-      ? `<button type="button" class="btn btn-cb-remake" id="cbRemakeBtn">Remake</button>`
-      : '';
     detailContent.innerHTML = `
-      <div class="cb-detail-top">
-        <h3 class="cb-detail-title">${escapeHtml(battle.format)} · ${escapeHtml(formatModeDisplay(battle.mode, battle.crazyMode))}${entryCostStr ? ' · ' + entryCostStr : ''}</h3>
-        ${remakeBtnHtml}
-        <div class="cb-detail-total">Total: ${formatDollars(totalDisplay)}</div>
-      </div>
-      <div class="cb-detail-round-bar" id="cbDetailRoundBar">
-        <span class="cb-round-bar-label">${roundLabel}</span>
-        ${roundCaseName ? `<span class="cb-round-bar-sep">|</span><button type="button" class="cb-round-bar-case-wrap" id="cbRoundBarCaseBtn" data-case-id="${escapeHtml(roundCaseId)}" data-case-name="${escapeHtml(currentRoundCase ? currentRoundCase.name : '')}" data-case-price="${currentRoundCase && currentRoundCase.price != null ? currentRoundCase.price : ''}"><span class="cb-round-bar-case">${roundCaseName}</span>${roundCaseImage ? `<img src="${escapeHtml(roundCaseImage)}" alt="" class="cb-round-bar-case-img" onerror="this.style.display='none'">` : ''}</button>` : ''}
-        ${roundCasePrice ? `<span class="cb-round-bar-sep">|</span><span class="cb-round-bar-price">${roundCasePrice}</span>` : ''}
-      </div>
-      <div class="cb-detail-main-layout">
-        <div class="cb-detail-slots-column">
-          <div class="cb-detail-slots-header">
-            <h4 class="cb-detail-slots-title">Slots (${battle.participants.filter((p) => p.username).length}/${battle.totalSlots})</h4>
-            <button type="button" class="btn-cb-view-cases" id="cbViewCasesBtn">View cases</button>
+      <div class="cb-battle-header">
+        <div class="cb-battle-header-left">
+          <button type="button" class="cb-battle-back" id="cbBattleBack">\u2190 All Battles</button>
+          <button type="button" class="cb-battle-view-cases-btn" id="cbViewCasesBtn">View cases</button>
+        </div>
+        <div class="cb-battle-header-center">
+          <div class="cb-battle-round-info">
+            <span class="cb-battle-round-label">${roundLabel}</span>
+            ${caseDisplayHtml}
+            ${dotsHtml ? `<div class="cb-battle-round-dots">${dotsHtml}</div>` : ''}
+            <div class="cb-battle-mode-label">${modeLabel}${entryPerSide > 0 ? ' · ' + formatDollars(entryPerSide) : ''}</div>
           </div>
-          <div class="cb-detail-slots-grouped">${slotsHtmlGrouped}</div>
         </div>
-        <div class="cb-detail-open-column">
-          ${openingMsg}
-          ${finishedMsg}
-          ${jackpotSliderHtml}
+        <div class="cb-battle-header-right">
+          <span class="cb-battle-total">Total: ${formatDollars(totalDisplay)}</span>
+          <button type="button" class="cb-battle-share-btn" id="cbShareBtn">Share</button>
         </div>
       </div>
-      <div class="cb-detail-actions">${actionsHtml}</div>
+      ${statusHtml}
+      ${winnerBannerHtml}
+      ${playersHtml}
+      ${actionsHtml ? `<div class="cb-battle-actions">${actionsHtml}</div>` : ''}
     `;
     requestAnimationFrame(() => { detailContent.classList.add('cb-detail-open'); });
+
+    // Poll for in_progress battles
     if (battle.status === 'in_progress' && currentBattleId === battle.id) {
       detailPollInterval = setInterval(() => {
         if (currentBattleId) loadAndRenderDetail(currentBattleId);
       }, 1000);
     }
-    detailContent.querySelectorAll('.cb-detail-slot-add-bot').forEach((el) => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const slot = el.getAttribute('data-slot');
-        addBot(el.getAttribute('data-id'), slot != null ? parseInt(slot, 10) : undefined);
-      });
-    });
-    detailContent.querySelectorAll('.cb-detail-slot-join').forEach((el) => {
-      if (el.disabled) return;
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id = el.getAttribute('data-id');
-        const slot = el.getAttribute('data-slot');
-        joinBattle(id, slot != null ? parseInt(slot, 10) : undefined);
-      });
+    // Poll during animation (finished but not fully animated yet)
+    // IMPORTANT: skip re-render while strip animation is running to avoid destroying the DOM mid-transition
+    if (battle.status === 'finished' && !isAnimComplete && currentBattleId === battle.id) {
+      detailPollInterval = setInterval(() => {
+        if (currentBattleId && !openStripsAnimationRunning) renderDetailView(lastDetailBattle);
+      }, 200);
+    }
+
+    // Event listeners
+    const backBtn = document.getElementById('cbBattleBack');
+    if (backBtn) backBtn.addEventListener('click', () => {
+      showListView();
+      loadBattles();
+      if (window.location.hash.startsWith('#case-battle/')) {
+        window.history.replaceState(null, '', '#case-battle');
+      }
     });
     const deleteBtn = document.getElementById('cbDeleteBattleBtn');
     if (deleteBtn) deleteBtn.addEventListener('click', () => deleteBattle(battle.id));
@@ -562,40 +645,48 @@
     if (remakeBtn) remakeBtn.addEventListener('click', () => remakeBattle(battle));
     const viewCasesBtn = document.getElementById('cbViewCasesBtn');
     if (viewCasesBtn) viewCasesBtn.addEventListener('click', (e) => { e.stopPropagation(); openBattleCasesPopup(battle); });
-    const roundBarCaseBtn = document.getElementById('cbRoundBarCaseBtn');
-    if (roundBarCaseBtn) {
-      roundBarCaseBtn.addEventListener('click', (e) => {
+    const caseDisplayBtn = document.getElementById('cbBattleCaseDisplay');
+    if (caseDisplayBtn) {
+      caseDisplayBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const caseId = roundBarCaseBtn.getAttribute('data-case-id');
-        const caseName = roundBarCaseBtn.getAttribute('data-case-name') || '';
-        const casePrice = roundBarCaseBtn.getAttribute('data-case-price');
+        const caseId = caseDisplayBtn.getAttribute('data-case-id');
+        const caseName = caseDisplayBtn.getAttribute('data-case-name') || '';
+        const casePrice = caseDisplayBtn.getAttribute('data-case-price');
         const priceNum = casePrice === '' || casePrice === null ? null : parseFloat(casePrice);
         const items = getItemsForCase(caseId, battle);
         showCaseDetailPopup(caseName, priceNum, items);
       });
     }
-    detailContent.querySelectorAll('.cb-detail-items-scroll-btn').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
+    const shareBtn = document.getElementById('cbShareBtn');
+    if (shareBtn) {
+      shareBtn.addEventListener('click', () => {
+        const url = window.location.origin + '/#case-battle/' + encodeURIComponent(battle.id);
+        if (navigator.clipboard) navigator.clipboard.writeText(url);
+      });
+    }
+    detailContent.querySelectorAll('.cb-battle-add-bot-btn').forEach((el) => {
+      el.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (btn.disabled) return;
-        const bid = btn.getAttribute('data-battle-id');
-        const pi = parseInt(btn.getAttribute('data-pi'), 10);
-        const dir = parseInt(btn.getAttribute('data-dir'), 10) || 1;
-        const key = `${bid}_${pi}`;
-        const roundResults = (lastDetailBattle && lastDetailBattle.result && lastDetailBattle.result.roundResults) || [];
-        const itemsCount = roundResults.filter((r) => r.items && r.items[pi]).length;
-        const maxScroll = Math.max(0, itemsCount - 5);
-        let scrollIndex = (itemsScrollIndexByKey[key] ?? 0) + dir * 5;
-        scrollIndex = Math.min(Math.max(0, scrollIndex), maxScroll);
-        itemsScrollIndexByKey[key] = scrollIndex;
-        updateItemsColumnOnly(lastDetailBattle, pi);
+        addBot(el.getAttribute('data-id'), parseInt(el.getAttribute('data-slot'), 10));
       });
     });
-    if (battle.status === 'finished' && (battle.result && battle.result.roundResults && battle.result.roundResults.length > 0)) {
-      requestAnimationFrame(() => { runOpenStripsAnimation(battle, currentCaseCarouselIndex); });
+    detailContent.querySelectorAll('.cb-battle-join-btn').forEach((el) => {
+      if (el.classList.contains('disabled')) return;
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        joinBattle(el.getAttribute('data-id'), parseInt(el.getAttribute('data-slot'), 10));
+      });
+    });
+
+    // Run strip animations for the current synced round (only during animation phase, NOT pause phase)
+    if (battle.status === 'finished' && !isAnimComplete && !inPausePhase && syncedRound < totalRounds && roundResults[syncedRound]) {
+      requestAnimationFrame(() => {
+        runOpenStripsAnimation(battle, syncedRound, syncedRoundElapsed);
+      });
     }
+
+    // Jackpot slider
     if (showJackpotSlider) {
-      const winnerTeamIndex = battle.result && battle.result.winnerTeamIndex != null ? battle.result.winnerTeamIndex : null;
       const containerEl = document.getElementById('cbJackpotSliderContainer');
       if (containerEl && winnerTeamIndex != null) {
         if (jackpotSliderAnimationRunning) return;
@@ -605,87 +696,132 @@
           if (!currentBattleId || !lastDetailBattle || lastDetailBattle.id !== currentBattleId) return;
           jackpotRevealShownForBattleId = battle.id;
           renderDetailView(lastDetailBattle);
-          const userInBattleJackpot = battle.participants && battle.participants.some((p) => {
-            const u = typeof window.Auth !== 'undefined' && window.Auth.getCurrentUser ? window.Auth.getCurrentUser() : null;
-            if (!u) return false;
-            const un = (u.username || u.uid || '').toString().toLowerCase();
-            const pn = (p.username || p.userId || '').toString().toLowerCase();
-            return un && pn && (pn === un || pn === (u.email || '').toLowerCase());
-          });
-          if (userInBattleJackpot) {
-            setTimeout(() => {
-              if (!currentBattleId || lastDetailBattle?.id !== currentBattleId) return;
-              window.__caseBattleBlockStatsRefresh = false;
-              if (window.Game && window.Game.unfreezeBalance) window.Game.unfreezeBalance();
-              if (window.Stats && window.Stats.loadStats) {
-                window.Stats.loadStats().then(() => {
-                  if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
-                  window.__caseBattleBlockStatsRefresh = true;
-                }).catch(() => { window.__caseBattleBlockStatsRefresh = true; });
-              } else {
-                if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
-                window.__caseBattleBlockStatsRefresh = true;
-              }
-            }, 400);
-          }
+          unfreezeBalanceAfterBattle(battle);
         });
       } else if (containerEl && winnerTeamIndex == null) {
         jackpotRevealShownForBattleId = battle.id;
         renderDetailView(lastDetailBattle);
       }
     }
+
+    // Unfreeze balance once fully done (non-jackpot)
+    if (battleFullyFinished && !isJackpotMode) {
+      const userInBattle = battle.participants?.some((p) => {
+        if (!user) return false;
+        return (p.username || '').toLowerCase() === (username || '').toLowerCase();
+      });
+      if (userInBattle) unfreezeBalanceAfterBattle(battle);
+    }
   }
 
-  function updateItemsColumnOnly(battle, pi) {
-    if (!battle || !detailContent) return;
-    const roundResults = (battle.result && battle.result.roundResults) || [];
-    const totalRounds = roundResults.length;
-    const replayInProgress = battle.status === 'finished' && totalRounds > 0 && currentCaseCarouselIndex < totalRounds;
-    const revealedCount = replayInProgress ? currentCaseCarouselIndex : totalRounds;
-    const itemsForParticipant = roundResults.slice(0, revealedCount).map((r) => (r.items && r.items[pi]) ? r.items[pi] : null).filter(Boolean);
-    const itemsDisplayOrder = itemsForParticipant;
-    const itemsCount = itemsDisplayOrder.length;
-    const scrollKey = `${battle.id}_${pi}`;
-    const maxScroll = Math.max(0, itemsCount - 5);
-    let scrollIndex = itemsScrollIndexByKey[scrollKey] ?? maxScroll;
-    scrollIndex = Math.min(Math.max(0, scrollIndex), maxScroll);
-    itemsScrollIndexByKey[scrollKey] = scrollIndex;
-    const visibleItems = itemsDisplayOrder.slice(scrollIndex, scrollIndex + 5);
-    const showArrows = itemsCount > 5;
-    const canScrollLeft = scrollIndex > 0;
-    const canScrollRight = scrollIndex < maxScroll;
-    const html = `${showArrows ? `<button type="button" class="cb-detail-items-scroll-btn cb-detail-items-scroll-left" data-pi="${pi}" data-battle-id="${escapeHtml(battle.id)}" data-dir="-1" ${!canScrollLeft ? 'disabled' : ''} aria-label="Previous items">‹</button>` : ''}
-      <div class="cb-detail-items-row">
-        ${visibleItems.map((it) => `
-        <div class="cb-detail-item-card">
-          ${it.image ? `<img src="${escapeHtml(it.image)}" alt="" class="cb-detail-item-card-img" onerror="this.style.display='none'">` : '<div class="cb-detail-item-card-placeholder">' + escapeHtml(it.name || '') + '</div>'}
-          <div class="cb-detail-item-card-name">${escapeHtml(it.name || '')}</div>
-          <div class="cb-detail-item-card-price">${formatDollars(it.value || 0)}</div>
-        </div>`).join('')}
-      </div>
-      ${showArrows ? `<button type="button" class="cb-detail-items-scroll-btn cb-detail-items-scroll-right" data-pi="${pi}" data-battle-id="${escapeHtml(battle.id)}" data-dir="1" ${!canScrollRight ? 'disabled' : ''} aria-label="Next items">›</button>` : ''}`;
-    const cols = detailContent.querySelectorAll('.cb-detail-items-column');
-    const col = cols[pi];
-    if (col) {
-      col.innerHTML = html;
-      col.querySelectorAll('.cb-detail-items-scroll-btn').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (btn.disabled) return;
-          const bid = btn.getAttribute('data-battle-id');
-          const p = parseInt(btn.getAttribute('data-pi'), 10);
-          const dir = parseInt(btn.getAttribute('data-dir'), 10) || 1;
-          const key = `${bid}_${p}`;
-          const rr = (lastDetailBattle && lastDetailBattle.result && lastDetailBattle.result.roundResults) || [];
-          const count = rr.filter((r) => r.items && r.items[p]).length;
-          const max = Math.max(0, count - 5);
-          let idx = (itemsScrollIndexByKey[key] ?? 0) + dir * 5;
-          idx = Math.min(Math.max(0, idx), max);
-          itemsScrollIndexByKey[key] = idx;
-          updateItemsColumnOnly(lastDetailBattle, p);
-        });
-      });
+  function unfreezeBalanceAfterBattle(battle) {
+    setTimeout(() => {
+      if (!currentBattleId || lastDetailBattle?.id !== currentBattleId) return;
+      window.__caseBattleBlockStatsRefresh = false;
+      if (window.Game && window.Game.unfreezeBalance) window.Game.unfreezeBalance();
+      if (window.Stats && window.Stats.loadStats) {
+        window.Stats.loadStats().then(() => {
+          if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
+          window.__caseBattleBlockStatsRefresh = true;
+        }).catch(() => { window.__caseBattleBlockStatsRefresh = true; });
+      } else {
+        if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
+        window.__caseBattleBlockStatsRefresh = true;
+      }
+    }, 400);
+  }
+
+  function buildPlayerColumn(p, pi, battle, payoutsBySlot, username, balance, entryEach, revealedCount, battleFullyFinished, winnerTeamIndex, isCoop, isJackpotMode, jackpotRevealShown, roundResults, totalRounds, inPausePhase, syncedRound) {
+    if (!p.username) {
+      // Empty slot
+      const isCreator = battle.createdBy === username;
+      const showJoin = !isCreator && username && battle.status === 'waiting';
+      const canAfford = balance >= entryEach;
+      return `<div class="cb-battle-player-col empty-col">
+        <div class="cb-battle-empty-slot">
+          <span>Waiting...</span>
+          ${isCreator ? `<button type="button" class="cb-battle-add-bot-btn" data-id="${escapeHtml(battle.id)}" data-slot="${pi}">Add bot</button>` : ''}
+          ${showJoin ? (canAfford
+            ? `<button type="button" class="cb-battle-join-btn" data-id="${escapeHtml(battle.id)}" data-slot="${pi}">Join for ${formatDollars(entryEach)}</button>`
+            : `<button type="button" class="cb-battle-join-btn disabled">Insufficient balance</button>`) : ''}
+        </div>
+      </div>`;
     }
+
+    const payoutKey = p.teamIndex + '_' + p.slotIndex;
+    const payoutAmount = Number(payoutsBySlot[payoutKey]) || 0;
+    const isTie = battle.result && battle.result.isTie;
+    const isWinner = battleFullyFinished && (isCoop || (isTie ? payoutAmount > 0 : (winnerTeamIndex != null ? p.teamIndex === winnerTeamIndex : payoutAmount > 0)));
+    const isLoser = battleFullyFinished && !isWinner && !isCoop;
+
+    // Items revealed so far
+    const itemsForParticipant = roundResults.slice(0, revealedCount).map((r) => (r.items && r.items[pi]) ? r.items[pi] : null).filter(Boolean);
+    const runningTotal = itemsForParticipant.reduce((s, it) => s + (Number(it.value) || 0), 0);
+    const displayTotal = battleFullyFinished ? (p.totalValue != null ? p.totalValue : runningTotal) : runningTotal;
+
+    // Jackpot percentage
+    const totalBattleValue = isJackpotMode && revealedCount > 0
+      ? roundResults.slice(0, revealedCount).reduce((sum, r) => sum + (r.items || []).reduce((s, it) => s + (Number(it?.value) || 0), 0), 0)
+      : 0;
+    const jackpotPct = isJackpotMode && totalBattleValue > 0 ? (100 * displayTotal / totalBattleValue).toFixed(1) : '';
+
+    const name = participantDisplayName(p);
+    const jackpotTeamClass = isJackpotMode ? ` jackpot-team-${p.teamIndex}` : '';
+    const winClass = isWinner ? ' winner' : (isLoser ? ' loser' : '');
+
+    // Items list (newest first)
+    const itemsHtml = itemsForParticipant.slice().reverse().map((it, idx) => {
+      const isLatest = idx === 0;
+      return `<div class="cb-battle-item${isLatest ? ' latest' : ''}">
+        ${it.image ? `<img class="cb-battle-item-img" src="${escapeHtml(it.image)}" alt="" onerror="this.style.display='none'">` : `<div class="cb-battle-item-img-placeholder">${escapeHtml((it.name || '').substring(0, 6))}</div>`}
+        <div class="cb-battle-item-details">
+          <div class="cb-battle-item-name">${escapeHtml(it.name || '')}</div>
+          <div class="cb-battle-item-price">${formatDollars(it.value || 0)}</div>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Slider area
+    let sliderHtml;
+    if (battle.status === 'finished' && !battleFullyFinished && !inPausePhase && roundResults[revealedCount]) {
+      // Active animation round - strip will be populated by runOpenStripsAnimation
+      sliderHtml = `<div class="cb-battle-slider-wrap"><div class="cb-battle-slider-container"><div class="cb-battle-slider-pointer"></div><div class="cb-battle-slider-strip" id="cbBattleStrip_${pi}"></div></div></div>`;
+    } else if (battle.status === 'finished' && !battleFullyFinished && inPausePhase && roundResults[syncedRound]) {
+      // Pause phase - show the landed item from the just-finished round
+      const landedItem = roundResults[syncedRound].items ? roundResults[syncedRound].items[pi] : null;
+      if (landedItem) {
+        const img = landedItem.image ? `<img src="${escapeHtml(landedItem.image)}" alt="">` : `<span>${escapeHtml(landedItem.name || '')}</span>`;
+        sliderHtml = `<div class="cb-battle-slider-wrap"><div class="cb-battle-slider-container"><div class="cb-battle-slider-pointer"></div><div class="cb-battle-slider-strip" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%"><div class="cb-battle-slider-item landed" style="width:90px">${img}</div></div></div></div>`;
+      } else {
+        sliderHtml = `<div class="cb-battle-slider-wrap"><div class="cb-battle-slider-placeholder"></div></div>`;
+      }
+    } else if (battleFullyFinished) {
+      // Show payout result
+      const payoutStr = isWinner ? formatDollars(payoutAmount) : '$0';
+      const payoutClass = isWinner ? 'win' : 'lose';
+      sliderHtml = `<div class="cb-battle-slider-wrap"><div class="cb-battle-slider-placeholder"><span class="cb-battle-player-payout ${payoutClass}">${payoutStr}</span></div></div>`;
+    } else {
+      sliderHtml = `<div class="cb-battle-slider-wrap"><div class="cb-battle-slider-placeholder"></div></div>`;
+    }
+
+    // Value / payout display
+    let valueDisplay;
+    if (battleFullyFinished) {
+      valueDisplay = `<span class="cb-battle-player-payout ${isWinner ? 'win' : 'lose'}">${isWinner ? formatDollars(payoutAmount) : '$0'}</span>`;
+    } else {
+      valueDisplay = `<span class="cb-battle-player-value">${formatDollars(displayTotal)}</span>`;
+    }
+
+    return `<div class="cb-battle-player-col${winClass}${jackpotTeamClass}">
+      <div class="cb-battle-player-info">
+        <div class="cb-battle-avatar">${name.charAt(0).toUpperCase()}</div>
+        <span class="cb-battle-player-name">${escapeHtml(name)}</span>
+        ${valueDisplay}
+        ${jackpotPct ? `<span style="font-size:0.7rem;color:var(--text-muted);margin-left:0.25rem">${jackpotPct}%</span>` : ''}
+      </div>
+      ${sliderHtml}
+      <div class="cb-battle-items-list">${itemsHtml}</div>
+    </div>`;
   }
 
   function parseTransformX(el) {
@@ -698,7 +834,7 @@
     return parts.length >= 5 ? parts[4] : 0;
   }
 
-  function runOpenStripsAnimation(battle, roundIndex) {
+  function runOpenStripsAnimation(battle, roundIndex, elapsedInRound) {
     if (openStripsAnimationRunning) return;
     const roundResults = (battle.result && battle.result.roundResults) || [];
     const round = roundResults[roundIndex];
@@ -708,55 +844,73 @@
     if (caseItems.length === 0) return;
     openStripsAnimationRunning = true;
     const STRIP_REPEAT = 25;
-    const ITEM_WIDTH = 56;
-    const DURATION_MS = 5500;
-    const SETTLE_MS = 220;
-    const PAUSE_AFTER_LAND_MS = 150;
+    const ITEM_WIDTH = 94;
+    const DURATION_MS = battle.animationDurationPerRound || 5500;
     const items = round.items || [];
-    const stopAts = [];
-    const offsetPx = [];
-    for (let pi = 0; pi < items.length; pi++) {
-      const o = (Math.random() - 0.5) * ITEM_WIDTH * 0.7;
-      offsetPx[pi] = o;
-    }
+    const stripData = (battle.result && battle.result.stripData && battle.result.stripData[roundIndex]) || [];
+
+    // How much time remains if we're joining mid-animation
+    const alreadyElapsed = elapsedInRound || 0;
+    const remainingMs = Math.max(100, DURATION_MS - alreadyElapsed);
+    const isJumpingIn = alreadyElapsed > 500; // joining mid-way
+
     requestAnimationFrame(() => {
       for (let pi = 0; pi < items.length; pi++) {
-        const stripEl = document.getElementById('cbOpenStrip_' + pi);
+        const stripEl = document.getElementById('cbBattleStrip_' + pi);
         if (!stripEl) continue;
         const targetItem = items[pi];
+        const sd = stripData[pi] || { stripSeed: Math.random(), stopOffset: Math.random() };
+
+        // Build strip with seeded shuffle
         const flatItems = [];
         for (let r = 0; r < STRIP_REPEAT; r++) {
-          for (let k = 0; k < caseItems.length; k++) flatItems.push(caseItems[k]);
+          const shuffled = seededShuffle(caseItems, sd.stripSeed + r * 0.001);
+          for (let k = 0; k < shuffled.length; k++) flatItems.push(shuffled[k]);
         }
-        let targetIdxInCase = -1;
-        for (let k = 0; k < caseItems.length; k++) {
-          const it = caseItems[k];
-          if (Number(it.value) === Number(targetItem.value) && (it.name || '') === (targetItem.name || '')) {
-            targetIdxInCase = k;
-            break;
-          }
-        }
-        if (targetIdxInCase < 0) targetIdxInCase = 0;
-        const stopAt = Math.floor(STRIP_REPEAT / 2 - 2) * caseItems.length + targetIdxInCase;
-        stopAts[pi] = stopAt;
+
+        // Place target item at landing position
+        const landingRepeat = Math.floor(STRIP_REPEAT / 2 - 2);
+        const landingBase = landingRepeat * caseItems.length;
+        const landingOffset = Math.floor(sd.stopOffset * caseItems.length);
+        const stopAt = landingBase + landingOffset;
+        flatItems[stopAt] = targetItem;
+
+        // Stop offset in px
+        const offsetPx = (sd.stopOffset - 0.5) * ITEM_WIDTH * 0.6;
+
         stripEl.innerHTML = flatItems.map((it, idx) => {
-          const img = it.image ? `<img src="${escapeHtml(it.image)}" alt="">` : `<span class="cb-open-strip-item-name">${escapeHtml(it.name || '')}</span>`;
-          return `<div class="cb-open-strip-item" data-index="${idx}" style="width:${ITEM_WIDTH}px">${img}</div>`;
+          const img = it.image ? `<img src="${escapeHtml(it.image)}" alt="">` : `<span class="cb-battle-slider-item-name">${escapeHtml(it.name || '')}</span>`;
+          return `<div class="cb-battle-slider-item" data-index="${idx}" style="width:${ITEM_WIDTH}px">${img}</div>`;
         }).join('');
         stripEl.style.width = (flatItems.length * ITEM_WIDTH) + 'px';
-        stripEl.style.transform = 'translateX(0)';
-        stripEl.offsetHeight;
+
         const containerW = stripEl.parentElement ? stripEl.parentElement.offsetWidth : 280;
-        const baseX = containerW / 2 - (stopAt * ITEM_WIDTH + ITEM_WIDTH / 2);
-        const endX = baseX + (offsetPx[pi] || 0);
-        stripEl.style.transition = `transform ${DURATION_MS}ms cubic-bezier(0.06, 0.65, 0.2, 1)`;
-        stripEl.style.transform = 'translateX(' + endX + 'px)';
+        const endX = containerW / 2 - (stopAt * ITEM_WIDTH + ITEM_WIDTH / 2) + offsetPx;
+
+        if (isJumpingIn) {
+          // Jump to near the end position with short remaining animation
+          stripEl.style.transition = 'none';
+          const progress = Math.min(alreadyElapsed / DURATION_MS, 0.95);
+          const startX = containerW / 2;
+          const jumpX = startX + (endX - startX) * progress;
+          stripEl.style.transform = 'translateX(' + jumpX + 'px)';
+          stripEl.offsetHeight; // force reflow
+          stripEl.style.transition = `transform ${remainingMs}ms cubic-bezier(0.06, 0.65, 0.2, 1)`;
+          stripEl.style.transform = 'translateX(' + endX + 'px)';
+        } else {
+          stripEl.style.transform = 'translateX(0)';
+          stripEl.offsetHeight;
+          stripEl.style.transition = `transform ${DURATION_MS}ms cubic-bezier(0.06, 0.65, 0.2, 1)`;
+          stripEl.style.transform = 'translateX(' + endX + 'px)';
+        }
       }
     });
+
+    // Center magnification during animation
     const totalItems = STRIP_REPEAT * caseItems.length;
-    const updateCenterMagnification = () => {
+    const centerInterval = setInterval(() => {
       for (let pi = 0; pi < items.length; pi++) {
-        const stripEl = document.getElementById('cbOpenStrip_' + pi);
+        const stripEl = document.getElementById('cbBattleStrip_' + pi);
         if (!stripEl || !stripEl.parentElement) continue;
         const containerW = stripEl.parentElement.offsetWidth;
         const tx = parseTransformX(stripEl);
@@ -764,76 +918,22 @@
         let idx = Math.floor(centerPos / ITEM_WIDTH);
         if (idx < 0) idx = 0;
         if (idx >= totalItems) idx = totalItems - 1;
-        stripEl.querySelectorAll('.cb-open-strip-item-centered').forEach((el) => el.classList.remove('cb-open-strip-item-centered'));
-        const centered = stripEl.querySelector('.cb-open-strip-item[data-index="' + idx + '"]');
-        if (centered) centered.classList.add('cb-open-strip-item-centered');
+        stripEl.querySelectorAll('.cb-battle-slider-item.landed').forEach((el) => el.classList.remove('landed'));
+        const centered = stripEl.querySelector('.cb-battle-slider-item[data-index="' + idx + '"]');
+        if (centered) centered.classList.add('landed');
       }
-    };
-    const centerInterval = setInterval(updateCenterMagnification, 50);
-    const onMainAnimationEnd = async () => {
+    }, 50);
+
+    // Animation end - the re-render will be handled by the polling interval in renderDetailView
+    const timeToEnd = isJumpingIn ? remainingMs : DURATION_MS;
+    setTimeout(() => {
       clearInterval(centerInterval);
-      for (let pi = 0; pi < items.length; pi++) {
-        const stripEl = document.getElementById('cbOpenStrip_' + pi);
-        const stopAt = stopAts[pi];
-        if (stripEl && stopAt != null) {
-          const containerW = stripEl.parentElement ? stripEl.parentElement.offsetWidth : 280;
-          const baseX = containerW / 2 - (stopAt * ITEM_WIDTH + ITEM_WIDTH / 2);
-          const exactX = baseX + (offsetPx[pi] || 0);
-          stripEl.style.transition = `transform ${SETTLE_MS}ms ease-out`;
-          stripEl.style.transform = 'translateX(' + exactX + 'px)';
-          stripEl.querySelectorAll('.cb-open-strip-item-centered').forEach((el) => el.classList.remove('cb-open-strip-item-centered'));
-          const centered = stripEl.querySelector('.cb-open-strip-item[data-index="' + stopAt + '"]');
-          if (centered) centered.classList.add('cb-open-strip-item-centered');
-        }
-      }
-      await new Promise((r) => setTimeout(r, SETTLE_MS + 200));
-      if (!currentBattleId || !lastDetailBattle || lastDetailBattle.id !== currentBattleId) {
-        openStripsAnimationRunning = false;
-        return;
-      }
-      const totalRounds = (lastDetailBattle.result && lastDetailBattle.result.roundResults || []).length;
-      if (currentReplayRound + 1 < totalRounds) {
-        await new Promise((r) => setTimeout(r, PAUSE_AFTER_LAND_MS));
-        currentReplayRound++;
-        openStripsAnimationRunning = false;
+      openStripsAnimationRunning = false;
+      // Re-render to show next round or final state
+      if (currentBattleId && lastDetailBattle && lastDetailBattle.id === currentBattleId) {
         renderDetailView(lastDetailBattle);
-      } else {
-        currentReplayRound = totalRounds;
-        openStripsAnimationRunning = false;
-        const mode = (lastDetailBattle.mode || '').toLowerCase();
-        const isJackpotMode = mode === 'jackpot';
-        const userInBattle = lastDetailBattle.participants && lastDetailBattle.participants.some((p) => {
-          const u = typeof window.Auth !== 'undefined' && window.Auth.getCurrentUser ? window.Auth.getCurrentUser() : null;
-          if (!u) return false;
-          const un = (u.username || u.uid || '').toString().toLowerCase();
-          const pn = (p.username || p.userId || '').toString().toLowerCase();
-          return un && pn && (pn === un || pn === (u.email || '').toLowerCase());
-        });
-        renderDetailView(lastDetailBattle);
-        // Update balance only after "Won" / "0$" is visible. Standard, Terminal, Co-op, Crazy all show it here; Jackpot updates in slider callback.
-        if (userInBattle && !isJackpotMode) {
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              setTimeout(() => {
-                if (!currentBattleId || !lastDetailBattle || lastDetailBattle.id !== currentBattleId) return;
-                window.__caseBattleBlockStatsRefresh = false;
-                if (window.Game && window.Game.unfreezeBalance) window.Game.unfreezeBalance();
-                if (window.Stats && window.Stats.loadStats) {
-                  window.Stats.loadStats().then(() => {
-                    if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
-                    window.__caseBattleBlockStatsRefresh = true;
-                  }).catch(() => { window.__caseBattleBlockStatsRefresh = true; });
-                } else {
-                  if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
-                  window.__caseBattleBlockStatsRefresh = true;
-                }
-              }, 400);
-            });
-          });
-        }
       }
-    };
-    setTimeout(onMainAnimationEnd, DURATION_MS + 80);
+    }, timeToEnd + 100);
   }
 
   function buildRoundCaseList(battle) {
@@ -938,128 +1038,6 @@
     });
   }
 
-  function buildSlotsGroupedByTeam(byTeam, battle, payoutsBySlot, username, currentRoundIndex) {
-    const roundResults = (battle.result && battle.result.roundResults) || [];
-    const totalRounds = roundResults.length;
-    const replayInProgress = battle.status === 'finished' && totalRounds > 0 && currentRoundIndex < totalRounds;
-    const revealedCount = replayInProgress ? currentRoundIndex : totalRounds;
-    const hasStrips = battle.status === 'finished' && totalRounds > 0 && roundResults[currentRoundIndex];
-    const battleFullyFinished = battle.status === 'finished' && revealedCount === totalRounds;
-    const winnerTeamIndex = battle.result && battle.result.winnerTeamIndex != null ? battle.result.winnerTeamIndex : null;
-    const isCoop = (battle.mode || '').toLowerCase() === 'coop';
-    const isJackpot = (battle.mode || '').toLowerCase() === 'jackpot';
-    const jackpotRevealShown = isJackpot && jackpotRevealShownForBattleId === battle.id;
-    const currentBattleTotal = isJackpot && revealedCount > 0
-      ? roundResults.slice(0, revealedCount).reduce((sum, r) =>
-          sum + (r.items || []).reduce((s, it) => s + (Number(it?.value) || 0), 0), 0)
-      : 0;
-    const sideCount = new Set((battle.participants || []).map((p) => p.teamIndex)).size;
-    const entryEach = (battle.totalPot || 0) / Math.max(1, sideCount);
-    const hasEmpty = battle.status === 'waiting' && (battle.participants || []).some((p) => !p.username);
-    const canAffordJoin = username && hasEmpty && getEffectiveBalance() >= entryEach;
-    const teamIndices = Object.keys(byTeam).map(Number).sort((a, b) => a - b);
-    let participantIndex = 0;
-    const parts = [];
-    for (let i = 0; i < teamIndices.length; i++) {
-      const team = byTeam[teamIndices[i]];
-      const rows = team.map((p) => {
-        const pi = participantIndex++;
-        const payoutKey = p.teamIndex + '_' + p.slotIndex;
-        const payout = payoutsBySlot[payoutKey];
-        const payoutAmount = Number(payout) || 0;
-        const isTie = battle.result && battle.result.isTie;
-        const isWinner = battleFullyFinished && (isCoop || (isTie ? payoutAmount > 0 : (winnerTeamIndex != null ? p.teamIndex === winnerTeamIndex : payoutAmount > 0)));
-        const itemsForParticipant = roundResults.slice(0, revealedCount).map((r) => (r.items && r.items[pi]) ? r.items[pi] : null).filter(Boolean);
-        const runningTotal = itemsForParticipant.reduce((s, it) => s + (Number(it.value) || 0), 0);
-        const displayTotal = replayInProgress ? runningTotal : (p.totalValue != null ? p.totalValue : runningTotal);
-        const itemsDisplayOrder = itemsForParticipant;
-        const itemsCount = itemsDisplayOrder.length;
-        const scrollKey = `${battle.id}_${pi}`;
-        const maxScroll = Math.max(0, itemsCount - 5);
-        const prevCount = itemsCountByKey[scrollKey] ?? 0;
-        itemsCountByKey[scrollKey] = itemsCount;
-        let scrollIndex = itemsScrollIndexByKey[scrollKey];
-        if (scrollIndex === undefined || itemsCount > prevCount) {
-          scrollIndex = maxScroll;
-          itemsScrollIndexByKey[scrollKey] = scrollIndex;
-        }
-        scrollIndex = Math.min(Math.max(0, scrollIndex), maxScroll);
-        itemsScrollIndexByKey[scrollKey] = scrollIndex;
-        const visibleItems = itemsDisplayOrder.slice(scrollIndex, scrollIndex + 5);
-        const showArrows = itemsCount > 5;
-        const canScrollLeft = scrollIndex > 0;
-        const canScrollRight = scrollIndex < maxScroll;
-        const itemsColumnHtml = `<div class="cb-detail-items-column" data-pi="${pi}" data-battle-id="${escapeHtml(battle.id)}">
-          ${showArrows ? `<button type="button" class="cb-detail-items-scroll-btn cb-detail-items-scroll-left" data-pi="${pi}" data-battle-id="${escapeHtml(battle.id)}" data-dir="-1" ${!canScrollLeft ? 'disabled' : ''} aria-label="Previous items">‹</button>` : ''}
-          <div class="cb-detail-items-row">
-            ${visibleItems.map((it) => `
-            <div class="cb-detail-item-card">
-              ${it.image ? `<img src="${escapeHtml(it.image)}" alt="" class="cb-detail-item-card-img" onerror="this.style.display='none'">` : '<div class="cb-detail-item-card-placeholder">' + escapeHtml(it.name || '') + '</div>'}
-              <div class="cb-detail-item-card-name">${escapeHtml(it.name || '')}</div>
-              <div class="cb-detail-item-card-price">${formatDollars(it.value || 0)}</div>
-            </div>`).join('')}
-          </div>
-          ${showArrows ? `<button type="button" class="cb-detail-items-scroll-btn cb-detail-items-scroll-right" data-pi="${pi}" data-battle-id="${escapeHtml(battle.id)}" data-dir="1" ${!canScrollRight ? 'disabled' : ''} aria-label="Next items">›</button>` : ''}
-        </div>`;
-        let slotHtml;
-        if (!p.username) {
-          const isCreator = battle.createdBy === username;
-          const showJoin = !isCreator && username && battle.status === 'waiting';
-          slotHtml = `<div class="cb-detail-slot empty">
-            <div class="cb-detail-slot-name">Empty</div>
-            ${isCreator ? `<button type="button" class="cb-detail-slot-add-bot" data-id="${escapeHtml(battle.id)}" data-slot="${pi}">Add bot</button>` : ''}
-            ${showJoin ? (canAffordJoin
-              ? `<button type="button" class="cb-detail-slot-join" data-id="${escapeHtml(battle.id)}" data-slot="${pi}">Join for ${formatDollars(entryEach)}</button>`
-              : `<button type="button" class="cb-detail-slot-join cb-detail-slot-join-disabled" disabled>Join for ${formatDollars(entryEach)} (insufficient balance)</button>`) : ''}
-          </div>`;
-        } else {
-          const name = participantDisplayName(p);
-          const valueStr = formatDollars(displayTotal);
-          const pctLine = isJackpot && currentBattleTotal > 0
-            ? `<div class="cb-detail-slot-pct">${(100 * displayTotal / currentBattleTotal).toFixed(1)}% of total</div>`
-            : '';
-          const teamColorClass = isJackpot ? ` cb-jackpot-team-${p.teamIndex}` : '';
-          slotHtml = `<div class="cb-detail-slot${teamColorClass} ${battleFullyFinished && isWinner && (jackpotRevealShown || !isJackpot) ? 'cb-detail-slot-winner' : ''}">
-            <div class="cb-detail-slot-name">${escapeHtml(name)}</div>
-            ${battle.status === 'finished' ? `<div class="cb-detail-slot-total">Total value: ${escapeHtml(valueStr)}</div>${pctLine}` : ''}
-          </div>`;
-        }
-        let stripHtml;
-        if (battleFullyFinished && isJackpot && !jackpotRevealShown) {
-          stripHtml = '<div class="cb-detail-strip-cell cb-detail-strip-placeholder"><span class="cb-detail-strip-revealing">Revealing…</span></div>';
-        } else if (battleFullyFinished) {
-          if (isWinner) {
-            stripHtml = `<div class="cb-detail-strip-cell cb-detail-strip-result"><span class="cb-detail-strip-win-yes">${formatDollars(payoutAmount)}</span></div>`;
-          } else {
-            stripHtml = `<div class="cb-detail-strip-cell cb-detail-strip-result"><span class="cb-detail-strip-win-no">$0</span></div>`;
-          }
-        } else if (hasStrips) {
-          stripHtml = `<div class="cb-detail-strip-cell"><div class="cb-open-strip-container"><div class="cb-open-strip-pointer"></div><div class="cb-open-strip" id="cbOpenStrip_${pi}"></div></div></div>`;
-        } else {
-          stripHtml = '<div class="cb-detail-strip-cell cb-detail-strip-placeholder"></div>';
-        }
-        return `<div class="cb-detail-participant-row">${itemsColumnHtml}${slotHtml}${stripHtml}</div>`;
-      });
-      parts.push(`<div class="cb-detail-team-group">${rows.join('')}</div>`);
-      if (i < teamIndices.length - 1) parts.push('<div class="cb-detail-team-divider"></div>');
-    }
-    return parts.join('');
-  }
-
-  function buildCaseCarouselHtml(roundCaseList, idx) {
-    if (!roundCaseList || roundCaseList.length === 0) return '<div class="cb-carousel-empty">No cases</div>';
-    const curr = roundCaseList[Math.min(idx, roundCaseList.length - 1)];
-    if (!curr) return '<div class="cb-carousel-empty">No case</div>';
-    const value = curr.price != null ? formatDollars(curr.price) : '';
-    return `<div class="cb-carousel-slide cb-carousel-slide-current">
-      <div class="cb-carousel-slide-inner">
-        ${curr.image ? `<img src="${escapeHtml(curr.image)}" alt="">` : '<div class="cb-carousel-slide-placeholder">' + escapeHtml(curr.name) + '</div>'}
-        <div class="cb-carousel-slide-value">${escapeHtml(value)}</div>
-      </div>
-    </div>`;
-  }
-
-
   function openBattleCasesPopover(detailCaseItems, totalPot) {
     const battle = lastDetailBattle;
     if (battle) openBattleCasesPopup(battle);
@@ -1134,7 +1112,7 @@
     pop.setAttribute('aria-label', 'Case details');
     const itemsList = (items || []).map((it) => {
       const raw = it.probability != null ? Number(it.probability) : null;
-      const pct = raw != null ? (raw <= 1 ? (raw * 100).toFixed(2) : raw.toFixed(2)) + '%' : '—';
+      const pct = raw != null ? raw.toFixed(2) + '%' : '—';
       return `<div class="cb-case-detail-item">
         ${it.image ? `<img src="${escapeHtml(it.image)}" alt="" class="cb-case-detail-item-img" onerror="this.style.display='none'">` : '<div class="cb-case-detail-item-pl">' + escapeHtml(it.name || '') + '</div>'}
         <div class="cb-case-detail-item-info">
@@ -1676,13 +1654,6 @@
     crazyModeToggle.setAttribute('aria-checked', crazyModeToggle.classList.contains('is-on'));
   });
   updateCrazyModeRow();
-  if (backToList) backToList.addEventListener('click', () => {
-    showListView();
-    loadBattles();
-    if (window.location.hash.startsWith('#case-battle/')) {
-      window.history.replaceState(null, '', '#case-battle');
-    }
-  });
   setupBattleListDelegation();
 
   window.CaseBattle = { onShow, onHide };

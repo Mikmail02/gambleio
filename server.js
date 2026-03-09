@@ -3096,10 +3096,28 @@ async function runCaseBattle(battleId) {
     }
   }
 
+  // Pre-generate deterministic strip data for client-sync'd animations
+  const stripData = [];
+  for (let r = 0; r < roundResults.length; r++) {
+    const roundStrips = [];
+    for (let pi = 0; pi < battle.participants.length; pi++) {
+      roundStrips.push({
+        stripSeed: caseBattleProvably.roll01(serverSeed, clientSeed, nonce),
+        stopOffset: caseBattleProvably.roll01(serverSeed, clientSeed, nonce + 1),
+      });
+      nonce += 2;
+    }
+    stripData.push(roundStrips);
+  }
+  battle.nonce = nonce;
+
   battle.totalPot = totalValueOfAllItems;
   battle.status = 'finished';
   battle.finishedAt = Date.now();
-  battle.result = { ...result, roundResults };
+  battle.animationStartedAt = Date.now();
+  battle.animationDurationPerRound = 5500;
+  battle.animationPausePerRound = 800;
+  battle.result = { ...result, roundResults, stripData };
 }
 
 function scheduleCaseBattleRun(battleId) {
