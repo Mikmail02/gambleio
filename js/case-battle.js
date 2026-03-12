@@ -285,6 +285,15 @@
 
   function renderBattleList(battles) {
     if (!battleListEl) return;
+    const now = Date.now();
+    // Hide finished battles 3 seconds after their animation completes on the client
+    battles = battles.filter((b) => {
+      if (b.status !== 'finished') return true;
+      if (!b.animationStartedAt) return !b.finishedAt || now - b.finishedAt < 3000;
+      const msPerRound = (b.animationDurationPerRound || 5500) + (b.animationPausePerRound || 500);
+      const animDoneAt = b.animationStartedAt + (b.totalRounds || 0) * msPerRound;
+      return now < animDoneAt + 3000;
+    });
     const user = typeof window.Auth !== 'undefined' && window.Auth.getCurrentUser ? window.Auth.getCurrentUser() : null;
     const username = user?.username || user?.uid || '';
     const balance = getEffectiveBalance();
@@ -621,6 +630,9 @@
         const row1 = teamParts.slice(0, 2).join('<div class="cb-battle-team-divider-v"></div>');
         const row2 = teamParts[2];
         playersHtml = `<div class="cb-battle-players-wrap"><div class="cb-battle-teams cb-battle-teams-row" data-team-count="2">${row1}</div><div class="cb-battle-team-divider-h"></div><div class="cb-battle-teams cb-battle-teams-row" data-team-count="1">${row2}</div></div>`;
+      } else if (teamIndices.length === 2 && slotsPerSide.every((n) => n > 1)) {
+        // 2v2, 3v3: each team on its own row stacked vertically
+        playersHtml = `<div class="cb-battle-players-wrap"><div class="cb-battle-teams cb-battle-teams-row" data-team-count="1">${teamParts[0]}</div><div class="cb-battle-team-divider-h"></div><div class="cb-battle-teams cb-battle-teams-row" data-team-count="1">${teamParts[1]}</div></div>`;
       } else {
         playersHtml = `<div class="cb-battle-players cb-battle-teams" data-team-count="${teamIndices.length}">${teamParts.join('<div class="cb-battle-team-divider-v"></div>')}</div>`;
       }
@@ -760,6 +772,8 @@
 
     // Run strip animations for the current synced round (only during animation phase, NOT pause phase)
     if (battle.status === 'finished' && !isAnimComplete && !inPausePhase && syncedRound < totalRounds && roundResults[syncedRound]) {
+      // Pre-emptively lock to prevent the 200ms poll interval from re-rendering before the rAF fires
+      openStripsAnimationRunning = true;
       requestAnimationFrame(() => {
         runOpenStripsAnimation(battle, syncedRound, syncedRoundElapsed);
       });
@@ -936,13 +950,13 @@
   }
 
   function runOpenStripsAnimation(battle, roundIndex, elapsedInRound) {
-    if (openStripsAnimationRunning) return;
+    // Note: openStripsAnimationRunning may already be true (pre-set by renderDetailView before rAF)
     const roundResults = (battle.result && battle.result.roundResults) || [];
     const round = roundResults[roundIndex];
-    if (!round) return;
+    if (!round) { openStripsAnimationRunning = false; return; }
     const caseDef = (battle.caseDefs || {})[round.caseId];
     const caseItems = (caseDef && caseDef.items) || [];
-    if (caseItems.length === 0) return;
+    if (caseItems.length === 0) { openStripsAnimationRunning = false; return; }
     openStripsAnimationRunning = true;
     const STRIP_REPEAT = 25;
     const ITEM_WIDTH = 84; // 80px CSS width + 2px margin each side

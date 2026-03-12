@@ -107,22 +107,16 @@ body {
 .chat-panel-wrap {
   --chat-width: 280px;
   position: relative;
-  width: var(--chat-width);
-  flex-shrink: 0;
-  transition: width 0.25s ease, transform 0.25s ease;
-  z-index: 50;
-}
-
-.chat-panel-wrap.chat-panel-wrap--closed {
   width: 0;
-  overflow: visible;
+  flex-shrink: 0;
+  z-index: 150;
 }
 
 .chat-panel {
   position: fixed;
   left: 0;
   top: var(--header-height);
-  bottom: var(--footer-height);
+  bottom: 0;
   width: var(--chat-width);
   background: var(--bg-panel);
   border-right: 1px solid rgba(255,255,255,0.08);
@@ -130,10 +124,21 @@ body {
   flex-direction: column;
   transition: transform 0.25s ease;
   box-shadow: 4px 0 20px rgba(0,0,0,0.2);
+  z-index: 150;
 }
 
 .chat-panel-wrap--closed .chat-panel {
   transform: translateX(-100%);
+}
+
+/* Push main content right when chat is open */
+.chat-panel-wrap:not(.chat-panel-wrap--closed) ~ main,
+.chat-panel-wrap:not(.chat-panel-wrap--closed) ~ footer {
+  margin-left: var(--chat-width);
+  transition: margin-left 0.25s ease;
+}
+main, footer.site-footer {
+  transition: margin-left 0.25s ease;
 }
 
 .chat-toggle {
@@ -153,7 +158,7 @@ body {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   cursor: pointer;
-  z-index: 51;
+  z-index: 151;
   box-shadow: 3px 0 14px rgba(0,212,170,0.4);
   display: flex;
   align-items: center;
@@ -496,8 +501,9 @@ body {
 
 /* Header */
 .header {
-  position: relative;
-  z-index: 100;
+  position: sticky;
+  top: 0;
+  z-index: 200;
   display: flex;
   align-items: center;
   justify-content: space-between;

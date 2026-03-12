@@ -3266,7 +3266,7 @@ async function enrichBattleParticipants(battle) {
   return out;
 }
 
-const FINISHED_BATTLE_VISIBLE_MS = 5 * 1000; // 5 sec after finished
+const FINISHED_BATTLE_VISIBLE_MS = 120 * 1000; // 2 min — covers full animation + client display time
 
 app.get('/api/case-battle/battles', async (req, res) => {
   const now = Date.now();
