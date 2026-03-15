@@ -387,6 +387,14 @@
     if (betInput) betInput.disabled = !!game && game.phase !== 'idle' && game.phase !== 'resolved' || state.dealerRevealing;
   }
 
+  function flushPendingBalance() {
+    if (state._pendingBalance != null) {
+      if (window.Game) window.Game.balance = state._pendingBalance;
+      if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
+      state._pendingBalance = null;
+    }
+  }
+
   function showResult(game) {
     const el = document.getElementById('blackjackResult');
     if (!el || !game) return;
@@ -395,12 +403,16 @@
       el.className = 'blackjack-result';
       return;
     }
-    const net = game.totalNet;
-    if (net > 0) {
-      el.textContent = '+' + formatDollars(net) + ' Win!';
+    // totalNet = total returned to player (bet was pre-deducted)
+    const totalReturn = game.totalNet;
+    const totalBet = (game.hands || []).reduce((s, h) => s + h.bet, 0);
+    const profit = totalReturn - totalBet;
+    if (profit > 0) {
+      el.textContent = 'Won ' + formatDollars(totalReturn) + '!';
       el.className = 'blackjack-result blackjack-result-win';
-    } else if (net < 0) {
-      el.textContent = formatDollars(net) + ' Loss';
+    } else if (totalReturn < totalBet) {
+      const loss = totalBet - totalReturn;
+      el.textContent = '-' + formatDollars(loss) + ' Loss';
       el.className = 'blackjack-result blackjack-result-loss';
     } else {
       el.textContent = 'Push';
@@ -450,6 +462,7 @@
           state.renderedDealerLen = dealerHand.length;
           updateActionButtons(game);
           showResult(game);
+          flushPendingBalance();
         });
         renderPlayerHands(game);
         updateActionButtons(game);
@@ -493,6 +506,7 @@
     renderPlayerHands(game);
     updateActionButtons(game);
     showResult(game);
+    if (game && game.phase === 'resolved') flushPendingBalance();
   }
 
   async function fetchState() {
@@ -581,13 +595,16 @@
       state.balance = data.balance;
       state.game = data.game;
       state._prevGame = prevGame;
-      if (window.Game) window.Game.balance = state.balance;
-      if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();
-      if (state.game && state.game.phase === 'resolved' && state.game.totalNet > 0) {
+      // Defer balance UI update — will be applied when result text appears
+      state._pendingBalance = data.balance;
+      if (state.game && state.game.phase === 'resolved') {
         const totalBet = state.game.hands.reduce((s, h) => s + h.bet, 0);
-        if (window.LiveStats) window.LiveStats.recordRound('blackjack', totalBet, state.game.totalNet + totalBet);
-        if (window.Stats && window.Stats.win) {
-          await window.Stats.win(state.game.totalNet + totalBet, 1, totalBet, 'blackjack');
+        const profit = state.game.totalNet - totalBet;
+        if (profit > 0) {
+          if (window.LiveStats) window.LiveStats.recordRound('blackjack', totalBet, state.game.totalNet);
+          if (window.Stats && window.Stats.win) {
+            await window.Stats.win(state.game.totalNet, 1, totalBet, 'blackjack');
+          }
         }
       }
       render(state.game);

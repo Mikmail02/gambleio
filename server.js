@@ -2569,11 +2569,11 @@ function resolveBlackjackHands(game, user) {
     if (hand.surrendered) {
       netChange = bet * 0.5;
     } else if (hand.insurance) {
+      // Insurance was already deducted at bet time
       if (game.dealerBlackjack) {
-        netChange += insurance * 2;
-      } else {
-        netChange -= insurance;
+        netChange += insurance * 3; // return insurance + 2:1 payout
       }
+      // If no dealer blackjack: insurance already lost, no change
     }
 
     if (hand.surrendered) {
@@ -2581,63 +2581,66 @@ function resolveBlackjackHands(game, user) {
       continue;
     }
 
+    // NOTE: bet was already deducted from balance at bet time.
+    // netChange represents what to ADD BACK to balance.
     if (ev.bust) {
-      netChange -= bet;
+      // Already lost the bet, nothing returned
       results.push({ handIndex: h, outcome: 'bust', netChange });
       continue;
     }
 
     if (game.dealerBlackjack) {
       if (ev.blackjack) {
-        netChange += bet;
+        netChange += bet; // return the bet (push)
         results.push({ handIndex: h, outcome: 'push', netChange });
       } else {
-        netChange -= bet;
+        // Already lost the bet, nothing returned
         results.push({ handIndex: h, outcome: 'lose', netChange });
       }
       continue;
     }
 
     if (ev.blackjack) {
-      netChange += bet * 2.5;
+      netChange += bet * 2.5; // return bet + 1.5x profit
       results.push({ handIndex: h, outcome: 'blackjack', netChange });
       continue;
     }
 
     if (dealerEv.bust) {
-      netChange += bet;
+      netChange += bet * 2; // return bet + equal winnings
       results.push({ handIndex: h, outcome: 'win', netChange });
       continue;
     }
 
     if (ev.total > dealerEv.total) {
-      netChange += bet;
+      netChange += bet * 2; // return bet + equal winnings
       results.push({ handIndex: h, outcome: 'win', netChange });
     } else if (ev.total < dealerEv.total) {
-      netChange -= bet;
+      // Already lost the bet, nothing returned
       results.push({ handIndex: h, outcome: 'lose', netChange });
     } else {
+      netChange += bet; // return the bet (push)
       results.push({ handIndex: h, outcome: 'push', netChange });
     }
   }
 
+  // totalNet = total amount returned to player (bet was already deducted at bet time)
   let totalNet = 0;
   for (const r of results) totalNet += r.netChange;
   user.balance += totalNet;
   user.gameNet.blackjack = (user.gameNet.blackjack || 0) + totalNet;
   user.gamePlayCounts.blackjack = (user.gamePlayCounts.blackjack || 0) + 1;
-  if (totalNet > 0) {
-    user.totalGamblingWins = (user.totalGamblingWins || 0) + totalNet;
+  const totalBet = game.hands.reduce((s, h) => s + h.bet, 0);
+  const profit = totalNet - totalBet; // actual profit (return minus original bets)
+  if (profit > 0) {
+    user.totalGamblingWins = (user.totalGamblingWins || 0) + profit;
     user.xpBySource.blackjack = (user.xpBySource.blackjack || 0) + 3;
-    const totalBet = game.hands.reduce((s, h) => s + h.bet, 0);
-    if (totalNet > 0 && totalNet > totalBet) {
-      user.totalProfitWins = (user.totalProfitWins || 0) + (totalNet - totalBet);
-      user.totalWinsCount = (user.totalWinsCount || 0) + 1;
-      if (totalNet > (user.biggestWinAmount || 0)) {
-        user.biggestWinAmount = Math.min(totalNet, MAX_BIGGEST_WIN_AMOUNT);
-        user.biggestWinMultiplier = 1;
-        user.biggestWinMeta = { game: 'blackjack', betAmount: totalBet, multiplier: 1, timestamp: Date.now() };
-      }
+    user.totalProfitWins = (user.totalProfitWins || 0) + profit;
+    user.totalWinsCount = (user.totalWinsCount || 0) + 1;
+    if (profit > (user.biggestWinAmount || 0)) {
+      user.biggestWinAmount = Math.min(profit, MAX_BIGGEST_WIN_AMOUNT);
+      user.biggestWinMultiplier = 1;
+      user.biggestWinMeta = { game: 'blackjack', betAmount: totalBet, multiplier: 1, timestamp: Date.now() };
     }
   }
   game.results = results;
@@ -2742,8 +2745,9 @@ app.post('/api/blackjack/bet', async (req, res) => {
   } else if (dealerEv.blackjack) {
     game.phase = 'resolved';
     game.dealerBlackjack = true;
-    game.results = [{ handIndex: 0, outcome: 'lose', netChange: -amount }];
-    game.totalNet = -amount;
+    // Bet already deducted, nothing returned
+    game.results = [{ handIndex: 0, outcome: 'lose', netChange: 0 }];
+    game.totalNet = 0;
   } else if (playerEv.blackjack) {
     game.phase = 'resolved';
     const winAmount = amount * 2.5;
@@ -2757,8 +2761,8 @@ app.post('/api/blackjack/bet', async (req, res) => {
       user.biggestWinAmount = Math.min(winAmount, MAX_BIGGEST_WIN_AMOUNT);
       user.biggestWinMeta = { game: 'blackjack', betAmount: amount, multiplier: 1.5, timestamp: Date.now() };
     }
-    game.results = [{ handIndex: 0, outcome: 'blackjack', netChange: amount * 1.5 }];
-    game.totalNet = amount * 1.5;
+    game.results = [{ handIndex: 0, outcome: 'blackjack', netChange: amount * 2.5 }];
+    game.totalNet = amount * 2.5;
   } else if (dealerCard1.rank === 'A') {
     game.phase = 'insurance';
     game.dealerBlackjack = false;
@@ -2875,9 +2879,9 @@ app.post('/api/blackjack/action', async (req, res) => {
     if (card) hand.cards.push(card);
     const ev = blackjackEvaluateHand(hand.cards);
     if (ev.bust) {
-      user.gameNet.blackjack -= hand.bet;
-      game.results = [{ handIndex, outcome: 'bust', netChange: -hand.bet }];
-      game.totalNet = -hand.bet;
+      // Bet already fully deducted (original + double), nothing returned
+      game.results = [{ handIndex, outcome: 'bust', netChange: 0 }];
+      game.totalNet = 0;
       game.phase = 'resolved';
     } else {
       game.hasActed = true;
