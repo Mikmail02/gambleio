@@ -356,7 +356,7 @@
         <div class="cb-card2-players">${playersHtml}</div>
         <div class="cb-card2-cases">${casesHtml}</div>
         <div class="cb-card2-meta">
-          <div class="cb-card2-pot">${formatDollars(b.totalPot)}</div>
+          <div class="cb-card2-pot">${formatDollars(entryEach)}</div>
           <div class="cb-card2-sub">${escapeHtml(roundLabel)} · ${filled}/${b.totalSlots} slots</div>
           ${isInProgress ? '<div class="cb-card2-live">Live</div>' : ''}
           ${mySlot ? '<div class="cb-card2-youin">You\'re in</div>' : ''}
@@ -813,6 +813,23 @@
       if (!currentBattleId || lastDetailBattle?.id !== currentBattleId) return;
       window.__caseBattleBlockStatsRefresh = false;
       if (window.Game && window.Game.unfreezeBalance) window.Game.unfreezeBalance();
+      // Track LiveStats for case battle
+      const user = typeof window.Auth !== 'undefined' && window.Auth.getCurrentUser ? window.Auth.getCurrentUser() : null;
+      const uname = (user?.username || '').toLowerCase();
+      if (uname && battle.result) {
+        const sideCount = new Set(battle.participants.map((p) => p.teamIndex)).size;
+        const betAmount = (battle.totalPot || 0) / Math.max(1, sideCount);
+        const myPayout = (battle.result.payouts || [])
+          .filter((p) => {
+            const part = battle.participants.find((x) => x.teamIndex === p.teamIndex && x.slotIndex === p.slotIndex);
+            return part && (part.username || '').toLowerCase() === uname;
+          })
+          .reduce((s, p) => s + (p.amount || 0), 0);
+        if (window.LiveStats) window.LiveStats.recordRound('caseBattle', betAmount, myPayout);
+        if (myPayout > betAmount && window.Stats && window.Stats.win) {
+          window.Stats.win(myPayout, +(myPayout / Math.max(1, betAmount)).toFixed(2), betAmount, 'caseBattle');
+        }
+      }
       if (window.Stats && window.Stats.loadStats) {
         window.Stats.loadStats().then(() => {
           if (window.Auth && window.Auth.updateBalance) window.Auth.updateBalance();

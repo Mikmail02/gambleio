@@ -3088,16 +3088,36 @@ async function runCaseBattle(battleId) {
     result = caseBattleMath.resolveBattleResult(battle.participants, mode, payoutOpts);
   }
 
+  // Track stats and pay out for all human participants
+  const entryCostPerSide = battle.entryCostPerSide || 0;
+  const payoutMap = {};
   for (const pay of result.payouts || []) {
-    const p = battle.participants.find((x) => x.teamIndex === pay.teamIndex && x.slotIndex === pay.slotIndex);
-    if (!p || p.isBot || (pay.amount || 0) <= 0) continue;
+    payoutMap[pay.teamIndex + '_' + pay.slotIndex] = pay.amount || 0;
+  }
+  for (const p of battle.participants) {
+    if (!p.username || p.isBot) continue;
     const u = await getUserByKeyOrSlug(p.username);
-    if (u) {
-      ensureFields(u);
-      u.balance = (u.balance ?? 0) + pay.amount;
-      if (!useDb) users.set(u.username, u);
-      await saveUser(u);
+    if (!u) continue;
+    ensureFields(u);
+    const payout = payoutMap[p.teamIndex + '_' + p.slotIndex] || 0;
+    if (payout > 0) u.balance = (u.balance ?? 0) + payout;
+    const profit = payout - entryCostPerSide;
+    // Leaderboard / win stats
+    if (profit > 0) {
+      u.totalGamblingWins = (u.totalGamblingWins || 0) + profit;
+      u.totalProfitWins = (u.totalProfitWins || 0) + profit;
+      u.totalWinsCount = (u.totalWinsCount || 0) + 1;
+      u.xpBySource.caseBattle = (u.xpBySource.caseBattle || 0) + 5;
+      if (profit > (u.biggestWinAmount || 0)) {
+        u.biggestWinAmount = Math.min(profit, MAX_BIGGEST_WIN_AMOUNT);
+        u.biggestWinMultiplier = +(payout / Math.max(1, entryCostPerSide)).toFixed(2);
+        u.biggestWinMeta = { game: 'caseBattle', betAmount: entryCostPerSide, multiplier: u.biggestWinMultiplier, timestamp: Date.now() };
+      }
     }
+    u.gameNet.caseBattle = (u.gameNet.caseBattle || 0) + profit;
+    u.gamePlayCounts.caseBattle = (u.gamePlayCounts.caseBattle || 0) + 1;
+    if (!useDb) users.set(u.username, u);
+    await saveUser(u);
   }
 
   // Pre-generate deterministic strip data for client-sync'd animations
