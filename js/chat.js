@@ -205,8 +205,15 @@
     }
   }
 
+  function syncChatTop() {
+    if (!wrap) return;
+    const header = document.querySelector('.header');
+    if (header) wrap.style.top = header.offsetHeight + 'px';
+  }
+
   function openPanel() {
     if (wrap) {
+      syncChatTop();
       wrap.classList.remove('chat-panel-wrap--closed');
       if (toggleBtn) toggleBtn.setAttribute('aria-label', 'Close chat');
       try { localStorage.removeItem('chatClosed'); } catch (e) {}
@@ -416,6 +423,8 @@
 
   function init() {
     bind();
+    syncChatTop();
+    window.addEventListener('resize', syncChatTop);
     // Open by default unless user has explicitly closed it
     let userClosed = false;
     try { userClosed = localStorage.getItem('chatClosed') === '1'; } catch (e) {}

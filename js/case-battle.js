@@ -1692,7 +1692,10 @@
     }
   }
 
+  let joiningBattleId = null;
   async function joinBattle(id, slotIndex) {
+    if (joiningBattleId === id) return; // prevent spam clicks
+    joiningBattleId = id;
     try {
       const res = await fetch(API + '/battles/' + encodeURIComponent(id) + '/join', {
         method: 'POST',
@@ -1709,6 +1712,8 @@
       await showBattleDetail(id);
     } catch (e) {
       alert('Network error');
+    } finally {
+      joiningBattleId = null;
     }
   }
 

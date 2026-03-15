@@ -3397,7 +3397,14 @@ app.post('/api/case-battle/battles/:id/join', async (req, res) => {
     if (c) entryCost += c.price * (parseInt(count, 10) || 1);
   }
   if ((user.balance ?? 0) < entryCost) return res.status(400).json({ error: 'Insufficient balance' });
-  const emptySlot = battle.participants.findIndex((p) => !p.username);
+  // Prevent joining the same battle twice
+  const alreadyIn = battle.participants.some((p) => p.username && p.username.toLowerCase() === user.username.toLowerCase());
+  if (alreadyIn) return res.status(400).json({ error: 'Already in this battle' });
+  // Use the requested slot if valid and empty, otherwise first empty
+  const requestedSlot = req.body?.slotIndex != null ? parseInt(req.body.slotIndex, 10) : -1;
+  const emptySlot = (requestedSlot >= 0 && requestedSlot < battle.participants.length && !battle.participants[requestedSlot].username)
+    ? requestedSlot
+    : battle.participants.findIndex((p) => !p.username);
   if (emptySlot < 0) return res.status(400).json({ error: 'No empty slot' });
   user.balance -= entryCost;
   battle.participants[emptySlot] = {
