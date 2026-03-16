@@ -312,6 +312,106 @@ async function updateCaseBattleCaseUsageCount(caseId, usageCount) {
   await getPool().query('UPDATE case_battle_cases SET usage_count = $1 WHERE id = $2', [Number(usageCount) || 0, caseId]);
 }
 
+async function getChatMessages(limit = 200) {
+  try {
+    const l = Math.min(Math.max(1, limit), 500);
+    const res = await getPool().query(
+      'SELECT id, username, display_name, profile_slug, role, text, time, is_server, challenge_id FROM chat_messages ORDER BY id DESC LIMIT $1',
+      [l]
+    );
+    return res.rows.reverse().map((r) => ({
+      username: r.username || null,
+      displayName: r.display_name || null,
+      profileSlug: r.profile_slug || null,
+      role: r.role || null,
+      text: r.text || '',
+      time: Number(r.time),
+      isServer: !!r.is_server,
+      challengeId: r.challenge_id || null,
+    }));
+  } catch (e) {
+    console.warn('getChatMessages failed:', e.message);
+    return [];
+  }
+}
+
+async function saveChatMessage(msg) {
+  try {
+    await getPool().query(
+      'INSERT INTO chat_messages (username, display_name, profile_slug, role, text, time, is_server, challenge_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [msg.username || null, msg.displayName || null, msg.profileSlug || null, msg.role || null, msg.text || '', msg.time || Date.now(), !!msg.isServer, msg.challengeId || null]
+    );
+    // Trim to last 200 rows
+    await getPool().query('DELETE FROM chat_messages WHERE id NOT IN (SELECT id FROM chat_messages ORDER BY id DESC LIMIT 200)');
+  } catch (e) {
+    console.warn('saveChatMessage failed:', e.message);
+  }
+}
+
+function rowToFeedback(r) {
+  return {
+    id: String(r.id),
+    username: r.username || null,
+    discordName: r.discord_name || null,
+    submitterUsername: r.submitter_username || null,
+    title: r.title || '',
+    type: r.type || '',
+    description: r.description || '',
+    referenceImage: r.reference_image || null,
+    status: r.status || 'pending',
+    createdAt: Number(r.created_at),
+    updatedAt: r.updated_at ? Number(r.updated_at) : null,
+  };
+}
+
+async function submitFeedback(doc) {
+  const res = await getPool().query(
+    `INSERT INTO feedbacks (username, discord_name, submitter_username, title, type, description, reference_image, status, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+    [doc.username || null, doc.discordName || null, doc.submitterUsername || null, doc.title || '', doc.type || '', doc.description || '', doc.referenceImage || null, doc.status || 'pending', doc.createdAt || Date.now(), doc.updatedAt || null]
+  );
+  return String(res.rows[0].id);
+}
+
+async function getFeedbacks({ status, submitterUsername, limit } = {}) {
+  let q = 'SELECT id, username, discord_name, submitter_username, title, type, description, reference_image, status, created_at, updated_at FROM feedbacks';
+  const params = [];
+  const where = [];
+  if (status) {
+    if (Array.isArray(status)) {
+      where.push(`status = ANY($${params.length + 1})`);
+      params.push(status);
+    } else {
+      where.push(`status = $${params.length + 1}`);
+      params.push(status);
+    }
+  }
+  if (submitterUsername) {
+    where.push(`submitter_username = $${params.length + 1}`);
+    params.push(submitterUsername);
+  }
+  if (where.length) q += ' WHERE ' + where.join(' AND ');
+  q += ' ORDER BY id DESC';
+  if (limit) { q += ` LIMIT $${params.length + 1}`; params.push(limit); }
+  const res = await getPool().query(q, params);
+  return res.rows.map(rowToFeedback);
+}
+
+async function updateFeedbackStatus(id, status) {
+  await getPool().query('UPDATE feedbacks SET status = $1, updated_at = $2 WHERE id = $3', [status, Date.now(), id]);
+}
+
+async function updateChatServerMessage(challengeId, newText) {
+  try {
+    await getPool().query(
+      'UPDATE chat_messages SET text = $1 WHERE challenge_id = $2 AND is_server = TRUE',
+      [newText, challengeId]
+    );
+  } catch (e) {
+    console.warn('updateChatServerMessage failed:', e.message);
+  }
+}
+
 module.exports = {
   getPool,
   getUserByUsername,
@@ -330,4 +430,10 @@ module.exports = {
   getCaseBattleCases,
   saveCaseBattleCase,
   updateCaseBattleCaseUsageCount,
+  getChatMessages,
+  saveChatMessage,
+  updateChatServerMessage,
+  submitFeedback,
+  getFeedbacks,
+  updateFeedbackStatus,
 };

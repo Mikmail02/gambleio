@@ -3,7 +3,12 @@
     "allow": [
       "Bash(cmd /c:*)",
       "Bash(ls -la /c/Users/mikae/Documents/Projects/Gambleio/*.js)",
-      "Bash(python -c \"import sys,json; data=json.load\\(sys.stdin\\); print\\(data[0][''text'']\\)\")"
+      "Bash(python -c \"import sys,json; data=json.load\\(sys.stdin\\); print\\(data[0][''text'']\\)\")",
+      "Bash(git pull)",
+      "Bash(git checkout js/main.js)",
+      "Bash(git push origin main)",
+      "Bash(node -c c:/gambleio/js/feedback.js)",
+      "Bash(node -c c:/gambleio/db.js)"
     ]
   }
 }

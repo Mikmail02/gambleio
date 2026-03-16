@@ -12,7 +12,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Redirect www to root domain so gambleio.com is the canonical URL (production only)
 const ROOT_DOMAIN = process.env.ROOT_DOMAIN || 'gambleio.com';
@@ -44,6 +44,7 @@ const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 const PLINKO_STATS_FILE = path.join(DATA_DIR, 'plinko-stats.json');
 const ADMIN_LOGS_FILE = path.join(DATA_DIR, 'admin-logs.json');
 const CHAT_MESSAGES_FILE = path.join(DATA_DIR, 'chat-messages.json');
+const FEEDBACKS_FILE = path.join(DATA_DIR, 'feedbacks.json');
 
 const users = new Map();
 const sessions = new Map();
@@ -51,6 +52,8 @@ const plinkoStats = { totalBalls: 0, landings: Array(19).fill(0) };
 let adminLogs = [];
 const chatMessages = [];
 const CHAT_MAX = 200;
+let feedbacks = [];
+let feedbackIdNext = 1;
 const levelUpLogDedupe = new Map();
 const LEVEL_UP_DEDUPE_MS = 30000;
 const CHAT_DELAY_MS = 2000;
@@ -86,6 +89,15 @@ function checkRateLimit(store, key, maxPerMin) {
 }
 
 function loadData() {
+  if (useDb) {
+    // Load chat messages from DB (async — fires and forgets; server is ready immediately)
+    db.getChatMessages(CHAT_MAX).then((msgs) => {
+      chatMessages.length = 0;
+      chatMessages.push(...msgs);
+      console.log(`Loaded ${chatMessages.length} chat messages from DB`);
+    }).catch((e) => console.warn('Could not load chat from DB:', e.message));
+    return;
+  }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     if (fs.existsSync(CHAT_MESSAGES_FILE)) {
@@ -130,12 +142,33 @@ function loadData() {
       adminLogs = Array.isArray(arr) ? arr : [];
       console.log(`Loaded ${adminLogs.length} admin logs`);
     }
+    if (fs.existsSync(FEEDBACKS_FILE)) {
+      const arr = JSON.parse(fs.readFileSync(FEEDBACKS_FILE, 'utf8'));
+      if (Array.isArray(arr)) {
+        feedbacks = arr;
+        feedbackIdNext = arr.reduce((m, f) => Math.max(m, (parseInt(f.id, 10) || 0) + 1), 1);
+        console.log(`Loaded ${feedbacks.length} feedbacks`);
+      }
+    }
   } catch (e) {
     console.warn('Could not load data, starting fresh:', e.message);
   }
 }
 
-function saveChatMessages() {
+function saveFeedbacksFile() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(FEEDBACKS_FILE, JSON.stringify(feedbacks, null, 2));
+  } catch (e) {
+    console.error('Failed to save feedbacks:', e.message);
+  }
+}
+
+function saveChatMessages(latestMsg) {
+  if (useDb) {
+    if (latestMsg) db.saveChatMessage(latestMsg).catch((e) => console.warn('DB chat save failed:', e.message));
+    return;
+  }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(CHAT_MESSAGES_FILE, JSON.stringify(chatMessages.slice(-CHAT_MAX), null, 2));
@@ -590,6 +623,18 @@ function requireOwner(req, res, next) {
   }).catch(next);
 }
 
+function requireAdminStrict(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  getUserFromSession(token).then((user) => {
+    if (!user) return res.status(401).json({ error: 'Not authenticated' });
+    ensureFields(user);
+    const ok = user.isOwner || user.isAdmin || user.role === 'owner' || user.role === 'admin';
+    if (!ok) return res.status(403).json({ error: 'Forbidden' });
+    req.adminUser = user;
+    next();
+  }).catch(next);
+}
+
 function adminSafeUser(u) {
   ensureFields(u);
   ensureProfileSlug(u);
@@ -854,7 +899,7 @@ function addChallengeServerMessage(challenge, statusText) {
   };
   chatMessages.push(msg);
   if (chatMessages.length > CHAT_MAX) chatMessages.shift();
-  saveChatMessages();
+  saveChatMessages(msg);
   return msg;
 }
 
@@ -867,6 +912,7 @@ function updateChallengeServerMessage(challengeId, statusText) {
         lines[3] = statusText;
         m.text = lines.join('\n');
         saveChatMessages();
+        if (useDb) db.updateChatServerMessage(challengeId, m.text).catch(() => {});
         return;
       }
     }
@@ -1290,7 +1336,7 @@ app.post('/api/chat', async (req, res) => {
   };
   chatMessages.push(msg);
   if (chatMessages.length > CHAT_MAX) chatMessages.shift();
-  saveChatMessages();
+  saveChatMessages(msg);
   res.json({ message: msg });
 });
 
@@ -3514,6 +3560,98 @@ app.delete('/api/case-battle/battles/:id', async (req, res) => {
   }
   caseBattleBattles.delete(req.params.id);
   res.json({ ok: true, balance: user.balance });
+});
+
+// --- Feedback API ---
+
+const FEEDBACK_VALID_TYPES = ['idea', 'bug', 'feedback', 'error', 'cheat'];
+const FEEDBACK_VALID_STATUSES = ['pending', 'accepted', 'working', 'done_waiting', 'finished', 'denied'];
+
+app.post('/api/feedback', async (req, res) => {
+  const { username, discordName, title, type, description, referenceImage } = req.body || {};
+  if (!title || !type || !description) return res.status(400).json({ error: 'Missing required fields' });
+  if (!FEEDBACK_VALID_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid type' });
+  if (referenceImage && referenceImage.length > 3 * 1024 * 1024) return res.status(400).json({ error: 'Image too large (max 2MB)' });
+
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const authUser = token ? await getUserFromSession(token).catch(() => null) : null;
+
+  const doc = {
+    id: String(feedbackIdNext++),
+    username: (username || '').trim() || (authUser ? authUser.displayName || authUser.username : null),
+    discordName: (discordName || '').trim() || null,
+    submitterUsername: authUser ? authUser.username : null,
+    title: String(title).substring(0, 200),
+    type,
+    description: String(description).substring(0, 5000),
+    referenceImage: referenceImage || null,
+    status: 'pending',
+    createdAt: Date.now(),
+    updatedAt: null,
+  };
+
+  if (useDb) {
+    try { doc.id = await db.submitFeedback(doc); } catch (e) {
+      console.error('Failed to submit feedback to DB:', e.message);
+      return res.status(500).json({ error: 'Failed to submit' });
+    }
+  } else {
+    feedbacks.push(doc);
+    saveFeedbacksFile();
+  }
+  res.json({ ok: true, id: doc.id });
+});
+
+app.get('/api/feedback/public', async (req, res) => {
+  let list;
+  if (useDb) {
+    try { list = await db.getFeedbacks({}); } catch (e) { return res.status(500).json({ error: 'Failed to load' }); }
+  } else {
+    list = [...feedbacks];
+  }
+  const pub = list
+    .filter((f) => f.status !== 'denied')
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map((f) => ({ id: f.id, username: f.username, title: f.title, description: f.description, type: f.type, status: f.status, createdAt: f.createdAt }));
+  res.json({ feedbacks: pub });
+});
+
+app.get('/api/feedback/my', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = token ? await getUserFromSession(token).catch(() => null) : null;
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  let list;
+  if (useDb) {
+    try { list = await db.getFeedbacks({ submitterUsername: user.username }); } catch (e) { return res.status(500).json({ error: 'Failed to load' }); }
+  } else {
+    list = feedbacks.filter((f) => f.submitterUsername === user.username);
+  }
+  res.json({ feedbacks: list.map((f) => ({ id: f.id, title: f.title, type: f.type, status: f.status, createdAt: f.createdAt })) });
+});
+
+app.get('/api/admin/feedback', requireAdminStrict, async (req, res) => {
+  let list;
+  if (useDb) {
+    try { list = await db.getFeedbacks({}); } catch (e) { return res.status(500).json({ error: 'Failed to load' }); }
+  } else {
+    list = [...feedbacks].sort((a, b) => b.createdAt - a.createdAt);
+  }
+  res.json({ feedbacks: list });
+});
+
+app.patch('/api/admin/feedback/:id/status', requireAdminStrict, async (req, res) => {
+  const { status } = req.body || {};
+  if (!FEEDBACK_VALID_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  if (useDb) {
+    try { await db.updateFeedbackStatus(req.params.id, status); } catch (e) { return res.status(500).json({ error: 'Failed to update' }); }
+  } else {
+    const f = feedbacks.find((x) => x.id === req.params.id);
+    if (!f) return res.status(404).json({ error: 'Not found' });
+    f.status = status;
+    f.updatedAt = Date.now();
+    saveFeedbacksFile();
+  }
+  res.json({ ok: true });
 });
 
 async function start() {

@@ -485,7 +485,7 @@
         <div class="slots-container board-games-container">
           <h2 class="slots-title">Board Games</h2>
           <div class="board-games-search-wrap">
-            <input type="search" id="boardGamesSearch" class="board-games-search" placeholder="Søk spill..." aria-label="Søk board games">
+            <input type="search" id="boardGamesSearch" class="board-games-search" placeholder="Search games..." aria-label="Search board games">
           </div>
           <div class="slots-grid" id="boardGamesGrid">
             <!-- Board game cards rendered by js/board-games.js -->
@@ -1147,6 +1147,10 @@
     <div class="admin-modal-content">
       <div class="admin-modal-head">
         <h2 class="admin-modal-title">Admin</h2>
+        <div class="admin-modal-nav hidden" id="adminModalNav">
+          <button type="button" class="admin-modal-nav-btn active" id="adminNavUsers">Users</button>
+          <button type="button" class="admin-modal-nav-btn" id="adminNavFeedback">Feedback</button>
+        </div>
         <button type="button" class="admin-modal-close" id="adminModalClose" aria-label="Close">×</button>
       </div>
       <div class="admin-modal-body">
@@ -1190,6 +1194,18 @@
             <div class="admin-chat-logs-row">
               <button type="button" class="btn-admin-adjust btn-admin-chat-logs" id="adminChatLogsBtn">Chat logs</button>
             </div>
+          </div>
+        </div>
+        <!-- Admin Feedback Panel -->
+        <div class="admin-feedback-panel hidden" id="adminFeedbackPanel">
+          <div class="admin-fb-tabs">
+            <button type="button" class="admin-fb-tab-btn active" data-tab="pending">Pending</button>
+            <button type="button" class="admin-fb-tab-btn" data-tab="active">Active</button>
+            <button type="button" class="admin-fb-tab-btn" data-tab="done">Done</button>
+            <button type="button" class="admin-fb-tab-btn" data-tab="denied">Denied</button>
+          </div>
+          <div class="admin-fb-cards" id="adminFbCards">
+            <div class="fb-empty">Select a tab above</div>
           </div>
         </div>
       </div>
@@ -1341,6 +1357,7 @@
   <script src="js/slots.js"></script>
   <script src="js/case-battle.js"></script>
   <script src="js/main.js"></script>
+  <script src="js/feedback.js"></script>
   <script>
     console.log('[index.html] All scripts loaded. Final check:', {
       SlotIntegration: typeof window.SlotIntegration,
@@ -1348,6 +1365,85 @@
       showPage: typeof window.showPage
     });
   </script>
+  <!-- Feedback FAB button -->
+  <button type="button" id="feedbackFab" class="feedback-fab" aria-label="Open feedback" title="Feedback">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <span class="feedback-fab-label">Feedback</span>
+  </button>
+
+  <!-- Feedback panel -->
+  <div id="feedbackPanel" class="feedback-panel feedback-panel--closed" aria-label="Feedback">
+    <div class="feedback-panel-head">
+      <div class="feedback-panel-tabs">
+        <button type="button" class="feedback-tab-btn active" data-tab="new">New</button>
+        <button type="button" class="feedback-tab-btn" data-tab="mine">Mine</button>
+        <button type="button" class="feedback-tab-btn" data-tab="all">All</button>
+      </div>
+      <button type="button" class="feedback-panel-close" id="feedbackPanelClose" aria-label="Close feedback">×</button>
+    </div>
+    <div class="feedback-panel-body">
+      <!-- New Feedback tab -->
+      <div class="feedback-tab-content" data-tab="new">
+        <form id="feedbackForm" class="fb-form">
+          <div class="fb-field">
+            <label class="fb-label" for="fbUsername">Username</label>
+            <input type="text" id="fbUsername" class="fb-input" placeholder="Your username" autocomplete="off">
+          </div>
+          <div class="fb-field">
+            <label class="fb-label" for="fbDiscord">Discord Name</label>
+            <input type="text" id="fbDiscord" class="fb-input" placeholder="e.g. user#1234" autocomplete="off">
+          </div>
+          <div class="fb-field">
+            <label class="fb-label" for="fbTitle">Title <span class="fb-required">*</span></label>
+            <input type="text" id="fbTitle" class="fb-input" placeholder="Short and clear title" maxlength="200" required>
+          </div>
+          <div class="fb-field">
+            <label class="fb-label" for="fbType">Type <span class="fb-required">*</span></label>
+            <select id="fbType" class="fb-select" required>
+              <option value="">Select type…</option>
+              <option value="idea">Idea for Feature</option>
+              <option value="bug">Bug</option>
+              <option value="feedback">Feedback</option>
+              <option value="error">Error</option>
+              <option value="cheat">Cheat/Abuse</option>
+            </select>
+          </div>
+          <div class="fb-field">
+            <label class="fb-label" for="fbDescription">Description <span class="fb-required">*</span></label>
+            <textarea id="fbDescription" class="fb-textarea" placeholder="Describe in detail…" rows="4" required></textarea>
+          </div>
+          <div class="fb-field">
+            <label class="fb-label">Reference Image <span class="fb-optional">(optional)</span></label>
+            <div id="fbImageZone" class="fb-image-zone" tabindex="0" role="button" aria-label="Upload image">
+              <div class="fb-image-zone-hint">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
+                Click, drag &amp; drop, or paste (Ctrl+V)
+              </div>
+              <img id="fbImagePreview" class="fb-image-preview hidden" alt="Reference preview">
+              <button type="button" id="fbImageRemove" class="fb-image-remove hidden" aria-label="Remove image">Remove image</button>
+              <input type="file" id="fbImageInput" accept="image/*" class="hidden" tabindex="-1" aria-hidden="true">
+            </div>
+          </div>
+          <div id="fbError" class="fb-error hidden"></div>
+          <button type="submit" class="btn-fb-submit">Submit Feedback</button>
+        </form>
+        <div id="fbSuccess" class="fb-success hidden">
+          <div class="fb-success-icon">✓</div>
+          <div class="fb-success-text">Feedback submitted — thank you!</div>
+          <button type="button" id="fbSuccessNew" class="btn-fb-submit btn-fb-submit--secondary">Submit another</button>
+        </div>
+      </div>
+      <!-- My Feedbacks tab -->
+      <div class="feedback-tab-content hidden" data-tab="mine">
+        <div id="fbMyList" class="fb-list"></div>
+      </div>
+      <!-- All Feedbacks tab -->
+      <div class="feedback-tab-content hidden" data-tab="all">
+        <div id="fbAllList" class="fb-list"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast for click rate-limit block (shown at bottom) -->
   <div id="clickBlockToast" class="click-block-toast hidden" role="status" aria-live="polite">
     You are clicking too fast – Blocked for <span id="clickBlockSeconds">0</span>s

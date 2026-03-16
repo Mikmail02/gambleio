@@ -87,3 +87,31 @@ CREATE TABLE IF NOT EXISTS case_battle_cases (
 -- Migration: add items/usage_count if table was created by init-case-battle.sql (no items column)
 ALTER TABLE case_battle_cases ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE case_battle_cases ADD COLUMN IF NOT EXISTS usage_count INTEGER DEFAULT 0;
+
+-- Feedback: user-submitted feedback, bugs, ideas, etc.
+CREATE TABLE IF NOT EXISTS feedbacks (
+  id SERIAL PRIMARY KEY,
+  username VARCHAR(255),
+  discord_name VARCHAR(255),
+  submitter_username VARCHAR(255),
+  title VARCHAR(255) NOT NULL,
+  type VARCHAR(50) NOT NULL,
+  description TEXT NOT NULL,
+  reference_image TEXT,
+  status VARCHAR(50) DEFAULT 'pending',
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT
+);
+
+-- Chat messages: persisted in DB so they survive server restarts
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id SERIAL PRIMARY KEY,
+  username VARCHAR(255),
+  display_name VARCHAR(255),
+  profile_slug VARCHAR(255),
+  role VARCHAR(50),
+  text TEXT NOT NULL,
+  time BIGINT NOT NULL,
+  is_server BOOLEAN DEFAULT FALSE,
+  challenge_id VARCHAR(255)
+);
