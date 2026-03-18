@@ -1,0 +1,131 @@
+/* ── Page wrapper ─────────────────────────────────────────────────── */
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 100dvh;
+  padding: 20px 16px 32px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(40 20 80 / 0.7) 0%, #0a0a0f 70%);
+}
+
+/* ── Title ────────────────────────────────────────────────────────── */
+.title {
+  font-size: 1.4rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  background: linear-gradient(90deg, #f5c518, #ff8c00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Bonus banner ─────────────────────────────────────────────────── */
+.bonusBanner {
+  width: 100%;
+  max-width: 680px;
+  padding: 8px 14px;
+  background: linear-gradient(90deg, #7c3aed, #f59e0b);
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-align: center;
+  letter-spacing: 0.02em;
+  box-shadow: 0 0 24px rgba(124 58 237 / 0.5);
+}
+
+/* ── Spin message label ───────────────────────────────────────────── */
+.labelRow {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.spinLabel {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #f5c518;
+  text-shadow: 0 0 12px rgba(245 197 24 / 0.8);
+  text-transform: uppercase;
+}
+
+/* ── Win counter ──────────────────────────────────────────────────── */
+.winRow {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.winPlaceholder { height: 38px; }
+.winAmount {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: rgba(255 255 255 / 0.7);
+}
+.winValue {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: #f5c518;
+  text-shadow: 0 0 16px rgba(245 197 24 / 0.9);
+}
+.winMult { font-size: 0.8rem; opacity: 0.6; }
+
+/* ── Session stats strip ──────────────────────────────────────────── */
+.statsStrip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  width: 100%;
+  max-width: 680px;
+  background: rgba(255 255 255 / 0.025);
+  border: 1px solid rgba(255 255 255 / 0.06);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.statItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 7px 0;
+  flex: 1;
+  border-right: 1px solid rgba(255 255 255 / 0.06);
+}
+
+.statItem:last-child { border-right: none; }
+
+.statLabel {
+  font-size: 0.52rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: rgba(255 255 255 / 0.32);
+}
+
+.statVal {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: rgba(255 255 255 / 0.75);
+}
+
+.statValWon  { color: #4ade80; }
+.statValBest { color: #f5c518; }
+
+/* ── Error ────────────────────────────────────────────────────────── */
+.error {
+  padding: 8px 14px;
+  background: rgba(220 38 38 / 0.18);
+  border: 1px solid rgba(220 38 38 / 0.45);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #fca5a5;
+  max-width: 680px;
+  width: 100%;
+  text-align: center;
+}

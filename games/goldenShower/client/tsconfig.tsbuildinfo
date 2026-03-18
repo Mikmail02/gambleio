@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/constants.ts","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/components/bonusmodals.tsx","./src/components/cell.tsx","./src/components/featurebuymodal.tsx","./src/components/grid.tsx","./src/components/slotcontrols.tsx","./src/components/slotmachine.tsx","./src/hooks/usespinplayer.ts"],"version":"5.9.3"}

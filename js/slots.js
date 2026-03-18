@@ -12,13 +12,23 @@
   // Slot games data
   const slotGames = [
     {
+      id: 'golden-shower',
+      name: 'Golden Shower',
+      description: 'Cluster pays on a 6×5 grid. Cascading wins, position multipliers, STEAM upgrades, WILD bursts, and Gold Spins!',
+      emoji: '🚿',
+      symbols: [],
+      // Place golden-shower-bg.jpg in games/goldenShower/client/public/ so it builds to /golden-shower/golden-shower-bg.jpg
+      image: '/golden-shower/golden-shower-bg.jpg',
+      external: true,
+    },
+    {
       id: 'circular-slots',
       name: 'Circular Slots',
       description: 'Classic circular slot machine with 5 reels. Click to spin and stop each reel. Match 3+ symbols to win!',
       emoji: '🎰',
       symbols: ['🍋', '🍊', '🍉', '🍈', '🍇', '🥝', '🍓', '🍒', '🌟', '🍀', '💎', '🎰'],
-      image: '🎰' // Will show slot machine preview
-    }
+      image: '🎰',
+    },
   ];
 
   let currentSlotGame = null;
@@ -32,15 +42,18 @@
     slotsGrid.innerHTML = slotGames.map(game => `
       <div class="slot-game-card" data-game-id="${game.id}">
         <div class="slot-game-card-image">
-          <div class="slot-preview-machine">
-            <div class="slot-preview-reels-container">
-              ${game.symbols.slice(0, 5).map((s, i) => `
-                <div class="slot-preview-reel" style="--index: ${i}">
-                  <div class="slot-preview-symbol">${s}</div>
+          ${game.image
+            ? `<img src="${game.image}" alt="${game.name}" class="slot-game-card-bg-img">`
+            : `<div class="slot-preview-machine">
+                <div class="slot-preview-reels-container">
+                  ${game.symbols.slice(0, 5).map((s, i) => `
+                    <div class="slot-preview-reel" style="--index: ${i}">
+                      <div class="slot-preview-symbol">${s}</div>
+                    </div>
+                  `).join('')}
                 </div>
-              `).join('')}
-            </div>
-          </div>
+              </div>`
+          }
           <button class="slot-game-card-play" type="button">Play Game</button>
         </div>
         <div class="slot-game-card-info">
@@ -70,16 +83,22 @@
 
     if (!window.Auth || !window.Auth.requireAuth(() => {})) return;
 
+    // External games navigate to their own page (same tab)
+    if (game.external) {
+      window.location.href = '/' + gameId;
+      return;
+    }
+
     currentSlotGame = game;
     if (slotGameTitle) slotGameTitle.textContent = game.name;
-    
+
     // Simply navigate to slot-game page, just like clicking a tab
     if (window.showPage) {
       window.showPage('slot-game');
     } else {
       window.location.hash = '#slot-game';
     }
-    
+
     // Initialize after navigation - handled by main.js onHashChange
   }
 

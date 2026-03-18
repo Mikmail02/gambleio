@@ -31,12 +31,21 @@ app.use((req, res, next) => {
 
 app.use(express.static(__dirname));
 
+// Serve the built Golden Shower React app at /golden-shower/*
+// Run `npm run build` inside games/goldenShower/client/ to generate the dist
+const GS_PUBLIC = path.join(__dirname, 'public', 'golden-shower');
+app.use('/golden-shower', express.static(GS_PUBLIC));
+app.get(['/golden-shower', '/golden-shower/*'], (_req, res) => {
+  res.sendFile(path.join(GS_PUBLIC, 'index.html'));
+});
+
 // --- Storage: database (when DATABASE_URL) or file-based (local dev) ---
 const useDb = !!process.env.DATABASE_URL;
 const db = useDb ? require('./db') : null;
 const caseBattleMath = require('./lib/case-battle-math');
 const caseBattleProvably = require('./lib/case-battle-provably-fair');
 const blackjackCore = require('./lib/blackjack-core');
+const goldenShowerEngine = require('./games/goldenShower/engine');
 
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -324,6 +333,19 @@ function getLevelFromXp(xp) {
 }
 
 // Ensure user has all fields (for users created before new fields existed)
+function ensureGsStats(user) {
+  if (!user.gsStats || typeof user.gsStats !== 'object') {
+    user.gsStats = { xp: 0, totalSpins: 0, totalWagered: 0, totalWon: 0, biggestWin: 0, biggestWinMultiplier: 0 };
+  } else {
+    if (user.gsStats.xp               === undefined) user.gsStats.xp = 0;
+    if (user.gsStats.totalSpins        === undefined) user.gsStats.totalSpins = 0;
+    if (user.gsStats.totalWagered      === undefined) user.gsStats.totalWagered = 0;
+    if (user.gsStats.totalWon          === undefined) user.gsStats.totalWon = 0;
+    if (user.gsStats.biggestWin        === undefined) user.gsStats.biggestWin = 0;
+    if (user.gsStats.biggestWinMultiplier === undefined) user.gsStats.biggestWinMultiplier = 0;
+  }
+}
+
 function ensureFields(user) {
   if (user.totalClicks === undefined) user.totalClicks = 0;
   if (user.totalWinsCount === undefined) user.totalWinsCount = 0;
@@ -3560,6 +3582,150 @@ app.delete('/api/case-battle/battles/:id', async (req, res) => {
   }
   caseBattleBattles.delete(req.params.id);
   res.json({ ok: true, balance: user.balance });
+});
+
+// ─────────────────────────────────────────────────────────────
+// Golden Shower Slot – API Routes
+// ─────────────────────────────────────────────────────────────
+//
+// In-memory session store: { [username]: GameState }
+// For production, persist this in the DB / Redis.
+const gsSessions = {};
+
+/**
+ * POST /api/slots/golden-shower/spin
+ * Body: { bet: number }
+ * Auth: required
+ *
+ * Returns the full spin result including every animation step,
+ * bonus state, and the updated balance.
+ */
+app.post('/api/slots/golden-shower/spin', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    const user = await getUserFromSession(token);
+    if (!user) return res.status(401).json({ error: 'Not authenticated' });
+    ensureFields(user);
+
+    const bet = Number(req.body.bet);
+    if (!Number.isFinite(bet) || bet <= 0) {
+      return res.status(400).json({ error: 'Invalid bet amount' });
+    }
+    const MIN_BET = 0.20;
+    const MAX_BET = 400;
+    if (bet < MIN_BET || bet > MAX_BET) {
+      return res.status(400).json({ error: `Bet must be between ${MIN_BET} and ${MAX_BET}` });
+    }
+
+    // Feature mode validation & cost calculation
+    const featureMode = req.body.featureMode || null;
+    const featureDef = featureMode ? goldenShowerEngine.FEATURE_MODES[featureMode] : null;
+    if (featureMode && !featureDef) {
+      return res.status(400).json({ error: 'Invalid featureMode' });
+    }
+    const totalCost = featureDef ? Math.round(bet * featureDef.costMultiplier * 100) / 100 : bet;
+    if (user.balance < totalCost) {
+      return res.status(400).json({ error: 'Insufficient balance' });
+    }
+
+    // Load or create session state
+    if (!gsSessions[user.username]) {
+      gsSessions[user.username] = goldenShowerEngine.createInitialGameState();
+    }
+    const state = gsSessions[user.username];
+
+    // Deduct cost (bet for normal spin, bet × costMultiplier for feature buy)
+    user.balance = Math.round((user.balance - totalCost) * 100) / 100;
+    user.totalBets += 1;
+    user.gameNet.slots = (user.gameNet.slots || 0) - totalCost;
+    user.gamePlayCounts.slots = (user.gamePlayCounts.slots || 0) + 1;
+    user.xpBySource.slots = (user.xpBySource.slots || 0) + 3;
+
+    // GS-specific stats
+    ensureGsStats(user);
+    user.gsStats.xp           = Math.round((user.gsStats.xp + 0.5) * 10) / 10;
+    user.gsStats.totalSpins  += 1;
+    user.gsStats.totalWagered = Math.round((user.gsStats.totalWagered + totalCost) * 100) / 100;
+
+    // Run spin (feature mode passed to engine)
+    const { result, newState } = goldenShowerEngine.spin(state, featureMode);
+
+    // totalPayout is in bet-units → multiply by bet to get credits
+    const winAmount = Math.round(result.totalPayout * bet * 100) / 100;
+    if (winAmount > 0) {
+      user.balance = Math.round((user.balance + winAmount) * 100) / 100;
+      user.totalGamblingWins += winAmount;
+      user.gameNet.slots = (user.gameNet.slots || 0) + winAmount;
+      user.gsStats.totalWon = Math.round((user.gsStats.totalWon + winAmount) * 100) / 100;
+      if (winAmount > bet) {
+        user.totalWinsCount += 1;
+        user.xpBySource.slots = (user.xpBySource.slots || 0) + 3;
+        if (winAmount > (user.biggestWinAmount || 0)) {
+          user.biggestWinAmount = winAmount;
+          user.biggestWinMultiplier = result.totalPayout;
+          user.biggestWinMeta = { game: 'slots', timestamp: Date.now() };
+        }
+      }
+      if (winAmount > user.gsStats.biggestWin) {
+        user.gsStats.biggestWin = winAmount;
+        user.gsStats.biggestWinMultiplier = result.totalPayout;
+      }
+    }
+
+    // Persist state
+    gsSessions[user.username] = newState;
+    if (!useDb) users.set(user.username, user);
+    await saveUser(user);
+
+    res.json({
+      result: {
+        initialGrid: result.initialGrid,
+        totalPayoutMultiplier: result.totalPayout,
+        winAmount,
+        steps: result.steps,
+        bonusTriggered: result.bonusTriggered,
+        bonusSpinsAwarded: result.bonusSpinsAwarded,
+        finalGrid: result.finalGrid,
+      },
+      bonusState: newState.bonusState,
+      balance: user.balance,
+      gsStats: {
+        xp:                   user.gsStats.xp,
+        totalSpins:           user.gsStats.totalSpins,
+        totalWagered:         user.gsStats.totalWagered,
+        totalWon:             user.gsStats.totalWon,
+        biggestWin:           user.gsStats.biggestWin,
+        biggestWinMultiplier: user.gsStats.biggestWinMultiplier,
+      },
+    });
+  } catch (err) {
+    console.error('Golden Shower spin error:', err);
+    res.status(500).json({ error: 'Spin failed' });
+  }
+});
+
+/**
+ * GET /api/slots/golden-shower/state
+ * Returns current grid + bonus state. Call on page load to restore mid-bonus sessions.
+ */
+app.get('/api/slots/golden-shower/state', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  const state = gsSessions[user.username] || goldenShowerEngine.createInitialGameState();
+  res.json({ grid: state.grid, bonusState: state.bonusState });
+});
+
+/**
+ * POST /api/slots/golden-shower/reset
+ * Clears the user's session (exits bonus, resets grid). Useful during development.
+ */
+app.post('/api/slots/golden-shower/reset', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user = await getUserFromSession(token);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  gsSessions[user.username] = goldenShowerEngine.createInitialGameState();
+  res.json({ ok: true });
 });
 
 // --- Feedback API ---

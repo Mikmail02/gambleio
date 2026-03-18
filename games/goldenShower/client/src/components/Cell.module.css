@@ -1,0 +1,205 @@
+/* ── Cell container ───────────────────────────────────────────────── */
+.cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255 255 255 / 0.04);
+  border-radius: 8px;
+  border: 1px solid rgba(255 255 255 / 0.08);
+  overflow: visible;
+  transition: border-color 0.2s, background 0.2s;
+  aspect-ratio: 1;
+}
+
+/* ── Win cluster glow ─────────────────────────────────────────────── */
+.glowing {
+  background: rgba(255 200 50 / 0.12);
+  border-color: rgba(255 200 50 / 0.7);
+  box-shadow: 0 0 18px rgba(255 200 50 / 0.55), inset 0 0 12px rgba(255 200 50 / 0.15);
+  animation: cellPulse 0.55s ease-in-out infinite alternate;
+}
+
+@keyframes cellPulse {
+  from { box-shadow: 0 0 12px rgba(255 200 50 / 0.5), inset 0 0 8px rgba(255 200 50 / 0.1); }
+  to   { box-shadow: 0 0 28px rgba(255 200 50 / 0.9), inset 0 0 16px rgba(255 200 50 / 0.3); }
+}
+
+/* ── Symbol wrapper (Framer Motion target, above mult bg) ─────────── */
+.symbolWrapper {
+  position: absolute;
+  inset: 8%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.symbolImg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(0 2px 6px rgba(0 0 0 / 0.55));
+}
+
+/* ── Persistent multiplier background layer ───────────────────────── */
+/*    Sits BELOW the symbol; key=multiplier so it re-animates on upgrade */
+.multBg {
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.multText {
+  font-size: clamp(1.1rem, 3.5cqw, 1.9rem);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  opacity: 0.38;
+  user-select: none;
+  line-height: 1;
+  /* Slightly pushed toward bottom-right so symbol sits cleanly on top */
+  transform: translate(22%, 20%);
+}
+
+/* ── Multiplier tier styles ───────────────────────────────────────── */
+
+/* Tier 1 — ×2   golden yellow */
+.tier1 {
+  background: rgba(245 197 24 / 0.18);
+  border: 1px solid rgba(245 197 24 / 0.45);
+  box-shadow: inset 0 0 14px rgba(245 197 24 / 0.12);
+  animation: tierPulse1 2s ease-in-out infinite alternate;
+}
+.tier1 .multText { color: #f5c518; }
+
+@keyframes tierPulse1 {
+  from { box-shadow: inset 0 0 10px rgba(245 197 24 / 0.1); }
+  to   { box-shadow: inset 0 0 22px rgba(245 197 24 / 0.28); }
+}
+
+/* Tier 2 — ×4–×8   orange/red */
+.tier2 {
+  background: rgba(255 100 20 / 0.2);
+  border: 1px solid rgba(255 110 20 / 0.5);
+  box-shadow: inset 0 0 14px rgba(255 100 20 / 0.14);
+  animation: tierPulse2 1.6s ease-in-out infinite alternate;
+}
+.tier2 .multText { color: #ff6414; }
+
+@keyframes tierPulse2 {
+  from { box-shadow: inset 0 0 10px rgba(255 100 20 / 0.12); }
+  to   { box-shadow: inset 0 0 24px rgba(255 100 20 / 0.32); }
+}
+
+/* Tier 3 — ×16–×32   teal/cyan */
+.tier3 {
+  background: rgba(0 210 200 / 0.18);
+  border: 1px solid rgba(0 210 200 / 0.5);
+  box-shadow: inset 0 0 14px rgba(0 210 200 / 0.14);
+  animation: tierPulse3 1.4s ease-in-out infinite alternate;
+}
+.tier3 .multText { color: #00d2c8; }
+
+@keyframes tierPulse3 {
+  from { box-shadow: inset 0 0 10px rgba(0 210 200 / 0.12); }
+  to   { box-shadow: inset 0 0 26px rgba(0 210 200 / 0.35); }
+}
+
+/* Tier 4 — ×64–×128   purple */
+.tier4 {
+  background: linear-gradient(135deg, rgba(140 0 255 / 0.22), rgba(0 180 120 / 0.18));
+  border: 1px solid rgba(160 40 255 / 0.55);
+  box-shadow: inset 0 0 16px rgba(140 0 255 / 0.18);
+  animation: tierPulse4 1.1s ease-in-out infinite alternate;
+}
+.tier4 .multText { color: #c060ff; }
+
+@keyframes tierPulse4 {
+  from { box-shadow: inset 0 0 10px rgba(140 0 255 / 0.14); }
+  to   { box-shadow: inset 0 0 28px rgba(140 0 255 / 0.42); }
+}
+
+/* Tier 5 — ×999 MAX   bright gold, strong outer glow */
+.tier5 {
+  background: linear-gradient(135deg, rgba(255 210 0 / 0.30), rgba(255 140 0 / 0.22));
+  border: 1.5px solid rgba(255 210 0 / 0.8);
+  box-shadow:
+    inset 0 0 20px rgba(255 200 0 / 0.25),
+    0 0 16px rgba(255 200 0 / 0.4);
+  animation: tierPulse5 0.8s ease-in-out infinite alternate;
+}
+.tier5 .multText {
+  color: #ffe040;
+  opacity: 0.55;
+  text-shadow: 0 0 10px rgba(255 220 0 / 0.9);
+}
+
+@keyframes tierPulse5 {
+  from { box-shadow: inset 0 0 16px rgba(255 200 0 / 0.2),  0 0 12px rgba(255 200 0 / 0.35); }
+  to   { box-shadow: inset 0 0 30px rgba(255 200 0 / 0.45), 0 0 28px rgba(255 200 0 / 0.75); }
+}
+
+/* ── Special symbol glows (PRE_SPECIAL / WILD_FLASH stages) ─────────── */
+
+.specialWild {
+  background: rgba(0 220 255 / 0.14);
+  border-color: rgba(0 220 255 / 0.8);
+  box-shadow: 0 0 22px rgba(0 220 255 / 0.7), inset 0 0 14px rgba(0 220 255 / 0.2);
+  animation: pulseWild 0.6s ease-in-out infinite alternate;
+}
+@keyframes pulseWild {
+  from { box-shadow: 0 0 14px rgba(0 220 255 / 0.5), inset 0 0 8px rgba(0 220 255 / 0.1); }
+  to   { box-shadow: 0 0 32px rgba(0 220 255 / 1.0), inset 0 0 20px rgba(0 220 255 / 0.35); }
+}
+
+.specialBonus {
+  background: rgba(255 210 0 / 0.16);
+  border-color: rgba(255 210 0 / 0.85);
+  box-shadow: 0 0 22px rgba(255 210 0 / 0.7), inset 0 0 14px rgba(255 210 0 / 0.2);
+  animation: pulseBonus 0.5s ease-in-out infinite alternate;
+}
+@keyframes pulseBonus {
+  from { box-shadow: 0 0 14px rgba(255 210 0 / 0.55), inset 0 0 8px rgba(255 210 0 / 0.1); }
+  to   { box-shadow: 0 0 34px rgba(255 210 0 / 1.0),  inset 0 0 20px rgba(255 210 0 / 0.35); }
+}
+
+.specialSteam {
+  background: rgba(200 230 255 / 0.14);
+  border-color: rgba(180 220 255 / 0.8);
+  box-shadow: 0 0 22px rgba(180 220 255 / 0.65), inset 0 0 14px rgba(180 220 255 / 0.2);
+  animation: pulseSteam 0.65s ease-in-out infinite alternate;
+}
+@keyframes pulseSteam {
+  from { box-shadow: 0 0 14px rgba(180 220 255 / 0.45), inset 0 0 8px rgba(180 220 255 / 0.1); }
+  to   { box-shadow: 0 0 30px rgba(180 220 255 / 1.0),  inset 0 0 20px rgba(180 220 255 / 0.3); }
+}
+
+.specialDrain {
+  background: rgba(255 120 0 / 0.14);
+  border-color: rgba(255 120 0 / 0.8);
+  box-shadow: 0 0 22px rgba(255 120 0 / 0.65), inset 0 0 14px rgba(255 120 0 / 0.2);
+  animation: pulseDrain 0.55s ease-in-out infinite alternate;
+}
+@keyframes pulseDrain {
+  from { box-shadow: 0 0 14px rgba(255 120 0 / 0.5), inset 0 0 8px rgba(255 120 0 / 0.1); }
+  to   { box-shadow: 0 0 32px rgba(255 120 0 / 1.0),  inset 0 0 20px rgba(255 120 0 / 0.35); }
+}
+
+.specialFloater {
+  background: rgba(80 220 100 / 0.14);
+  border-color: rgba(80 220 100 / 0.8);
+  box-shadow: 0 0 22px rgba(80 220 100 / 0.65), inset 0 0 14px rgba(80 220 100 / 0.2);
+  animation: pulseFloater 0.7s ease-in-out infinite alternate;
+}
+@keyframes pulseFloater {
+  from { box-shadow: 0 0 14px rgba(80 220 100 / 0.5), inset 0 0 8px rgba(80 220 100 / 0.1); }
+  to   { box-shadow: 0 0 30px rgba(80 220 100 / 1.0),  inset 0 0 20px rgba(80 220 100 / 0.35); }
+}

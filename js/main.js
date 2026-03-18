@@ -2,6 +2,19 @@
  * Main: navigation (Home / Plinko), Home clicker, Plinko drop (replay), last multipliers (10).
  */
 (function () {
+  // ── Patch-notes "new" badge ────────────────────────────────────────
+  const LATEST_PATCH_VERSION = 'v1.6';
+  (function initPatchBadge() {
+    const badge = document.querySelector('.patch-notes-badge');
+    if (!badge) return;
+    const lastSeen = localStorage.getItem('gambleio_lastSeenPatch');
+    if (lastSeen === null) {
+      // Brand-new visitor — silently mark as seen so badge only appears for returning users
+      localStorage.setItem('gambleio_lastSeenPatch', LATEST_PATCH_VERSION);
+    } else if (lastSeen !== LATEST_PATCH_VERSION) {
+      badge.classList.remove('hidden');
+    }
+  })();
   const balanceEl = document.getElementById('balance');
   const betInput = document.getElementById('bet');
   const dropBtn = document.getElementById('dropBall');
@@ -224,6 +237,12 @@
     navLinks.forEach((a) => a.classList.toggle('active', a.getAttribute('data-page') === pageId));
     const btnPatchNotes = document.querySelector('.btn-patch-notes');
     if (btnPatchNotes) btnPatchNotes.classList.toggle('active', pageId === 'patch-notes');
+    // Clear "new patch" badge when player opens patch notes
+    if (pageId === 'patch-notes') {
+      const badge = document.querySelector('.patch-notes-badge');
+      if (badge) badge.classList.add('hidden');
+      localStorage.setItem('gambleio_lastSeenPatch', LATEST_PATCH_VERSION);
+    }
     if (pageId === 'plinko') {
       const onIntroDone = () => {
         document.querySelectorAll('.plinko-content').forEach((el) => el.classList.add('plinko-content-visible'));
