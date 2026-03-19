@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
+const multer = require('multer');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -3838,6 +3839,87 @@ app.patch('/api/admin/feedback/:id/status', requireAdminStrict, async (req, res)
     saveFeedbacksFile();
   }
   res.json({ ok: true });
+});
+
+// ── Music Player API ────────────────────────────────────────────────────────
+const MUSIC_DIR = path.join(__dirname, 'public', 'music');
+if (!fs.existsSync(MUSIC_DIR)) fs.mkdirSync(MUSIC_DIR, { recursive: true });
+
+const musicUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, MUSIC_DIR),
+    filename: (_req, file, cb) => {
+      // Sanitise: keep only safe chars, replace spaces with underscores
+      const safe = file.originalname
+        .replace(/[^a-zA-Z0-9_\-. ]/g, '')
+        .replace(/\s+/g, '_');
+      cb(null, safe);
+    },
+  }),
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'audio/mpeg' || file.originalname.toLowerCase().endsWith('.mp3')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .mp3 files are allowed'));
+    }
+  },
+  limits: { fileSize: 30 * 1024 * 1024 }, // 30 MB max
+});
+
+function formatTrackTitle(filename) {
+  return filename
+    .replace(/\.mp3$/i, '')
+    .replace(/[_\-]+/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .trim();
+}
+
+// List all tracks
+app.get('/api/music/tracks', (_req, res) => {
+  try {
+    const files = fs.readdirSync(MUSIC_DIR)
+      .filter(f => f.toLowerCase().endsWith('.mp3'))
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    const tracks = files.map((f, i) => ({
+      id: i,
+      filename: f,
+      title: formatTrackTitle(f),
+      url: '/public/music/' + encodeURIComponent(f),
+    }));
+    res.json({ tracks });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to list tracks' });
+  }
+});
+
+// Owner-only: upload track
+app.post('/api/music/tracks', requireOwner, musicUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  res.json({
+    ok: true,
+    track: {
+      filename: req.file.filename,
+      title: formatTrackTitle(req.file.filename),
+      url: '/public/music/' + encodeURIComponent(req.file.filename),
+    },
+  });
+});
+
+// Owner-only: delete track
+app.delete('/api/music/tracks/:filename', requireOwner, (req, res) => {
+  const filename = req.params.filename;
+  // Prevent path traversal
+  if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  const filePath = path.join(MUSIC_DIR, filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Track not found' });
+  try {
+    fs.unlinkSync(filePath);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to delete track' });
+  }
 });
 
 async function start() {

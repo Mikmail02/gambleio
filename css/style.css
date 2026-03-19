@@ -756,6 +756,273 @@ body.chat-is-open .site-footer {
   min-width: 0;
 }
 
+/* ── Global Music Player ──────────────────────────────────────────────────── */
+.music-player {
+  position: fixed;
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  background: rgba(13,15,20,0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  padding: 0.35rem 0.6rem 0.25rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  user-select: none;
+  cursor: default;
+  width: 290px;
+}
+/* Row 1: drag handle, song title, fav, playlist, volume */
+.mp-row-info {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+/* Row 2: time - seekbar - time */
+.mp-row-seek {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 2px;
+}
+/* Row 3: prev, play/pause, next — centered */
+.mp-row-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding-bottom: 2px;
+}
+.music-player { cursor: grab; }
+.music-player button, .music-player input, .music-player .mp-seek-bar { cursor: pointer; }
+.music-player.mp-dragging { cursor: grabbing; opacity: 0.85; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
+
+/* Seek bar */
+.mp-time {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  min-width: 28px;
+}
+.mp-time-current { text-align: right; }
+.mp-time-duration { text-align: left; }
+.mp-seek-bar {
+  flex: 1;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  position: relative;
+  cursor: pointer;
+}
+.mp-seek-bar::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.1);
+}
+.mp-seek-fill {
+  position: absolute;
+  left: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  width: 0%;
+  pointer-events: none;
+}
+.mp-seek-thumb {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  left: 0%;
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.mp-seek-bar:hover .mp-seek-thumb,
+.mp-seek-bar.mp-seeking .mp-seek-thumb { opacity: 1; }
+.mp-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+.mp-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.mp-btn-play {
+  color: var(--accent);
+  width: 28px;
+  height: 28px;
+}
+.mp-btn-play:hover { color: #fff; background: rgba(0,212,170,0.15); }
+.mp-track-info {
+  flex: 1;
+  min-width: 0;
+  padding: 0 0.3rem;
+}
+.mp-track-title {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mp-btn-fav { color: var(--text-muted); }
+.mp-btn-fav:hover { color: var(--danger); }
+.mp-btn-fav.mp-fav-active { color: var(--danger); }
+.mp-playlist-toggle { position: relative; }
+.mp-playlist-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--bg-panel);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  z-index: 200;
+  min-width: 130px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+.mp-playlist-opt {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.mp-playlist-opt:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+.mp-playlist-opt.active { color: var(--accent); font-weight: 600; }
+.mp-volume-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.mp-volume-icon { color: var(--text-muted); flex-shrink: 0; }
+.mp-volume {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 60px;
+  height: 4px;
+  background: rgba(255,255,255,0.12);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.mp-volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+}
+.mp-volume::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+}
+
+/* ── Admin Music Panel ────────────────────────────────────────────────────── */
+.admin-music-upload {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: rgba(0,0,0,0.2);
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+}
+.admin-music-upload-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 0.8rem;
+  background: rgba(255,255,255,0.06);
+  border: 1px dashed rgba(255,255,255,0.15);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.admin-music-upload-label:hover { border-color: var(--accent); color: var(--accent); }
+.admin-music-upload-name {
+  font-size: 0.78rem;
+  color: var(--text);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-music-upload-status {
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+.admin-music-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.admin-music-track {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.04);
+  border-radius: 8px;
+}
+.admin-music-track-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-music-track-file {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.btn-admin-music-del {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.btn-admin-music-del:hover { color: var(--danger); background: rgba(255,71,87,0.1); }
+
 .user-avatar {
   width: 32px;
   height: 32px;

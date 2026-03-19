@@ -3,10 +3,10 @@
  */
 (function () {
   // ── Patch-notes "new" badge ────────────────────────────────────────
-  const LATEST_PATCH_VERSION = 'v1.7';
+  const LATEST_PATCH_VERSION = 'v1.8';
   (function initPatchBadge() {
     const navBadge  = document.querySelector('.patch-notes-badge');
-    const cardBadge = document.getElementById('patchCardBadge17');
+    const cardBadge = document.getElementById('patchCardBadge18');
     const lastSeen  = localStorage.getItem('gambleio_lastSeenPatch');
     if (lastSeen === null) {
       // Brand-new visitor — silently mark as seen so badges only appear for returning users
@@ -821,10 +821,10 @@
     card.classList.toggle('patch-note-card--expanded', !expanded);
     card.setAttribute('aria-expanded', !expanded);
     // Clear NEW badges only when the v1.7 card is explicitly opened
-    if (!expanded && card.id === 'patch-v1-7') {
+    if (!expanded && card.id === 'patch-v1-8') {
       localStorage.setItem('gambleio_lastSeenPatch', LATEST_PATCH_VERSION);
       const navBadge  = document.querySelector('.patch-notes-badge');
-      const cardBadge = document.getElementById('patchCardBadge17');
+      const cardBadge = document.getElementById('patchCardBadge18');
       if (navBadge)  navBadge.classList.add('hidden');
       if (cardBadge) cardBadge.classList.add('hidden');
     }

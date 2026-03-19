@@ -7,7 +7,7 @@
   <meta name="keywords" content="plinko, roulette, casino, gambling, games">
   <meta name="author" content="Gambleio">
   <title>Gambleio - Plinko & Roulette Games</title>
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="/css/style.css">
   <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎰</text></svg>">
 </head>
 <body>
@@ -58,6 +58,51 @@
         <button type="button" class="btn-login" id="loginBtn">Login</button>
       </div>
     </header>
+
+    <!-- Global Music Player (draggable, fixed) -->
+    <div class="music-player" id="musicPlayer">
+      <div class="mp-row-info">
+        <div class="mp-track-info" id="mpTrackInfo">
+          <span class="mp-track-title" id="mpTrackTitle">No track</span>
+        </div>
+        <button class="mp-btn mp-btn-fav" id="mpFav" title="Favorite" aria-label="Favorite">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21.3l7.8-7.8 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>
+        </button>
+        <div class="mp-playlist-toggle" id="mpPlaylistToggle">
+          <button class="mp-btn mp-btn-playlist" title="Playlist" aria-label="Switch playlist">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+          </button>
+          <div class="mp-playlist-dropdown hidden" id="mpPlaylistDropdown">
+            <button class="mp-playlist-opt active" data-playlist="all">All Songs</button>
+            <button class="mp-playlist-opt" data-playlist="favorites">Favorites</button>
+          </div>
+        </div>
+        <div class="mp-volume-wrap">
+          <svg class="mp-volume-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8.3v7.4a4.5 4.5 0 0 0 2.5-3.7zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1A9 9 0 0 0 14 3.2z"/></svg>
+          <input type="range" class="mp-volume" id="mpVolume" min="0" max="100" value="50" title="Volume" aria-label="Volume">
+        </div>
+      </div>
+      <div class="mp-row-seek">
+        <span class="mp-time mp-time-current" id="mpTimeCurrent">0:00</span>
+        <div class="mp-seek-bar" id="mpSeekBar">
+          <div class="mp-seek-fill" id="mpSeekFill"></div>
+          <div class="mp-seek-thumb" id="mpSeekThumb"></div>
+        </div>
+        <span class="mp-time mp-time-duration" id="mpTimeDuration">0:00</span>
+      </div>
+      <div class="mp-row-controls">
+        <button class="mp-btn mp-btn-prev" id="mpPrev" title="Previous" aria-label="Previous track">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+        </button>
+        <button class="mp-btn mp-btn-play" id="mpPlay" title="Play" aria-label="Play">
+          <svg class="mp-icon-play" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="mp-icon-pause hidden" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></svg>
+        </button>
+        <button class="mp-btn mp-btn-next" id="mpNext" title="Next" aria-label="Next track">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm10-12v12h2V6z"/></svg>
+        </button>
+      </div>
+    </div>
 
     <div class="chat-panel-wrap chat-panel-wrap--closed" id="chatPanelWrap" aria-label="Chat">
       <button type="button" class="chat-toggle" id="chatToggle" aria-label="Toggle chat"><span class="chat-toggle-label">Chat</span></button>
@@ -498,11 +543,47 @@
         <div class="patch-notes-container">
           <h2 class="patch-notes-page-title">Patch notes</h2>
           <div class="patch-notes-grid">
+            <article class="patch-note-card slot-game-card" id="patch-v1-8" tabindex="0" role="button" data-expanded="false" aria-label="Patch notes v1.8, click to open">
+              <div class="patch-note-card-preview slot-game-card-image">
+                <span class="patch-note-card-preview-label">Patch notes v1.8</span>
+                <span class="slot-game-card-play">View</span>
+                <span class="patch-card-new-badge hidden" id="patchCardBadge18" aria-label="New patch notes available">NEW</span>
+              </div>
+              <div class="patch-note-card-expanded-content">
+                <header class="patch-note-card-header">
+                  <h3 class="patch-note-card-title">Patch notes v1.8</h3>
+                  <p class="patch-note-card-meta">Music player &amp; fixes</p>
+                </header>
+                <div class="patch-note-card-body">
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">🎵 Global Music Player</h4>
+                  <p class="patch-note-section-desc">A persistent music player is now available across the entire site.</p>
+                  <ul class="patch-note-list">
+                    <li><strong>Floating player</strong> — A compact music player appears on every page with play/pause, skip, and volume controls.</li>
+                    <li><strong>Drag to move</strong> — Click and drag the player anywhere on your screen. Your position is remembered between sessions.</li>
+                    <li><strong>Seek bar</strong> — Scrub through tracks with a visual progress bar showing elapsed and remaining time.</li>
+                    <li><strong>Favorites</strong> — Heart any track to add it to your favorites playlist. Switch between "All Songs" and "Favorites" with the playlist toggle.</li>
+                    <li><strong>Sequential playback</strong> — Tracks play in order so you can learn the tracklist. Auto-advances to the next song when one ends.</li>
+                    <li><strong>Owner music management</strong> — Site owners can upload and delete .mp3 files directly from the Admin panel without redeploying.</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">🐛 Bug fixes</h4>
+                  <ul class="patch-note-list">
+                    <li><strong>Profile pages fixed</strong> — Visiting another player's profile no longer shows broken unstyled HTML.</li>
+                    <li><strong>Blackjack payouts</strong> — Push now correctly returns your bet. No more double-deduction on losses. Win display shows total return.</li>
+                    <li><strong>Blackjack balance timing</strong> — Your balance no longer updates before the result text appears.</li>
+                    <li><strong>Case Battle stats</strong> — Wins and losses from Case Battles now count on the leaderboard and in live stats.</li>
+                    <li><strong>Case Battle overview</strong> — Battle cards now show the entry price per player instead of the total pot.</li>
+                  </ul>
+                </section>
+                </div>
+              </div>
+            </article>
             <article class="patch-note-card slot-game-card" id="patch-v1-7" tabindex="0" role="button" data-expanded="false" aria-label="Patch notes v1.7, click to open">
               <div class="patch-note-card-preview slot-game-card-image">
                 <span class="patch-note-card-preview-label">Patch notes v1.7</span>
                 <span class="slot-game-card-play">View</span>
-                <span class="patch-card-new-badge hidden" id="patchCardBadge17" aria-label="New patch notes available">NEW</span>
               </div>
               <div class="patch-note-card-expanded-content">
                 <header class="patch-note-card-header">
@@ -1250,6 +1331,7 @@
         <div class="admin-modal-nav hidden" id="adminModalNav">
           <button type="button" class="admin-modal-nav-btn active" id="adminNavUsers">Users</button>
           <button type="button" class="admin-modal-nav-btn" id="adminNavFeedback">Feedback</button>
+          <button type="button" class="admin-modal-nav-btn hidden" id="adminNavMusic">Music</button>
         </div>
         <button type="button" class="admin-modal-close" id="adminModalClose" aria-label="Close">×</button>
       </div>
@@ -1294,6 +1376,21 @@
             <div class="admin-chat-logs-row">
               <button type="button" class="btn-admin-adjust btn-admin-chat-logs" id="adminChatLogsBtn">Chat logs</button>
             </div>
+          </div>
+        </div>
+        <!-- Admin Music Panel (owner only) -->
+        <div class="admin-music-panel hidden" id="adminMusicPanel">
+          <div class="admin-music-upload">
+            <label class="admin-music-upload-label">
+              <span>Upload .mp3</span>
+              <input type="file" accept=".mp3,audio/mpeg" id="adminMusicFile" hidden>
+            </label>
+            <span class="admin-music-upload-name" id="adminMusicFileName"></span>
+            <button type="button" class="btn-admin-adjust" id="adminMusicUploadBtn" disabled>Upload</button>
+            <span class="admin-music-upload-status" id="adminMusicUploadStatus"></span>
+          </div>
+          <div class="admin-music-list" id="adminMusicList">
+            <div class="admin-loading">Loading tracks…</div>
           </div>
         </div>
         <!-- Admin Feedback Panel -->
@@ -1428,36 +1525,37 @@
     </div>
   </div>
 
-  <script src="js/auth.js"></script>
-  <script src="js/admin.js"></script>
-  <script src="js/chat.js"></script>
-  <script src="js/challenge.js"></script>
-  <script src="js/gambly-bird.js"></script>
-  <script src="js/game.js"></script>
-  <script src="js/stats.js"></script>
-  <script src="js/leaderboard.js"></script>
-  <script src="js/plinko.js"></script>
-  <script src="js/plinko-intro.js"></script>
-  <script src="js/roulette.js"></script>
-  <script src="js/crash.js"></script>
-  <script src="js/mines.js"></script>
-  <script src="js/blackjack.js"></script>
-  <script src="js/live-stats.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/admin.js"></script>
+  <script src="/js/chat.js"></script>
+  <script src="/js/challenge.js"></script>
+  <script src="/js/gambly-bird.js"></script>
+  <script src="/js/game.js"></script>
+  <script src="/js/stats.js"></script>
+  <script src="/js/leaderboard.js"></script>
+  <script src="/js/plinko.js"></script>
+  <script src="/js/plinko-intro.js"></script>
+  <script src="/js/roulette.js"></script>
+  <script src="/js/crash.js"></script>
+  <script src="/js/mines.js"></script>
+  <script src="/js/blackjack.js"></script>
+  <script src="/js/live-stats.js"></script>
   <script>
     console.log('[index.html] About to load slot-integration.js...');
   </script>
-  <script src="js/slot-integration.js"></script>
+  <script src="/js/slot-integration.js"></script>
   <script>
     console.log('[index.html] slot-integration.js loaded, checking:', {
       SlotIntegration: typeof window.SlotIntegration,
       hasInitialize: !!(window.SlotIntegration && typeof window.SlotIntegration.initialize === 'function')
     });
   </script>
-  <script src="js/board-games.js"></script>
-  <script src="js/slots.js"></script>
-  <script src="js/case-battle.js"></script>
-  <script src="js/main.js"></script>
-  <script src="js/feedback.js"></script>
+  <script src="/js/board-games.js"></script>
+  <script src="/js/slots.js"></script>
+  <script src="/js/case-battle.js"></script>
+  <script src="/js/main.js"></script>
+  <script src="/js/feedback.js"></script>
+  <script src="/js/music-player.js"></script>
   <script>
     console.log('[index.html] All scripts loaded. Final check:', {
       SlotIntegration: typeof window.SlotIntegration,
