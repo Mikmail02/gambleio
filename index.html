@@ -16,22 +16,22 @@
     <header class="header">
       <div class="header-left">
         <div class="header-logo-wrap">
-          <a href="#home" class="logo-link" aria-label="Gambleio home">
+          <a href="/" class="logo-link" aria-label="Gambleio home">
             <h1 class="logo">
               <span class="logo-icon" aria-hidden="true"></span>
               <span class="logo-text" data-text="Gambleio">Gambleio</span>
             </h1>
           </a>
-          <a href="#patch-notes" class="btn-patch-notes" data-page="patch-notes" title="Patch notes" aria-label="Patch notes">Patch notes<span class="patch-notes-badge hidden" aria-label="New patch notes available">NEW</span></a>
+          <a href="/patch-notes" class="btn-patch-notes" data-page="patch-notes" title="Patch notes" aria-label="Patch notes">Patch notes<span class="patch-notes-badge hidden" aria-label="New patch notes available">NEW</span></a>
         </div>
       </div>
       <nav class="nav">
-        <a href="#home" class="nav-link active" data-page="home">Home</a>
-        <a href="#board-games" class="nav-link" data-page="board-games">Board Games</a>
-        <a href="#slots" class="nav-link" data-page="slots">Slots</a>
-        <a href="#case-battle" class="nav-link" data-page="case-battle">Casebattle</a>
-        <a href="#leaderboard" class="nav-link" data-page="leaderboard">Leaderboard</a>
-        <a href="#profile" class="nav-link" data-page="profile" id="navProfile">Profile</a>
+        <a href="/" class="nav-link active" data-page="home">Home</a>
+        <a href="/board-games" class="nav-link" data-page="board-games">Board Games</a>
+        <a href="/slots" class="nav-link" data-page="slots">Slots</a>
+        <a href="/case-battle" class="nav-link" data-page="case-battle">Casebattle</a>
+        <a href="/leaderboard" class="nav-link" data-page="leaderboard">Leaderboard</a>
+        <a href="/profile" class="nav-link" data-page="profile" id="navProfile">Profile</a>
       </nav>
       <div class="header-right">
         <button type="button" class="btn-logs-header hidden" id="logsBtn" title="Logs" aria-label="Logs">Logs</button>
@@ -498,6 +498,63 @@
         <div class="patch-notes-container">
           <h2 class="patch-notes-page-title">Patch notes</h2>
           <div class="patch-notes-grid">
+            <article class="patch-note-card slot-game-card" id="patch-v1-7" tabindex="0" role="button" data-expanded="false" aria-label="Patch notes v1.7, click to open">
+              <div class="patch-note-card-preview slot-game-card-image">
+                <span class="patch-note-card-preview-label">Patch notes v1.7</span>
+                <span class="slot-game-card-play">View</span>
+                <span class="patch-card-new-badge hidden" id="patchCardBadge17" aria-label="New patch notes available">NEW</span>
+              </div>
+              <div class="patch-note-card-expanded-content">
+                <header class="patch-note-card-header">
+                  <h3 class="patch-note-card-title">Patch notes v1.7</h3>
+                  <p class="patch-note-card-meta">Latest update</p>
+                </header>
+                <div class="patch-note-card-body">
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">🚿 Golden Shower — major overhaul</h4>
+                  <p class="patch-note-section-desc">A comprehensive update to Golden Shower based on playtesting. Animations, buys, stats, layout, audio and routing all improved.</p>
+                  <ul class="patch-note-list">
+                    <li><strong>Bonus Buy menu</strong> — Buy directly into 6, 8, or 10 Gold Spins, or try the Lucky Draw for a random spin count. Costs scale with your bet. The exact price is always shown on the card before you confirm.</li>
+                    <li><strong>Mystery Bonus teaser</strong> — Buying the Lucky Draw triggers a dramatic column-by-column drop that reveals each reel one at a time before showing your spin count. Regular buys with 2+ BONUS symbols also trigger the teaser.</li>
+                    <li><strong>Bonus tracker panel</strong> — A side panel shows your remaining Gold Spins with a live counter, animated dots and a progress bar. It only appears once you press Start — no spoilers before the reveal.</li>
+                    <li><strong>Bonus re-triggers</strong> — Landing a BONUS symbol during active Gold Spins awards +1 extra free spin. A floating "+1" pops up from the exact cell so you don't miss it.</li>
+                    <li><strong>No spoilers</strong> — Your balance and live stats no longer update until the spin's cascade has fully finished animating. During Gold Spins your balance updates after each individual free spin so you can watch your wins grow.</li>
+                    <li><strong>Animation lock</strong> — The bonus intro modal is now guaranteed to never appear before all symbols have finished landing on the board, regardless of which feature mode triggered the bonus.</li>
+                    <li><strong>Session stats</strong> — Spins, XP gained, total wagered, total won, profit/loss and best win are all tracked for your current session and reset when you close the game.</li>
+                    <li><strong>Live stats math fix</strong> — The wagered and profit stats now correctly reflect the full cost of a bonus buy instead of just the base bet.</li>
+                    <li><strong>Global layout</strong> — Golden Shower now runs inside the main casino layout so the navigation header and chat are always visible. The slot scales cleanly within the content area.</li>
+                    <li><strong>Refresh-proof</strong> — Refreshing the page while playing Golden Shower keeps the header and chat visible and reloads the game in place.</li>
+                    <li><strong>Full-bleed background</strong> — The slot's background now fills the entire content area with no colour bleed from the site background at the edges.</li>
+                    <li><strong>Layout alignment</strong> — The stats bar, controls bar and game grid now share a single consistent width so all edges line up perfectly.</li>
+                    <li><strong>Back button</strong> — A back button in the top-left returns you to the lobby without leaving the site.</li>
+                    <li><strong>Wild Burst fix</strong> — Wild Burst explosions no longer destroy BONUS, STEAM, DRAIN or FLOATER symbols.</li>
+                    <li><strong>Board reset after bonus</strong> — After Gold Spins end the board resets properly on the next regular spin so multipliers don't carry over unexpectedly.</li>
+                    <li><strong>Balance on load</strong> — Your balance now shows correctly the moment you open the game.</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">🎵 Background music engine</h4>
+                  <p class="patch-note-section-desc">Golden Shower now has a full dynamic audio engine with two looping tracks.</p>
+                  <ul class="patch-note-list">
+                    <li><strong>Base theme</strong> — A looping base-game track starts automatically on your first interaction with the game.</li>
+                    <li><strong>Bonus theme</strong> — The music crossfades smoothly into a bonus track when Gold Spins begin and fades back when they end.</li>
+                    <li><strong>Volume control</strong> — A speaker icon and slider in the controls bar let you set the music volume at any time. Your level is applied instantly.</li>
+                    <li><strong>Mute toggle</strong> — Click the speaker icon to mute instantly. Click again to restore your previous volume level.</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">🔗 Path-based URL routing</h4>
+                  <p class="patch-note-section-desc">Navigation across the whole site now uses real browser paths instead of URL hashes.</p>
+                  <ul class="patch-note-list">
+                    <li><strong>Clean URLs</strong> — Pages now live at paths like <code>/plinko</code>, <code>/slots</code>, <code>/leaderboard</code> and <code>/profile/username</code> instead of hash fragments.</li>
+                    <li><strong>Refresh support</strong> — Refreshing any page lands you back on the correct page without losing the header or chat.</li>
+                    <li><strong>Board Games lobby fix</strong> — Clicking a game card in the Board Games lobby now routes correctly to the game page.</li>
+                    <li><strong>Profile and battle links</strong> — Leaderboard profiles and Case Battle detail links now use clean paths that work with direct sharing.</li>
+                  </ul>
+                </section>
+                </div>
+              </div>
+            </article>
             <article class="patch-note-card slot-game-card" id="patch-v1-6" tabindex="0" role="button" data-expanded="false" aria-label="Patch notes v1.6, click to open">
               <div class="patch-note-card-preview slot-game-card-image">
                 <span class="patch-note-card-preview-label">Patch notes v1.6</span>
@@ -506,7 +563,7 @@
               <div class="patch-note-card-expanded-content">
                 <header class="patch-note-card-header">
                   <h3 class="patch-note-card-title">Patch notes v1.6</h3>
-                  <p class="patch-note-card-meta">Latest update</p>
+                  <p class="patch-note-card-meta">Golden Shower slot launch</p>
                 </header>
                 <div class="patch-note-card-body">
                 <section class="patch-note-section">
@@ -764,6 +821,17 @@
             </article>
           </div>
         </div>
+      </section>
+
+      <!-- Golden Shower slot — embedded React app in iframe -->
+      <section id="page-golden-shower" class="page page-golden-shower hidden">
+        <iframe
+          id="goldenShowerFrame"
+          class="golden-shower-frame"
+          src=""
+          title="Golden Shower Slots"
+          allowfullscreen
+        ></iframe>
       </section>
 
       <!-- Slots listing page -->

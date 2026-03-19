@@ -58,13 +58,13 @@ const SYMBOL_WEIGHTS = {
   GREEN_PILL:    700,
   TOILET_PAPER:  600,
   SPONGE:        500,
-  DUCK:          400,
-  SOAP:          200,
+  DUCK:          300,
+  SOAP:          300,
   // Special — raise/lower to tune RTP and feature frequency
-  WILD:           22,
-  BONUS:          20,
-  STEAM:          18,
-  FLOATER:        14,
+  WILD:           0,
+  BONUS:          17,
+  STEAM:          10,
+  FLOATER:        10,
   DRAIN:          10,
 };
 
@@ -441,7 +441,10 @@ function resolveSteam(grid) {
   return { grid: g, from, to };
 }
 
-/** WILD BURST: wilds explode + destroy 4-directional neighbours (not BONUS). */
+/** Special symbols that Wild Burst must never destroy */
+const WILD_BURST_IMMUNE = new Set(['BONUS', 'DRAIN', 'FLOATER', 'STEAM']);
+
+/** WILD BURST: wilds explode + destroy 4-directional neighbours (never special symbols). */
 function resolveWildBurst(grid) {
   const wilds = [];
   for (let col = 0; col < COLS; col++) {
@@ -456,7 +459,8 @@ function resolveWildBurst(grid) {
     toDestroy.add(`${col},${row}`);
     for (const [nc, nr] of [[col-1,row],[col+1,row],[col,row-1],[col,row+1]]) {
       if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
-      if (grid[nc][nr].symbol === 'BONUS') continue;
+      const nbSym = grid[nc][nr].symbol;
+      if (nbSym && WILD_BURST_IMMUNE.has(nbSym)) continue; // never destroy specials
       toDestroy.add(`${nc},${nr}`);
     }
   }
@@ -688,11 +692,16 @@ function spin(state, featureModeKey = null) {
   result.initialGrid = startGrid; // grid before any resolution (for frontend drop animation)
 
   let newBonus;
+  result.bonusRetrigger = 0; // extra spins awarded by re-triggering BONUS during Gold Spins
+
   if (isBonus) {
-    const remaining = state.bonusState.spinsRemaining - 1;
+    // Any BONUS symbols still on the board at end of spin award +1 free spin each
+    const bonusRetrigger = countBonus(result.finalGrid);
+    result.bonusRetrigger = bonusRetrigger;
+    const remaining = state.bonusState.spinsRemaining - 1 + bonusRetrigger;
     newBonus = remaining > 0
       ? { ...state.bonusState, spinsRemaining: remaining }
-      : { active: false, spinsRemaining: 0, totalSpins: 0 };
+      : { active: false, spinsRemaining: 0, totalSpins: state.bonusState.totalSpins };
   } else if (result.bonusTriggered) {
     newBonus = { active: true, spinsRemaining: result.bonusSpinsAwarded, totalSpins: result.bonusSpinsAwarded };
   } else {

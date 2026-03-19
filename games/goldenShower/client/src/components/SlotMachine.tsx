@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useSpinPlayer, FEATURE_MODES } from '../hooks/useSpinPlayer';
+import { useAudio } from '../hooks/useAudio';
 import { Grid } from './Grid';
 import { SlotControls } from './SlotControls';
 import { FeatureBuyModal } from './FeatureBuyModal';
 import { BonusIntroModal, BonusSummaryModal } from './BonusModals';
+import { BonusTracker } from './BonusTracker';
 import styles from './SlotMachine.module.css';
 
 interface SlotMachineProps {
@@ -14,15 +16,28 @@ interface SlotMachineProps {
 export function SlotMachine({ initialBalance }: SlotMachineProps) {
   const {
     state, spin, setBet, setFeatureMode, setActiveBooster, setAutoSpins,
-    confirmBonusStart, dismissBonusSummary,
+    confirmBonusStart: confirmBonusStartBase, dismissBonusSummary: dismissBonusSummaryBase,
   } = useSpinPlayer(initialBalance);
+
+  const { switchToBonus, switchToBase, volume, setVolume, toggleMute } = useAudio();
+
+  function confirmBonusStart() {
+    switchToBonus();
+    confirmBonusStartBase();
+  }
+
+  function dismissBonusSummary() {
+    switchToBase();
+    dismissBonusSummaryBase();
+  }
 
   const {
     displayGrid, glowCells, newCells, specialCells,
     isSpinning, isPlaying, isClearing, spinGen,
     balance, bet, totalWin, bonusState, spinLabel, error,
-    featureMode, activeBooster, autoSpinsRemaining, gsStats,
+    featureMode, activeBooster, autoSpinsRemaining,
     pendingBonusModal, bonusSummary,
+    hiddenCols, bonusRetriggerCells, sessionProfit, sessionStats,
   } = state;
 
   const [buyModalOpen, setBuyModalOpen] = useState(false);
@@ -36,20 +51,24 @@ export function SlotMachine({ initialBalance }: SlotMachineProps) {
 
   return (
     <div className={styles.wrapper}>
+    <div className={styles.contentCol}>
 
-      {/* ── Bonus banner ───────────────────────────────────────── */}
-      <AnimatePresence>
-        {bonusState.active && (
-          <motion.div
-            className={styles.bonusBanner}
-            initial={{ y: -40, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -40, opacity: 0 }}
-          >
-            ⭐ GOLD SPINS — {bonusState.spinsRemaining} / {bonusState.totalSpins} remaining
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ── Back button ──────────────────────────────────────────── */}
+      <div className={styles.topBar}>
+        <button className={styles.backBtn} onClick={() => {
+          // When embedded in the main site's iframe, notify the parent to navigate back.
+          // When opened standalone (direct URL), fall back to browser history.
+          if (window.parent !== window) {
+            window.parent.postMessage({ type: 'gs:back' }, window.location.origin);
+          } else {
+            window.history.back();
+          }
+        }}>
+          ← Back
+        </button>
+        <span className={styles.gameTitle}>Golden Shower</span>
+        <div className={styles.topBarSpacer} />
+      </div>
 
       {/* ── Spin label (WIN!, STEAM!, etc.) ────────────────────── */}
       <div className={styles.labelRow}>
@@ -69,38 +88,49 @@ export function SlotMachine({ initialBalance }: SlotMachineProps) {
         </AnimatePresence>
       </div>
 
-      {/* ── Main grid ──────────────────────────────────────────── */}
-      <Grid
-        grid={displayGrid}
-        glowCells={glowCells}
-        newCells={newCells}
-        specialCells={specialCells}
-        isExiting={isClearing}
-        spinGen={spinGen}
-      />
+      {/* ── Grid + Bonus Tracker side by side ──────────────────── */}
+      <div className={styles.gridRow}>
+        <Grid
+          grid={displayGrid}
+          glowCells={glowCells}
+          newCells={newCells}
+          specialCells={specialCells}
+          hiddenCols={hiddenCols}
+          bonusRetriggerCells={bonusRetriggerCells}
+          isExiting={isClearing}
+          spinGen={spinGen}
+        />
+        <BonusTracker bonusState={bonusState} />
+      </div>
 
-      {/* ── Session stats strip ────────────────────────────────── */}
+      {/* ── Session stats strip (resets each page load) ───────── */}
       <div className={styles.statsStrip}>
         <div className={styles.statItem}>
           <span className={styles.statLabel}>Spins</span>
-          <span className={styles.statVal}>{gsStats.totalSpins}</span>
+          <span className={styles.statVal}>{sessionStats.totalSpins}</span>
         </div>
         <div className={styles.statItem}>
           <span className={styles.statLabel}>XP</span>
-          <span className={styles.statVal}>{gsStats.xp.toFixed(1)}</span>
+          <span className={styles.statVal}>{sessionStats.xp.toFixed(1)}</span>
         </div>
         <div className={styles.statItem}>
           <span className={styles.statLabel}>Wagered</span>
-          <span className={styles.statVal}>${gsStats.totalWagered.toFixed(2)}</span>
+          <span className={styles.statVal}>${sessionStats.totalWagered.toFixed(2)}</span>
         </div>
         <div className={styles.statItem}>
           <span className={styles.statLabel}>Won</span>
-          <span className={`${styles.statVal} ${styles.statValWon}`}>${gsStats.totalWon.toFixed(2)}</span>
+          <span className={`${styles.statVal} ${styles.statValWon}`}>${sessionStats.totalWon.toFixed(2)}</span>
+        </div>
+        <div className={styles.statItem}>
+          <span className={styles.statLabel}>Profit</span>
+          <span className={`${styles.statVal} ${sessionProfit >= 0 ? styles.statValWon : styles.statValLoss}`}>
+            {sessionProfit >= 0 ? '+' : ''}${sessionProfit.toFixed(2)}
+          </span>
         </div>
         <div className={styles.statItem}>
           <span className={styles.statLabel}>Best Win</span>
           <span className={`${styles.statVal} ${styles.statValBest}`}>
-            {gsStats.biggestWin > 0 ? `$${gsStats.biggestWin.toFixed(2)}` : '—'}
+            {sessionStats.biggestWin > 0 ? `$${sessionStats.biggestWin.toFixed(2)}` : '—'}
           </span>
         </div>
       </div>
@@ -115,12 +145,15 @@ export function SlotMachine({ initialBalance }: SlotMachineProps) {
         autoSpinsRemaining={autoSpinsRemaining}
         isBonus={bonusState.active}
         busy={busy}
+        volume={volume}
         onSpin={spin}
         onSetBet={setBet}
         onSetAutoSpins={setAutoSpins}
         onClearFeature={() => setFeatureMode(null)}
         onClearBooster={() => setActiveBooster(null)}
         onOpenBuyModal={() => setBuyModalOpen(true)}
+        onSetVolume={setVolume}
+        onToggleMute={toggleMute}
       />
 
       {/* ── Error message ──────────────────────────────────────── */}
@@ -137,6 +170,8 @@ export function SlotMachine({ initialBalance }: SlotMachineProps) {
         )}
       </AnimatePresence>
 
+    </div>{/* /contentCol */}
+
       {/* ── Feature Buy Modal ───────────────────────────────────── */}
       <FeatureBuyModal
         open={buyModalOpen}
@@ -145,7 +180,6 @@ export function SlotMachine({ initialBalance }: SlotMachineProps) {
         onClose={() => setBuyModalOpen(false)}
         onSetBet={setBet}
         onSelect={key => {
-          // Bonus buys are one-shot; boosters persist across spins
           if (FEATURE_MODES[key]?.section === 'bonus') setFeatureMode(key);
           else setActiveBooster(key);
         }}

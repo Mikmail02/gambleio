@@ -5,7 +5,6 @@
   justify-content: space-between;
   gap: 10px;
   width: 100%;
-  max-width: 680px;
   background: rgba(10 10 18 / 0.92);
   border: 1px solid rgba(255 255 255 / 0.09);
   border-radius: 16px;
@@ -52,6 +51,74 @@
   height: 28px;
   background: rgba(255 255 255 / 0.1);
   flex-shrink: 0;
+}
+
+/* ── Volume control ───────────────────────────────────────────────── */
+.volumeCluster {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.muteBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid rgba(255 255 255 / 0.12);
+  background: rgba(255 255 255 / 0.06);
+  color: rgba(255 255 255 / 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.muteBtn:hover { background: rgba(255 255 255 / 0.14); color: #fff; }
+
+.muteBtnMuted {
+  color: rgba(248 113 113 / 0.85);
+  border-color: rgba(248 113 113 / 0.35);
+  background: rgba(248 113 113 / 0.08);
+}
+
+.volumeSlider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 72px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255 255 255 / 0.18);
+  outline: none;
+  cursor: pointer;
+}
+
+.volumeSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #f5c518;
+  box-shadow: 0 0 6px rgba(245 197 24 / 0.6);
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+
+.volumeSlider::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 10px rgba(245 197 24 / 0.9);
+}
+
+.volumeSlider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  background: #f5c518;
+  box-shadow: 0 0 6px rgba(245 197 24 / 0.6);
+  cursor: pointer;
 }
 
 /* ── Bet cluster ──────────────────────────────────────────────────── */

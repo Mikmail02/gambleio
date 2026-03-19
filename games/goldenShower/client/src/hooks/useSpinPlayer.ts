@@ -63,21 +63,68 @@ function findSymbolCells(grid: Grid, symbols: string[]): Set<string> {
 // Visual stage builder
 // ─────────────────────────────────────────────────────────────
 
-function buildVisualStages(steps: SpinStep[], initialGrid: Grid): VisualStage[] {
+function shouldTeaserDrop(featureMode: string | null, initialGrid: Grid): boolean {
+  if (featureMode === 'MYSTERY_BONUS') return true;
+  let bonusCount = 0;
+  for (let col = 0; col <= 1; col++)
+    for (let row = 0; row < ROWS; row++)
+      if (initialGrid[col][row].symbol === 'BONUS') bonusCount++;
+  return bonusCount >= 2;
+}
+
+function colCellKeys(col: number): Set<string> {
+  const s = new Set<string>();
+  for (let row = 0; row < ROWS; row++) s.add(cellKey(col, row));
+  return s;
+}
+
+function buildVisualStages(
+  steps: SpinStep[],
+  initialGrid: Grid,
+  opts: { featureMode?: string | null; isBonus?: boolean; bonusRetrigger?: number } = {},
+): VisualStage[] {
   const stages: VisualStage[] = [];
   let prevGrid = initialGrid;
   let cumulativePayout = 0;
 
-  function push(kind: VisualStageKind, grid: Grid, opts: Partial<VisualStage> = {}) {
-    stages.push({ kind, grid, cumulativePayout, duration: STAGE_DURATION[kind] ?? 600, ...opts });
+  function push(kind: VisualStageKind, grid: Grid, stageOpts: Partial<VisualStage> = {}) {
+    stages.push({ kind, grid, cumulativePayout, duration: STAGE_DURATION[kind] ?? 600, ...stageOpts });
   }
 
-  // Highlight any BONUS symbols in the initial drop so the player notices them
-  const bonusSpecialCells = findSymbolCells(initialGrid, ['BONUS']);
-  push('INITIAL_DROP', initialGrid, {
-    newCells: allCellKeys(),
-    specialCells: bonusSpecialCells.size > 0 ? bonusSpecialCells : undefined,
-  });
+  const bonusCells = findSymbolCells(initialGrid, ['BONUS']);
+  const useTeaserDrop = shouldTeaserDrop(opts.featureMode ?? null, initialGrid);
+
+  if (useTeaserDrop) {
+    const TEASER_MS = 650;
+    const colGroups: number[][] = [[0, 1], [2], [3], [4], [5]];
+    let revealedCols = new Set<number>();
+    for (const group of colGroups) {
+      group.forEach(c => revealedCols.add(c));
+      const hidden = new Set(
+        Array.from({ length: COLS }, (_, c) => c).filter(c => !revealedCols.has(c)),
+      );
+      const newCells = group.reduce<Set<string>>((acc, c) => {
+        colCellKeys(c).forEach(k => acc.add(k));
+        return acc;
+      }, new Set());
+      push('INITIAL_DROP', initialGrid, {
+        newCells,
+        hiddenCols: hidden.size > 0 ? hidden : undefined,
+        specialCells: bonusCells.size > 0 ? bonusCells : undefined,
+        duration: TEASER_MS,
+      });
+    }
+  } else {
+    const bonusRetriggerCells =
+      opts.isBonus && opts.bonusRetrigger && opts.bonusRetrigger > 0
+        ? bonusCells
+        : undefined;
+    push('INITIAL_DROP', initialGrid, {
+      newCells: allCellKeys(),
+      specialCells: bonusCells.size > 0 ? bonusCells : undefined,
+      bonusRetriggerCells,
+    });
+  }
 
   for (const step of steps) {
     cumulativePayout += step.payout;
@@ -138,32 +185,44 @@ export interface GsStats {
   biggestWinMultiplier: number;
 }
 
+/** Values deferred until animations complete — avoids spoiling outcomes */
+interface DeferredDisplay {
+  balance: number;
+  sessionProfit: number;
+  sessionStats: GsStats;
+  bonusState: BonusState;
+}
+
 export interface SpinPlayerState {
   displayGrid: Grid;
   glowCells: Set<string>;
   newCells: Set<string>;
   specialCells: Set<string>;
+  hiddenCols: Set<number>;
+  bonusRetriggerCells: Set<string>;
   isSpinning: boolean;
   isPlaying: boolean;
   isClearing: boolean;
   spinGen: number;
+  /** Displayed balance — lags API response until animations complete */
   balance: number;
   bet: number;
   totalWin: number;
+  /** Net profit/loss for this session — updated after animations */
+  sessionProfit: number;
+  /** Displayed bonus state — lags API response until animations complete */
   bonusState: BonusState;
   spinLabel: string;
   error: string | null;
-  /** One-shot feature buy (BONUS_3 etc.) — cleared after spin fires */
   featureMode: string | null;
-  /** Persistent booster (STEAMY_SPIN etc.) — stays until explicitly cleared */
   activeBooster: string | null;
   autoSpinsRemaining: number;
   gsStats: GsStats;
-  /** Set when bonus just triggered — shows intro modal before playback starts */
+  /** Session-only stats — start at zero each page load, updated after animations */
+  sessionStats: GsStats;
   pendingBonusModal: { spinsAwarded: number } | null;
-  /** Set when bonus round ends — shows total win summary */
   bonusSummary: { totalWin: number } | null;
-  /** Win accumulated during the current bonus run */
+  scheduledSummary: { totalWin: number } | null;
   bonusRunWin: number;
 }
 
@@ -187,6 +246,8 @@ export function useSpinPlayer(initialBalance: number) {
     glowCells: new Set(),
     newCells: new Set(),
     specialCells: new Set(),
+    hiddenCols: new Set(),
+    bonusRetriggerCells: new Set(),
     isSpinning: false,
     isPlaying: false,
     isClearing: false,
@@ -194,6 +255,7 @@ export function useSpinPlayer(initialBalance: number) {
     balance: initialBalance,
     bet: 1.00,
     totalWin: 0,
+    sessionProfit: 0,
     bonusState: { active: false, spinsRemaining: 0, totalSpins: 0 },
     spinLabel: '',
     error: null,
@@ -201,30 +263,65 @@ export function useSpinPlayer(initialBalance: number) {
     activeBooster: null,
     autoSpinsRemaining: 0,
     gsStats: { ...emptyStats },
+    sessionStats: { ...emptyStats },
     pendingBonusModal: null,
     bonusSummary: null,
+    scheduledSummary: null,
     bonusRunWin: 0,
   });
 
   const timerRef         = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stagesRef        = useRef<VisualStage[]>([]);
   const stageIdxRef      = useRef(0);
-  const pendingStagesRef = useRef<VisualStage[] | null>(null); // stages held until bonus modal dismissed
+  const pendingStagesRef = useRef<VisualStage[] | null>(null);
 
-  // Stable refs to avoid stale closures inside the async spin()
-  const betRef          = useRef(state.bet);
-  const featureModeRef  = useRef(state.featureMode);
-  const activeBoosterRef= useRef(state.activeBooster);
-  useEffect(() => { betRef.current = state.bet; },           [state.bet]);
-  useEffect(() => { featureModeRef.current = state.featureMode; },     [state.featureMode]);
+  // ── Stable refs for spin() closure — avoids stale state reads ──────────
+  const betRef           = useRef(state.bet);
+  const featureModeRef   = useRef(state.featureMode);
+  const activeBoosterRef = useRef(state.activeBooster);
+  // These mirror the DISPLAYED state values so spin() can compute deltas without prev
+  const bonusStateRef    = useRef<BonusState>(state.bonusState);
+  const sessionProfitRef = useRef(state.sessionProfit);
+  const sessionStatsRef  = useRef<GsStats>(state.sessionStats);
+  const bonusRunWinRef   = useRef(state.bonusRunWin);
+  const gsStatsRef       = useRef<GsStats>(state.gsStats);
+
+  useEffect(() => { betRef.current           = state.bet; },           [state.bet]);
+  useEffect(() => { featureModeRef.current   = state.featureMode; },   [state.featureMode]);
   useEffect(() => { activeBoosterRef.current = state.activeBooster; }, [state.activeBooster]);
+  useEffect(() => { bonusStateRef.current    = state.bonusState; },    [state.bonusState]);
+  useEffect(() => { sessionProfitRef.current = state.sessionProfit; }, [state.sessionProfit]);
+  useEffect(() => { sessionStatsRef.current  = state.sessionStats; },  [state.sessionStats]);
+  useEffect(() => { bonusRunWinRef.current   = state.bonusRunWin; },   [state.bonusRunWin]);
+  useEffect(() => { gsStatsRef.current       = state.gsStats; },       [state.gsStats]);
+
+  // ── Deferred display — balance/stats/bonusState lag animations ─────────
+  // Stored here after API response; flushed to React state when animations end.
+  const pendingDisplayRef = useRef<DeferredDisplay | null>(null);
+
+  /** Apply the pending balance/stats/bonusState to visible React state.
+   *  Called when the current spin's animation sequence is fully complete. */
+  const flushDisplay = useCallback(() => {
+    const p = pendingDisplayRef.current;
+    if (!p) return;
+    pendingDisplayRef.current = null;
+    setState(prev => ({
+      ...prev,
+      balance:       p.balance,
+      sessionProfit: p.sessionProfit,
+      sessionStats:  p.sessionStats,
+      bonusState:    p.bonusState,
+    }));
+  }, []);
 
   const cancelPlayback = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = null;
   }, []);
 
-  const playStage = useCallback((stages: VisualStage[], idx: number) => {
+  /** Advance through visual stages one at a time.
+   *  onComplete fires when the last stage finishes — this is when display state flushes. */
+  const playStage = useCallback((stages: VisualStage[], idx: number, onComplete?: () => void) => {
     if (idx >= stages.length) {
       setState(prev => ({
         ...prev,
@@ -233,33 +330,41 @@ export function useSpinPlayer(initialBalance: number) {
         glowCells: new Set(),
         newCells: new Set(),
         specialCells: new Set(),
+        hiddenCols: new Set(),
+        bonusRetriggerCells: new Set(),
       }));
+      onComplete?.();
       return;
     }
     const s = stages[idx];
     setState(prev => ({
       ...prev,
-      displayGrid: s.grid,
-      glowCells:    s.glowCells    ?? new Set(),
-      newCells:     s.newCells     ?? new Set(),
-      specialCells: s.specialCells ?? new Set(),
-      totalWin:     s.cumulativePayout,
-      spinLabel:    s.label ?? '',
+      displayGrid:         s.grid,
+      glowCells:           s.glowCells           ?? new Set(),
+      newCells:            s.newCells             ?? new Set(),
+      specialCells:        s.specialCells         ?? new Set(),
+      hiddenCols:          s.hiddenCols           ?? new Set(),
+      bonusRetriggerCells: s.bonusRetriggerCells  ?? new Set(),
+      totalWin:            s.cumulativePayout,
+      spinLabel:           s.label ?? '',
     }));
     stageIdxRef.current = idx;
-    timerRef.current = setTimeout(() => playStage(stages, idx + 1), s.duration);
+    timerRef.current = setTimeout(() => playStage(stages, idx + 1, onComplete), s.duration);
   }, []);
 
-  /** Called when player clicks "START" on the bonus intro modal */
+  /** Player clicks "START" on the bonus intro modal.
+   *  This is the moment we flush display state (tracker appears, balance updates)
+   *  and begin playing the win stages from the triggering spin. */
   const confirmBonusStart = useCallback(() => {
     const stages = pendingStagesRef.current;
     if (!stages) return;
     pendingStagesRef.current = null;
+    // Flush NOW — balance/stats/bonusState become visible as bonus officially begins
+    flushDisplay();
     setState(prev => ({ ...prev, pendingBonusModal: null, isPlaying: stages.length > 0 }));
     if (stages.length > 0) playStage(stages, 0);
-  }, [playStage]);
+  }, [playStage, flushDisplay]);
 
-  /** Dismiss the bonus summary overlay */
   const dismissBonusSummary = useCallback(() => {
     setState(prev => ({ ...prev, bonusSummary: null }));
   }, []);
@@ -275,12 +380,12 @@ export function useSpinPlayer(initialBalance: number) {
       glowCells: new Set(),
       newCells: new Set(),
       specialCells: new Set(),
+      scheduledSummary: null,
       error: null,
     }));
 
     const token       = localStorage.getItem('gambleio_token');
     const bet         = betRef.current;
-    // One-shot feature buy takes priority over persistent booster
     const featureMode = featureModeRef.current ?? activeBoosterRef.current ?? null;
 
     try {
@@ -300,77 +405,142 @@ export function useSpinPlayer(initialBalance: number) {
         sleep(EXIT_DURATION),
       ]);
 
-      const winAmount: number = data.result.winAmount ?? 0;
-      const stages = buildVisualStages(data.result.steps, data.result.initialGrid);
+      const winAmount: number    = data.result.winAmount ?? 0;
+      const bonusRetrigger: number = data.result.bonusRetrigger ?? 0;
+      const justTriggered        = !!data.result.bonusTriggered;
+
+      // ── Compute deferred display values using stable refs ─────────────
+      // Using refs (not stale-closure `state`) ensures accuracy across async gaps.
+      const wasInBonus     = bonusStateRef.current.active;
+      // FIX 2: Use server-returned totalCost (reflects actual feature buy price)
+      const spinCost       = wasInBonus ? 0 : (data.totalCost ?? bet);
+      const isExitingBonus = wasInBonus && !data.bonusState.active;
+
+      let newBonusRunWin = bonusRunWinRef.current;
+      if (wasInBonus) newBonusRunWin = bonusRunWinRef.current + winAmount;
+      if (justTriggered && !wasInBonus) newBonusRunWin = winAmount;
+
+      const xpDelta = Math.max(0, (data.gsStats?.xp ?? gsStatsRef.current.xp) - gsStatsRef.current.xp);
+      const newSessionStats: GsStats = {
+        totalSpins:          sessionStatsRef.current.totalSpins + 1,
+        totalWagered:        sessionStatsRef.current.totalWagered + spinCost,
+        totalWon:            sessionStatsRef.current.totalWon + winAmount,
+        biggestWin:          Math.max(sessionStatsRef.current.biggestWin, winAmount),
+        biggestWinMultiplier: Math.max(sessionStatsRef.current.biggestWinMultiplier, winAmount / Math.max(bet, 0.01)),
+        xp:                  sessionStatsRef.current.xp + xpDelta,
+      };
+      const newSessionProfit = sessionProfitRef.current + winAmount - spinCost;
+
+      // FIX 1: Store display updates in ref — applied AFTER animations finish.
+      // This prevents balance/stats/bonusState from spoiling the spin result.
+      pendingDisplayRef.current = {
+        balance:       data.balance,
+        sessionProfit: newSessionProfit,
+        sessionStats:  newSessionStats,
+        bonusState:    data.bonusState,
+      };
+
+      // ── Build visual stages ───────────────────────────────────────────
+      const stages = buildVisualStages(data.result.steps, data.result.initialGrid, {
+        featureMode,
+        isBonus: wasInBonus,
+        bonusRetrigger,
+      });
       stagesRef.current = stages;
 
-      setState(prev => {
-        const wasInBonus      = prev.bonusState.active;
-        const nowInBonus      = data.bonusState.active;
-        const justTriggered   = !!data.result.bonusTriggered;
+      // ── Split stages: INITIAL_DROP always plays before modal fires ──────
+      // This is the universal animation lock — pendingBonusModal is NEVER set
+      // directly from the API response; only set in the dropStages onComplete callback.
+      const dropStages = justTriggered ? stages.filter(s => s.kind === 'INITIAL_DROP') : [];
+      const winStages  = justTriggered ? stages.filter(s => s.kind !== 'INITIAL_DROP') : [];
 
-        // Accumulate bonus run win
-        let newBonusRunWin = prev.bonusRunWin;
-        if (wasInBonus) newBonusRunWin = prev.bonusRunWin + winAmount;
-        // Reset counter when a new bonus just started
-        if (justTriggered && !wasInBonus) newBonusRunWin = winAmount;
+      // ── setState: only non-spoiler fields updated immediately ─────────
+      setState(prev => ({
+        ...prev,
+        isSpinning:    false,
+        isClearing:    false,
+        isPlaying:     justTriggered ? dropStages.length > 0 : stages.length > 0,
+        spinGen:       prev.spinGen + 1,
+        featureMode:   null,
+        autoSpinsRemaining: (justTriggered || isExitingBonus) ? 0
+          : prev.autoSpinsRemaining > 0 ? prev.autoSpinsRemaining - 1 : 0,
+        gsStats:       data.gsStats ?? prev.gsStats,
+        bonusRunWin:   newBonusRunWin,
+        // pendingBonusModal is NEVER set here — always via animation callback
+        scheduledSummary: isExitingBonus ? { totalWin: newBonusRunWin } : null,
+        bonusSummary: null,
+        // balance, sessionProfit, sessionStats, bonusState → via pendingDisplayRef
+      }));
 
-        const isExitingBonus  = wasInBonus && !nowInBonus;
+      const spinsAwarded = data.result.bonusSpinsAwarded as number;
 
-        return {
-          ...prev,
-          isSpinning:    false,
-          isClearing:    false,
-          // If bonus just triggered, hold playback until player clicks START
-          isPlaying:     !justTriggered && stages.length > 0,
-          balance:       data.balance,
-          bonusState:    data.bonusState,
-          spinGen:       prev.spinGen + 1,
-          featureMode:   null,          // always clear one-shot after firing
-          // Clear auto-spin when bonus triggers or when bonus ends (natural break point)
-        autoSpinsRemaining: (justTriggered || isExitingBonus) ? 0 : (prev.autoSpinsRemaining > 0 ? prev.autoSpinsRemaining - 1 : 0),
-          gsStats:       data.gsStats ?? prev.gsStats,
-          bonusRunWin:   newBonusRunWin,
-          pendingBonusModal: justTriggered ? { spinsAwarded: data.result.bonusSpinsAwarded } : prev.pendingBonusModal,
-          bonusSummary:  isExitingBonus ? { totalWin: newBonusRunWin } : prev.bonusSummary,
-        };
-      });
-
-      if (data.result.bonusTriggered) {
-        // Hold stages until player clicks START in intro modal
-        pendingStagesRef.current = stages;
+      if (justTriggered) {
+        // Always play ALL drop stages first, THEN show the modal.
+        // Works for both teaser (5 INITIAL_DROP stages) and non-teaser (1 INITIAL_DROP).
+        pendingStagesRef.current = winStages;
+        if (dropStages.length > 0) {
+          playStage(dropStages, 0, () => {
+            setState(prev => ({ ...prev, pendingBonusModal: { spinsAwarded }, isPlaying: false }));
+          });
+        } else {
+          // Guard: no drop stages found (shouldn't happen)
+          setState(prev => ({ ...prev, pendingBonusModal: { spinsAwarded } }));
+        }
       } else if (stages.length > 0) {
-        playStage(stages, 0);
+        // Normal spin OR bonus spin: flush display when all animations complete
+        playStage(stages, 0, flushDisplay);
+      } else {
+        // No stages (shouldn't happen but guard it)
+        flushDisplay();
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
+      // On error, flush any pending display so state doesn't get stuck
+      flushDisplay();
       setState(prev => ({
         ...prev,
         isSpinning: false,
         isClearing: false,
         isPlaying: false,
+        scheduledSummary: null,
         autoSpinsRemaining: 0,
         error: msg,
       }));
     }
-  }, [cancelPlayback, playStage]);
+  }, [cancelPlayback, playStage, flushDisplay]);
 
   const setBet           = useCallback((bet: number) => setState(prev => ({ ...prev, bet })), []);
   const setFeatureMode   = useCallback((fm: string | null) => setState(prev => ({ ...prev, featureMode: fm })), []);
   const setActiveBooster = useCallback((key: string | null) => setState(prev => ({ ...prev, activeBooster: key })), []);
   const setAutoSpins     = useCallback((n: number) => setState(prev => ({ ...prev, autoSpinsRemaining: n })), []);
 
-  // Auto-spin: fire next spin when playback ends.
-  // Block when bonus intro or summary modals are open — those are natural break points.
+  // Auto-spin: fire when playback idle, no modals, no pending summary
   useEffect(() => {
     if (!state.isPlaying && !state.isSpinning && !state.isClearing
-        && !state.pendingBonusModal && !state.bonusSummary
+        && !state.pendingBonusModal && !state.bonusSummary && !state.scheduledSummary
         && state.autoSpinsRemaining > 0) {
       spin();
     }
-  }, [state.isPlaying, state.isSpinning, state.isClearing, state.pendingBonusModal, state.bonusSummary, state.autoSpinsRemaining, spin]);
+  }, [state.isPlaying, state.isSpinning, state.isClearing,
+      state.pendingBonusModal, state.bonusSummary, state.scheduledSummary,
+      state.autoSpinsRemaining, spin]);
 
-  // Load initial state on mount
+  // Delayed bonus summary — shows 2s AFTER final spin's animations complete
+  useEffect(() => {
+    if (!state.isPlaying && !state.isSpinning && !state.isClearing && state.scheduledSummary) {
+      const summary = state.scheduledSummary;
+      const t = setTimeout(() => {
+        setState(prev => {
+          if (prev.isSpinning || prev.isPlaying) return prev;
+          return { ...prev, bonusSummary: summary, scheduledSummary: null };
+        });
+      }, 2000);
+      return () => clearTimeout(t);
+    }
+  }, [state.isPlaying, state.isSpinning, state.isClearing, state.scheduledSummary]);
+
+  // Load initial state on mount — sets balance/grid from server.
+  // sessionStats intentionally NOT loaded so it resets to zero each page visit.
   useEffect(() => {
     const token = localStorage.getItem('gambleio_token');
     fetch('/api/slots/golden-shower/state', {
@@ -378,13 +548,13 @@ export function useSpinPlayer(initialBalance: number) {
     })
       .then(r => r.json())
       .then(data => {
-        if (data.grid) {
-          setState(prev => ({
-            ...prev,
-            displayGrid: data.grid,
-            bonusState: data.bonusState ?? prev.bonusState,
-          }));
-        }
+        setState(prev => ({
+          ...prev,
+          displayGrid: data.grid      ?? prev.displayGrid,
+          bonusState:  data.bonusState ?? prev.bonusState,
+          balance:     typeof data.balance === 'number' ? data.balance : prev.balance,
+          gsStats:     data.gsStats    ?? prev.gsStats,
+        }));
       })
       .catch(() => {});
   }, []);

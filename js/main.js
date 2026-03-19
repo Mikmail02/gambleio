@@ -3,16 +3,17 @@
  */
 (function () {
   // ── Patch-notes "new" badge ────────────────────────────────────────
-  const LATEST_PATCH_VERSION = 'v1.6';
+  const LATEST_PATCH_VERSION = 'v1.7';
   (function initPatchBadge() {
-    const badge = document.querySelector('.patch-notes-badge');
-    if (!badge) return;
-    const lastSeen = localStorage.getItem('gambleio_lastSeenPatch');
+    const navBadge  = document.querySelector('.patch-notes-badge');
+    const cardBadge = document.getElementById('patchCardBadge17');
+    const lastSeen  = localStorage.getItem('gambleio_lastSeenPatch');
     if (lastSeen === null) {
-      // Brand-new visitor — silently mark as seen so badge only appears for returning users
+      // Brand-new visitor — silently mark as seen so badges only appear for returning users
       localStorage.setItem('gambleio_lastSeenPatch', LATEST_PATCH_VERSION);
     } else if (lastSeen !== LATEST_PATCH_VERSION) {
-      badge.classList.remove('hidden');
+      if (navBadge)  navBadge.classList.remove('hidden');
+      if (cardBadge) cardBadge.classList.remove('hidden');
     }
   })();
   const balanceEl = document.getElementById('balance');
@@ -30,6 +31,7 @@
   const pageBoardGames = document.getElementById('page-board-games');
   const pagePatchNotes = document.getElementById('page-patch-notes');
   const pageSlotGame = document.getElementById('page-slot-game');
+  const pageGoldenShower = document.getElementById('page-golden-shower');
   const navLinks = document.querySelectorAll('.nav-link');
   const clickerBtn = document.getElementById('clickerBtn');
   const riskLevelCurrent = document.getElementById('riskLevelCurrent');
@@ -146,7 +148,7 @@
     while (plinkoAutoRunning) {
       if (plinkoControlMode !== 'automatic') break;
       if (document.hidden) break;
-      if ((window.location.hash || '#home') !== '#plinko') break;
+      if (window.location.pathname !== '/plinko') break;
       if (Number.isFinite(target) && dropped >= target) break;
       const activeBalls = window.Plinko && window.Plinko.getActiveBallCount ? window.Plinko.getActiveBallCount() : 0;
       const maxBalls = window.Plinko && window.Plinko.maxActiveBalls ? window.Plinko.maxActiveBalls : 25;
@@ -230,6 +232,7 @@
     if (pageSlots) pageSlots.classList.toggle('hidden', pageId !== 'slots');
     if (pageBoardGames) pageBoardGames.classList.toggle('hidden', pageId !== 'board-games');
     if (pageSlotGame) pageSlotGame.classList.toggle('hidden', pageId !== 'slot-game');
+    if (pageGoldenShower) pageGoldenShower.classList.toggle('hidden', pageId !== 'golden-shower');
     if (pageProfile) pageProfile.classList.toggle('hidden', pageId !== 'profile');
     if (pageLeaderboard) pageLeaderboard.classList.toggle('hidden', pageId !== 'leaderboard');
     if (pageCaseBattle) pageCaseBattle.classList.toggle('hidden', pageId !== 'case-battle');
@@ -237,12 +240,6 @@
     navLinks.forEach((a) => a.classList.toggle('active', a.getAttribute('data-page') === pageId));
     const btnPatchNotes = document.querySelector('.btn-patch-notes');
     if (btnPatchNotes) btnPatchNotes.classList.toggle('active', pageId === 'patch-notes');
-    // Clear "new patch" badge when player opens patch notes
-    if (pageId === 'patch-notes') {
-      const badge = document.querySelector('.patch-notes-badge');
-      if (badge) badge.classList.add('hidden');
-      localStorage.setItem('gambleio_lastSeenPatch', LATEST_PATCH_VERSION);
-    }
     if (pageId === 'plinko') {
       const onIntroDone = () => {
         document.querySelectorAll('.plinko-content').forEach((el) => el.classList.add('plinko-content-visible'));
@@ -318,18 +315,26 @@
         }
       }, 100);
     }
+    // Golden Shower: ensure iframe is loaded whenever this page section is shown,
+    // including direct URL navigation and page refresh at /golden-shower
+    if (pageId === 'golden-shower') {
+      const frame = document.getElementById('goldenShowerFrame');
+      if (frame && !frame.src.endsWith('/golden-shower/')) {
+        frame.src = '/golden-shower/';
+      }
+    }
   }
 
-  function onHashChange() {
-    const hash = (window.location.hash || '#home').slice(1);
-    const validPages = ['home', 'board-games', 'plinko', 'roulette', 'crash', 'mines', 'blackjack', 'slots', 'slot-game', 'case-battle', 'profile', 'leaderboard', 'patch-notes'];
-    let page = validPages.includes(hash) ? hash : 'home';
-    if (hash.startsWith('profile/')) {
+  function onNavChange() {
+    const raw = window.location.pathname.replace(/^\//, '') || 'home';
+    const validPages = ['home', 'board-games', 'plinko', 'roulette', 'crash', 'mines', 'blackjack', 'slots', 'slot-game', 'golden-shower', 'case-battle', 'profile', 'leaderboard', 'patch-notes'];
+    let page = validPages.includes(raw) ? raw : 'home';
+    if (raw.startsWith('profile/')) {
       page = 'profile';
-    } else if (hash.startsWith('case-battle/')) {
+    } else if (raw.startsWith('case-battle/')) {
       page = 'case-battle';
     }
-    showPage(page, hash.startsWith('profile/') ? decodeURIComponent(hash.slice(hash.indexOf('/') + 1)) : (page === 'profile' ? null : undefined));
+    showPage(page, raw.startsWith('profile/') ? decodeURIComponent(raw.slice(raw.indexOf('/') + 1)) : (page === 'profile' ? null : undefined));
     
     // Small delay to ensure page is visible before initializing
     setTimeout(() => {
@@ -352,35 +357,15 @@
         window.CaseBattle.onShow();
       }
     }, 0);
-    setTimeout(() => {
     if (page === 'slot-game') {
-      console.log('[main.js] slot-game page detected, initializing...');
-      // Initialize slot game when page is shown
       setTimeout(() => {
-        console.log('[main.js] Checking for SlotIntegration...', {
-          SlotIntegration: !!window.SlotIntegration,
-          hasInitialize: !!(window.SlotIntegration && window.SlotIntegration.initialize),
-          Slots: !!window.Slots,
-          hasOnGameShow: !!(window.Slots && window.Slots.onGameShow)
-        });
         if (window.SlotIntegration && window.SlotIntegration.initialize) {
-          console.log('[main.js] Calling window.SlotIntegration.initialize()...');
-          try {
-            window.SlotIntegration.initialize();
-            console.log('[main.js] window.SlotIntegration.initialize() called successfully');
-          } catch(e) {
-            console.error('[main.js] Error calling SlotIntegration.initialize():', e);
-            console.error('[main.js] Stack:', e.stack);
-          }
+          try { window.SlotIntegration.initialize(); } catch(e) { console.error('[main.js]', e); }
         } else if (window.Slots && window.Slots.onGameShow) {
-          console.log('[main.js] Calling window.Slots.onGameShow()...');
           window.Slots.onGameShow();
-        } else {
-          console.error('[main.js] Neither SlotIntegration.initialize nor Slots.onGameShow found!');
         }
       }, 100);
     }
-    }, 50);
   }
 
   async function handleDrop() {
@@ -793,13 +778,38 @@
     updatePlinkoMaxBetError();
   }
 
-  window.addEventListener('hashchange', onHashChange);
+  // History API routing — intercept clicks on nav links to use pushState
+  document.addEventListener('click', function handleNavClick(e) {
+    const link = e.target.closest('a[data-page], a.logo-link');
+    if (!link) return;
+    const href = link.getAttribute('href');
+    if (!href || !href.startsWith('/')) return;
+    e.preventDefault();
+    history.pushState({}, '', href);
+    onNavChange();
+  });
+
+  window.addEventListener('popstate', onNavChange);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) stopPlinkoAuto();
   });
   window.addEventListener('beforeunload', () => stopPlinkoAuto());
   window.showPage = showPage;
-  onHashChange();
+  // Expose navigate() globally so other scripts can use History API
+  window.navigate = function(path) {
+    history.pushState({}, '', path);
+    onNavChange();
+  };
+  onNavChange();
+
+  // Listen for messages from the embedded Golden Shower iframe
+  window.addEventListener('message', function (e) {
+    if (e.origin !== window.location.origin) return;
+    if (e.data && e.data.type === 'gs:back') {
+      history.pushState({}, '', '/slots');
+      onNavChange();
+    }
+  });
 
   document.body.addEventListener('click', function patchNoteCardClick(e) {
     const card = e.target.closest('.patch-note-card');
@@ -810,6 +820,14 @@
     card.setAttribute('data-expanded', !expanded);
     card.classList.toggle('patch-note-card--expanded', !expanded);
     card.setAttribute('aria-expanded', !expanded);
+    // Clear NEW badges only when the v1.7 card is explicitly opened
+    if (!expanded && card.id === 'patch-v1-7') {
+      localStorage.setItem('gambleio_lastSeenPatch', LATEST_PATCH_VERSION);
+      const navBadge  = document.querySelector('.patch-notes-badge');
+      const cardBadge = document.getElementById('patchCardBadge17');
+      if (navBadge)  navBadge.classList.add('hidden');
+      if (cardBadge) cardBadge.classList.add('hidden');
+    }
   });
 
   setInterval(updateDropButton, 300);

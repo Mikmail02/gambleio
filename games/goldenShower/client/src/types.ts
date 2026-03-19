@@ -50,6 +50,7 @@ export interface SpinApiResult {
   steps: SpinStep[];
   bonusTriggered: boolean;
   bonusSpinsAwarded: number;
+  bonusRetrigger: number;
   finalGrid: Grid;
 }
 
@@ -80,6 +81,10 @@ export interface VisualStage {
   newCells?: Set<string>;
   /** Special-symbol cells – per-symbol colored glow */
   specialCells?: Set<string>;
+  /** Columns hidden during teaser drop (col indices not yet revealed) */
+  hiddenCols?: Set<number>;
+  /** BONUS cells that award +1 spin during an active bonus round */
+  bonusRetriggerCells?: Set<string>;
   cumulativePayout: number;
   label?: string;
   duration: number;

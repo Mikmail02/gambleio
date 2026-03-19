@@ -8,14 +8,27 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  height: 100%;
 }
 
 body {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  background: #0a0a0f;
+  /* Background lives here so it covers the entire viewport unconditionally.
+     No 'fixed' attachment — it causes clipping inside iframes in some browsers. */
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(40 20 80 / 0.72) 0%, rgba(10 10 15 / 0.95) 65%),
+    url('/golden-shower/images/golden-shower-bg.jpg') center / cover no-repeat;
+  background-color: #0a0a0f;
   color: #fff;
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
+  min-height: 100%;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
 button {

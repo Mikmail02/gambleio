@@ -109,10 +109,10 @@
   }
 
   function isViewingOwnProfile() {
-    const hash = (window.location && window.location.hash) || '';
-    if (hash === '#profile') return true;
-    if (hash.startsWith('#profile/') && currentUser) {
-      const slug = (hash.slice(hash.indexOf('/') + 1) || '').trim();
+    const path = ((window.location && window.location.pathname) || '/').replace(/^\//, '');
+    if (path === 'profile') return true;
+    if (path.startsWith('profile/') && currentUser) {
+      const slug = (path.slice(8) || '').trim();
       return (currentUser.profileSlug || '').toLowerCase() === slug.toLowerCase();
     }
     return false;
@@ -124,9 +124,9 @@
     const profileName = document.getElementById('profileName');
     const profileAvatar = document.getElementById('profileAvatar');
     const logoutBtnProfile = document.getElementById('logoutBtnProfile');
-    const hash = (window.location && window.location.hash) || '';
-    const slugFromHash = hash.startsWith('#profile/') ? (hash.slice(9) || '').trim() : '';
-    const viewingOwnProfile = hash === '#profile' || (currentUser && slugFromHash && (currentUser.profileSlug || '').toLowerCase() === slugFromHash.toLowerCase());
+    const path = ((window.location && window.location.pathname) || '/').replace(/^\//, '');
+    const slugFromPath = path.startsWith('profile/') ? (path.slice(8) || '').trim() : '';
+    const viewingOwnProfile = path === 'profile' || (currentUser && slugFromPath && (currentUser.profileSlug || '').toLowerCase() === slugFromPath.toLowerCase());
 
     if (profileName) profileName.textContent = currentUser.displayName || currentUser.username || 'User';
     if (profileAvatar) {
@@ -647,7 +647,8 @@
     // User name click to own profile
     document.addEventListener('click', function(e) {
       if (e.target && (e.target.id === 'userName' || e.target.classList.contains('user-name'))) {
-        window.location.hash = '#profile';
+        if (window.navigate) window.navigate('/profile');
+        else window.location.hash = '#profile';
       }
     });
 

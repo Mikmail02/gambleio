@@ -31,12 +31,22 @@ app.use((req, res, next) => {
 
 app.use(express.static(__dirname));
 
-// Serve the built Golden Shower React app at /golden-shower/*
-// Run `npm run build` inside games/goldenShower/client/ to generate the dist
+// Serve the built Golden Shower React app at /golden-shower/
+// redirect:false prevents express.static from redirecting /golden-shower → /golden-shower/,
+// which means /golden-shower (no slash) falls through to the main-site catch-all below.
 const GS_PUBLIC = path.join(__dirname, 'public', 'golden-shower');
-app.use('/golden-shower', express.static(GS_PUBLIC));
-app.get(['/golden-shower', '/golden-shower/*'], (_req, res) => {
+app.use('/golden-shower', express.static(GS_PUBLIC, { redirect: false }));
+// Any GS sub-path not matched by a static file → serve the React SPA
+app.get('/golden-shower/*', (_req, res) => {
   res.sendFile(path.join(GS_PUBLIC, 'index.html'));
+});
+
+// Main-site SPA catch-all — serves index.html (with header/chat) for every non-API GET.
+// This includes /golden-shower (no trailing slash), which the main site renders as the
+// embedded-iframe section so the header and chat panel remain visible.
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/')) return next();
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // --- Storage: database (when DATABASE_URL) or file-based (local dev) ---
@@ -3617,22 +3627,29 @@ app.post('/api/slots/golden-shower/spin', async (req, res) => {
       return res.status(400).json({ error: `Bet must be between ${MIN_BET} and ${MAX_BET}` });
     }
 
-    // Feature mode validation & cost calculation
+    // Feature mode validation
     const featureMode = req.body.featureMode || null;
     const featureDef = featureMode ? goldenShowerEngine.FEATURE_MODES[featureMode] : null;
     if (featureMode && !featureDef) {
       return res.status(400).json({ error: 'Invalid featureMode' });
     }
-    const totalCost = featureDef ? Math.round(bet * featureDef.costMultiplier * 100) / 100 : bet;
-    if (user.balance < totalCost) {
-      return res.status(400).json({ error: 'Insufficient balance' });
-    }
 
-    // Load or create session state
+    // Load or create session state BEFORE cost calc (bonus spins are free)
     if (!gsSessions[user.username]) {
       gsSessions[user.username] = goldenShowerEngine.createInitialGameState();
     }
     const state = gsSessions[user.username];
+
+    // Bonus spins cost $0 — player already paid for them via the triggering spin
+    const isInBonus = state.bonusState.active;
+    const totalCost = isInBonus
+      ? 0
+      : featureDef
+        ? Math.round(bet * featureDef.costMultiplier * 100) / 100
+        : bet;
+    if (user.balance < totalCost) {
+      return res.status(400).json({ error: 'Insufficient balance' });
+    }
 
     // Deduct cost (bet for normal spin, bet × costMultiplier for feature buy)
     user.balance = Math.round((user.balance - totalCost) * 100) / 100;
@@ -3685,9 +3702,11 @@ app.post('/api/slots/golden-shower/spin', async (req, res) => {
         steps: result.steps,
         bonusTriggered: result.bonusTriggered,
         bonusSpinsAwarded: result.bonusSpinsAwarded,
+        bonusRetrigger: result.bonusRetrigger || 0,
         finalGrid: result.finalGrid,
       },
       bonusState: newState.bonusState,
+      totalCost,
       balance: user.balance,
       gsStats: {
         xp:                   user.gsStats.xp,
@@ -3713,7 +3732,8 @@ app.get('/api/slots/golden-shower/state', async (req, res) => {
   const user = await getUserFromSession(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   const state = gsSessions[user.username] || goldenShowerEngine.createInitialGameState();
-  res.json({ grid: state.grid, bonusState: state.bonusState });
+  ensureGsStats(user);
+  res.json({ grid: state.grid, bonusState: state.bonusState, balance: user.balance, gsStats: user.gsStats });
 });
 
 /**

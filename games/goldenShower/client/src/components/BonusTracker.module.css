@@ -1,0 +1,112 @@
+/* ── Right-panel bonus tracker plakat ─────────────────────────────── */
+.tracker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 14px 16px;
+  width: 110px;
+  flex-shrink: 0;
+  background: linear-gradient(160deg, rgba(124 58 237 / 0.22) 0%, rgba(245 158 11 / 0.14) 100%);
+  border: 1px solid rgba(245 197 24 / 0.28);
+  border-radius: 14px;
+  box-shadow:
+    0 0 28px rgba(124 58 237 / 0.25),
+    inset 0 1px 0 rgba(255 255 255 / 0.06);
+}
+
+/* ── Header ───────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.star {
+  font-size: 1.4rem;
+  filter: drop-shadow(0 0 8px rgba(245 197 24 / 0.9));
+  animation: starPulse 2s ease-in-out infinite;
+}
+
+@keyframes starPulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.18); }
+}
+
+.headerText {
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, #f5c518, #ff8c00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1.3;
+}
+
+/* ── Spin counter ─────────────────────────────────────────────────── */
+.counter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.countNum {
+  font-size: 2rem;
+  font-weight: 900;
+  line-height: 1;
+  color: #f5c518;
+  text-shadow: 0 0 18px rgba(245 197 24 / 0.7);
+}
+
+.countLabel {
+  font-size: 0.54rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255 255 255 / 0.45);
+}
+
+/* ── Spin dots ────────────────────────────────────────────────────── */
+.dots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  transition: background 0.3s;
+}
+
+.dotActive {
+  background: #f5c518;
+  box-shadow: 0 0 6px rgba(245 197 24 / 0.8);
+}
+
+.dotUsed {
+  background: rgba(255 255 255 / 0.12);
+}
+
+/* ── Progress bar ─────────────────────────────────────────────────── */
+.progressBg {
+  width: 100%;
+  height: 5px;
+  background: rgba(255 255 255 / 0.08);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: linear-gradient(90deg, #7c3aed, #f5c518);
+  border-radius: 99px;
+  box-shadow: 0 0 8px rgba(245 197 24 / 0.6);
+}

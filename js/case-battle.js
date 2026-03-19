@@ -441,8 +441,8 @@
     }
     if (listView) { listView.classList.remove('hidden'); listView.style.display = ''; }
     if (detailView) { detailView.classList.add('hidden'); detailView.style.display = 'none'; }
-    if (window.location.hash.startsWith('#case-battle/')) {
-      window.history.replaceState(null, '', '#case-battle');
+    if (window.location.pathname.startsWith('/case-battle/')) {
+      history.replaceState({}, '', '/case-battle');
     }
   }
 
@@ -453,9 +453,9 @@
     if (window.Game && window.Game.freezeBalance) window.Game.freezeBalance();
     if (listView) { listView.classList.add('hidden'); listView.style.display = 'none'; }
     if (detailView) { detailView.classList.remove('hidden'); detailView.style.display = 'flex'; }
-    const newHash = '#case-battle/' + encodeURIComponent(id);
-    if (window.location.hash !== newHash) {
-      window.history.pushState(null, '', newHash);
+    const newPath = '/case-battle/' + encodeURIComponent(id);
+    if (window.location.pathname !== newPath) {
+      history.pushState({}, '', newPath);
     }
     await loadAndRenderDetail(id);
   }
@@ -727,8 +727,8 @@
     if (backBtn) backBtn.addEventListener('click', () => {
       showListView();
       loadBattles();
-      if (window.location.hash.startsWith('#case-battle/')) {
-        window.history.replaceState(null, '', '#case-battle');
+      if (window.location.pathname.startsWith('/case-battle/')) {
+        history.replaceState({}, '', '/case-battle');
       }
     });
     const deleteBtn = document.getElementById('cbDeleteBattleBtn');
@@ -1766,9 +1766,9 @@
       if (currentBattleId) loadAndRenderDetail(currentBattleId);
       else loadBattles();
     }, 5000);
-    const hash = (window.location.hash || '').slice(1);
-    if (hash.startsWith('case-battle/')) {
-      const battleId = decodeURIComponent(hash.slice('case-battle/'.length));
+    const path = window.location.pathname.replace(/^\//, '');
+    if (path.startsWith('case-battle/')) {
+      const battleId = decodeURIComponent(path.slice('case-battle/'.length));
       if (battleId) {
         showBattleDetail(battleId);
         return;
@@ -1793,9 +1793,9 @@
   }
 
   function syncFromHash() {
-    const hash = (window.location.hash || '').slice(1);
-    if (!hash.startsWith('case-battle/')) return;
-    const battleId = decodeURIComponent(hash.slice('case-battle/'.length));
+    const path = window.location.pathname.replace(/^\//, '');
+    if (!path.startsWith('case-battle/')) return;
+    const battleId = decodeURIComponent(path.slice('case-battle/'.length));
     if (!battleId) return;
     if (currentBattleId !== battleId) {
       showBattleDetail(battleId);

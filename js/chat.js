@@ -69,7 +69,7 @@
       : '';
     const slug = (msg.profileSlug || '').trim();
     const nameHtml = slug
-      ? '<a href="#profile/' + escapeHtml(slug) + '" class="chat-msg-name chat-msg-name-link">' + name + '</a>'
+      ? '<a href="/profile/' + escapeHtml(slug) + '" class="chat-msg-name chat-msg-name-link">' + name + '</a>'
       : '<span class="chat-msg-name">' + name + '</span>';
     div.innerHTML =
       '<div class="chat-msg-header">' +

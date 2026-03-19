@@ -19,7 +19,6 @@
       symbols: [],
       // Place golden-shower-bg.jpg in games/goldenShower/client/public/ so it builds to /golden-shower/golden-shower-bg.jpg
       image: '/golden-shower/golden-shower-bg.jpg',
-      external: true,
     },
     {
       id: 'circular-slots',
@@ -83,23 +82,26 @@
 
     if (!window.Auth || !window.Auth.requireAuth(() => {})) return;
 
-    // External games navigate to their own page (same tab)
-    if (game.external) {
-      window.location.href = '/' + gameId;
+    // Golden Shower runs in an iframe inside the main layout
+    if (game.id === 'golden-shower') {
+      const frame = document.getElementById('goldenShowerFrame');
+      // Only set src once (or after it's been cleared) to avoid reloading on every visit
+      if (frame && !frame.src.endsWith('/golden-shower/')) {
+        frame.src = '/golden-shower/';
+      }
+      if (window.navigate) window.navigate('/golden-shower');
+      else if (window.showPage) window.showPage('golden-shower');
       return;
     }
 
     currentSlotGame = game;
     if (slotGameTitle) slotGameTitle.textContent = game.name;
 
-    // Simply navigate to slot-game page, just like clicking a tab
-    if (window.showPage) {
-      window.showPage('slot-game');
-    } else {
-      window.location.hash = '#slot-game';
-    }
+    // Navigate to slot-game page
+    if (window.navigate) window.navigate('/slot-game');
+    else if (window.showPage) window.showPage('slot-game');
 
-    // Initialize after navigation - handled by main.js onHashChange
+    // Initialize after navigation - handled by main.js onNavChange
   }
 
   function initializeSlotMachine(game) {
@@ -127,7 +129,8 @@
   // Event listeners
   if (slotBackBtn) {
     slotBackBtn.addEventListener('click', () => {
-      window.location.hash = '#slots';
+      if (window.navigate) window.navigate('/slots');
+      else window.history.back();
     });
   }
 

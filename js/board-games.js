@@ -11,35 +11,35 @@
       name: 'Plinko',
       description: 'Drop the ball through the peg board. Land in higher multipliers for bigger wins.',
       emoji: '🎯',
-      href: '#plinko'
+      href: '/plinko'
     },
     {
       id: 'mines',
       name: 'Mines',
       description: '5×5 grid. Choose mines, click safe tiles to multiply. Hit a mine and you lose.',
       emoji: '💎',
-      href: '#mines'
+      href: '/mines'
     },
     {
       id: 'roulette',
       name: 'Roulette',
       description: 'Classic roulette wheel. Bet on numbers, colors or ranges and spin to win.',
       emoji: '🎡',
-      href: '#roulette'
+      href: '/roulette'
     },
     {
       id: 'crash',
       name: 'Crash',
       description: 'Multiplier rises from 1.00×. Cash out before it crashes to multiply your bet.',
       emoji: '🚀',
-      href: '#crash'
+      href: '/crash'
     },
     {
       id: 'blackjack',
       name: 'Blackjack',
       description: 'Classic 21. Hit, Stand, Double, Split, Surrender. 6-deck shoe, standard rules.',
       emoji: '🃏',
-      href: '#blackjack'
+      href: '/blackjack'
     }
   ];
 
@@ -55,7 +55,7 @@
       return;
     }
     boardGamesGrid.innerHTML = list.map(game => `
-      <a href="${game.href}" class="slot-game-card board-game-card" data-game-id="${game.id}">
+      <a href="${game.href}" class="slot-game-card board-game-card" data-game-id="${game.id}" data-page="${game.id}">
         <div class="slot-game-card-image board-game-card-image">
           <div class="board-game-preview">${game.emoji}</div>
           <span class="slot-game-card-play">Play Game</span>

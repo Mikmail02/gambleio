@@ -338,7 +338,7 @@ const Leaderboard = {
       const classes = ['leaderboard-item', 'is-clickable', podiumClass, isCurrentUser ? 'leaderboard-item-current' : ''].filter(Boolean).join(' ');
       const displayName = escapeHtml(user.displayName || user.username);
       const profileSlug = user.profileSlug || user.username;
-      const usernameLink = `<a href="#profile/${encodeURIComponent(profileSlug)}" class="leaderboard-username leaderboard-username-link" data-username="${escapeHtml(user.username)}">${displayName}</a>`;
+      const usernameLink = `<a href="/profile/${encodeURIComponent(profileSlug)}" class="leaderboard-username leaderboard-username-link" data-username="${escapeHtml(user.username)}">${displayName}</a>`;
 
       return `
         <div class="${classes}" data-profile-slug="${escapeHtml(profileSlug)}" data-username="${escapeHtml(user.username)}">

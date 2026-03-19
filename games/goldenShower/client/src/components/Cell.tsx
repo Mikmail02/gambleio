@@ -9,6 +9,7 @@ interface CellProps {
   isNew: boolean;
   isExiting: boolean;
   isSpecial: boolean;
+  isHidden: boolean;
   spinGen: number;
   col: number;
   row: number;
@@ -40,7 +41,7 @@ function getSpecialClass(symbol: string | null, s: Record<string, string>): stri
   }
 }
 
-export function Cell({ cell, isGlowing, isNew, isExiting, isSpecial, spinGen, col, row }: CellProps) {
+export function Cell({ cell, isGlowing, isNew, isExiting, isSpecial, isHidden, spinGen, col, row }: CellProps) {
   const cascadeDelay = isNew ? col * 0.04 + row * 0.02 : 0;
   const specialClass = isSpecial ? getSpecialClass(cell.symbol, styles) : '';
 
@@ -51,7 +52,7 @@ export function Cell({ cell, isGlowing, isNew, isExiting, isSpecial, spinGen, co
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={cellClass}>
+    <div className={cellClass} style={isHidden ? { opacity: 0, pointerEvents: 'none' } : undefined}>
 
       {/* ── Persistent multiplier background layer ─────────────────── */}
       {/*    Lives BELOW the symbol (z-index 0 vs symbol's z-index 1)  */}
