@@ -4014,92 +4014,114 @@ function buildWebhookBase(req) {
 
 /** Call the provider's Suno Generate Music endpoint */
 async function callMusicGenerate(apiCfg, payload) {
+  console.log('MUSIC API REQUEST: POST', `${apiCfg.baseUrl}/suno/generate`, JSON.stringify(payload));
   const r = await fetch(`${apiCfg.baseUrl}/suno/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiCfg.key}` },
     body: JSON.stringify(payload),
   });
-  return r.json();
+  const text = await r.text();
+  console.log('MUSIC API RESPONSE:', r.status, text);
+  try { return JSON.parse(text); } catch { return { code: r.status, msg: text }; }
 }
 
 /** Call the provider's Suno create-music-video endpoint */
 async function callVideoGenerate(apiCfg, payload) {
+  console.log('MUSIC VIDEO REQUEST: POST', `${apiCfg.baseUrl}/suno/create-music-video`, JSON.stringify(payload));
   const r = await fetch(`${apiCfg.baseUrl}/suno/create-music-video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiCfg.key}` },
     body: JSON.stringify(payload),
   });
-  return r.json();
+  const text = await r.text();
+  console.log('MUSIC VIDEO RESPONSE:', r.status, text);
+  try { return JSON.parse(text); } catch { return { code: r.status, msg: text }; }
 }
 
 // ── POST /api/music/generate ───────────────────────────────────────────────
 app.post('/api/music/generate', requireUser, async (req, res) => {
-  // Owner-only: music generation is still in private testing
-  if (!(req.user.isOwner || req.user.role === 'owner')) {
-    return res.status(403).json({ error: 'Music generation is only available to the site owner.' });
-  }
-
-  const apiCfg = getMusicApiConfig();
-  if (!apiCfg.key || !apiCfg.baseUrl) {
-    return res.status(503).json({ error: 'Music generation is temporarily unavailable. Please try again later.' });
-  }
-
-  const { title, style, prompt, instrumental, customMode, model, wantsVideo } = req.body;
-
-  const webhookBase = buildWebhookBase(req);
-  const audioWebhook = `${webhookBase}/api/music/webhook`;
-
-  // Validate inputs and build provider payload
-  const payload = {
-    customMode:   !!customMode,
-    instrumental: !!instrumental,
-    model:        model || 'chirp-v4-5',
-    callBackUrl:  audioWebhook,
-  };
-
-  if (customMode) {
-    if (!style)              return res.status(400).json({ error: 'Style is required in Advanced Mode.' });
-    if (!title)              return res.status(400).json({ error: 'Title is required in Advanced Mode.' });
-    if (!instrumental && !prompt) return res.status(400).json({ error: 'Lyrics/Prompt required when not Instrumental.' });
-    payload.style = style;
-    payload.title = title;
-    if (!instrumental) payload.prompt = prompt;
-  } else {
-    if (!prompt) return res.status(400).json({ error: 'Prompt is required in Simple Mode.' });
-    payload.prompt = prompt;
-  }
-
-  let apiResp;
   try {
-    apiResp = await callMusicGenerate(apiCfg, payload);
+    // Owner-only: music generation is still in private testing
+    if (!req.user || !(req.user.isOwner || req.user.role === 'owner')) {
+      return res.status(403).json({ error: 'Music generation is only available to the site owner.' });
+    }
+
+    const apiCfg = getMusicApiConfig();
+    console.log('MUSIC API CONFIG: key present=', !!apiCfg.key, 'baseUrl=', apiCfg.baseUrl);
+    if (!apiCfg.key || !apiCfg.baseUrl) {
+      return res.status(503).json({ error: 'Music generation is temporarily unavailable. Please try again later.' });
+    }
+
+    const { title, style, prompt, instrumental, customMode, model, wantsVideo } = req.body;
+
+    const webhookBase = buildWebhookBase(req);
+    const audioWebhook = `${webhookBase}/api/music/webhook`;
+    console.log('MUSIC WEBHOOK URL:', audioWebhook);
+
+    // Validate inputs and build provider payload
+    const payload = {
+      customMode:   !!customMode,
+      instrumental: !!instrumental,
+      model:        model || 'chirp-v4-5',
+      callBackUrl:  audioWebhook,
+    };
+
+    if (customMode) {
+      if (!style)              return res.status(400).json({ error: 'Style is required in Advanced Mode.' });
+      if (!title)              return res.status(400).json({ error: 'Title is required in Advanced Mode.' });
+      if (!instrumental && !prompt) return res.status(400).json({ error: 'Lyrics/Prompt required when not Instrumental.' });
+      payload.style = style;
+      payload.title = title;
+      if (!instrumental) payload.prompt = prompt;
+    } else {
+      if (!prompt) return res.status(400).json({ error: 'Prompt is required in Simple Mode.' });
+      payload.prompt = prompt;
+    }
+
+    let apiResp;
+    try {
+      apiResp = await callMusicGenerate(apiCfg, payload);
+    } catch (e) {
+      console.error('MUSIC API ERROR (fetch failed):', e);
+      return res.status(502).json({ error: 'Failed to reach music generation API.' });
+    }
+
+    console.log('MUSIC API PARSED RESPONSE:', JSON.stringify(apiResp));
+
+    if (!apiResp || apiResp.code !== 200 || !apiResp.data?.taskId) {
+      console.error('MUSIC API ERROR (bad response):', JSON.stringify(apiResp));
+      return res.status(502).json({ error: apiResp?.msg || 'Music generation API returned an error.' });
+    }
+
+    const taskId = apiResp.data.taskId;
+    let trackId;
+    try {
+      trackId = await aiCreate({
+        userId:     req.user.username,
+        taskId,
+        title:      title || (prompt || '').slice(0, 80) || 'Untitled',
+        style:      style || '',
+        prompt:     prompt || '',
+        wantsVideo: !!wantsVideo,
+      });
+    } catch (e) {
+      console.error('MUSIC API ERROR (aiCreate failed):', e);
+      return res.status(500).json({ error: 'Failed to save track to database.' });
+    }
+
+    res.json({
+      ok: true,
+      track: {
+        id: trackId, taskId, status: 'PENDING',
+        title:      title || (prompt || '').slice(0, 80) || 'Untitled',
+        wantsVideo: !!wantsVideo,
+        createdAt:  Date.now(),
+      },
+    });
   } catch (e) {
-    console.error('Music generate error:', e.message);
-    return res.status(502).json({ error: 'Failed to reach music generation API.' });
+    console.error('MUSIC API ERROR (unhandled in /generate):', e);
+    res.status(500).json({ error: 'Unexpected error during music generation.' });
   }
-
-  if (apiResp.code !== 200 || !apiResp.data?.taskId) {
-    return res.status(502).json({ error: apiResp.msg || 'Music generation API returned an error.' });
-  }
-
-  const taskId  = apiResp.data.taskId;
-  const trackId = await aiCreate({
-    userId:     req.user.username,
-    taskId,
-    title:      title || (prompt || '').slice(0, 80) || 'Untitled',
-    style:      style || '',
-    prompt:     prompt || '',
-    wantsVideo: !!wantsVideo,
-  });
-
-  res.json({
-    ok: true,
-    track: {
-      id: trackId, taskId, status: 'PENDING',
-      title:      title || (prompt || '').slice(0, 80) || 'Untitled',
-      wantsVideo: !!wantsVideo,
-      createdAt:  Date.now(),
-    },
-  });
 });
 
 // ── POST /api/music/webhook  (provider async callback – audio + video) ─────
@@ -4180,7 +4202,7 @@ app.post('/api/music/webhook', async (req, res) => {
             await aiUpdateByTaskId(incomingTaskId, { status: 'COMPLETE' });
           }
         } catch (e) {
-          console.error('Video chain error:', e.message);
+          console.error('MUSIC API ERROR (video chain):', e);
           await aiUpdateByTaskId(incomingTaskId, { status: 'COMPLETE' });
         }
       }
@@ -4204,21 +4226,28 @@ app.post('/api/music/webhook', async (req, res) => {
     }
 
   } catch (e) {
-    console.error('Webhook processing error:', e.message);
+    console.error('MUSIC API ERROR (webhook):', e);
   }
 });
 
 // ── GET /api/music/library ────────────────────────────────────────────────
 app.get('/api/music/library', async (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  const user  = await getUserFromSession(token).catch(() => null);
   try {
+    let user = null;
+    try {
+      const token = req.headers.authorization?.replace('Bearer ', '');
+      if (token) user = await getUserFromSession(token);
+    } catch (e) {
+      console.error('MUSIC API ERROR (getUserFromSession in library):', e);
+    }
+
     const [mySongs, allSongs] = await Promise.all([
-      user ? aiGetByUser(user.username) : [],
+      user ? aiGetByUser(user.username) : Promise.resolve([]),
       aiGetPublished(),
     ]);
     res.json({ mySongs, allSongs });
   } catch (e) {
+    console.error('MUSIC API ERROR (library):', e);
     res.status(500).json({ error: 'Failed to load library' });
   }
 });
@@ -4234,6 +4263,7 @@ app.patch('/api/music/publish/:id', requireUser, async (req, res) => {
     await aiPublish(id, req.user.username);
     res.json({ ok: true });
   } catch (e) {
+    console.error('MUSIC API ERROR (publish):', e);
     res.status(500).json({ error: 'Failed to publish track' });
   }
 });
