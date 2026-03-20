@@ -4066,7 +4066,7 @@ app.post('/api/music/generate', requireUser, async (req, res) => {
     const payload = {
       customMode:   !!customMode,
       instrumental: !!instrumental,
-      model:        model || 'chirp-v4-5',
+      model:        model || 'V4_5',
       callBackUrl:  audioWebhook,
     };
 

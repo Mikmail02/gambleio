@@ -179,7 +179,7 @@
     const body = {
       customMode:   isAdvanced,
       instrumental: isAdvanced ? !!fldInstrumental?.checked : false,
-      model:        fldModel?.value || 'chirp-v4-5',
+      model:        fldModel?.value || 'V4_5',
       prompt:       fldPrompt?.value?.trim() || '',
       title:        isAdvanced ? (fldTitle?.value?.trim() || '') : '',
       style:        isAdvanced ? (fldStyle?.value?.trim() || '') : '',
