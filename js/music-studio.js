@@ -316,6 +316,12 @@
 
     // Action buttons
     let actions = '';
+    const amOwner = isOwner();
+
+    if (track.status === 'PENDING' && isMine) {
+      actions += `<button class="studio-act-btn delete-btn" data-action="cancel" title="Cancel generation">Cancel</button>`;
+    }
+
     if (track.status === 'COMPLETE' && track.audioUrl) {
       actions += `<button class="studio-act-btn play-btn${isPlaying ? ' playing-btn' : ''}" data-action="play" title="${isPlaying ? 'Now playing' : 'Play'}">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="${isPlaying ? 'M6 19h4V5H6zm8-14v14h4V5z' : 'M8 5v14l11-7z'}"/></svg>
@@ -333,13 +339,39 @@
           Video
         </button>`;
       }
+
+      // Publish / published state (track owner)
       if (isMine && !track.isPublished) {
-        actions += `<button class="studio-act-btn publish-btn" data-action="publish" title="Publish to All Songs">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L4.5 20.3l.7.7L12 17l6.8 4 .7-.7L12 2z"/></svg>
-          Publish
-        </button>`;
+        if (track.isRestricted) {
+          actions += `<button class="studio-act-btn publish-btn" disabled title="Restricted by admin" style="opacity:.45;cursor:not-allowed">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1C5.9 1 1 5.9 1 12s4.9 11 11 11 11-4.9 11-11S18.1 1 12 1zm-1 6h2v6h-2V7zm0 8h2v2h-2v-2z"/></svg>
+            Private (Admin)
+          </button>`;
+        } else {
+          actions += `<button class="studio-act-btn publish-btn" data-action="publish" title="Publish to All Songs">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L4.5 20.3l.7.7L12 17l6.8 4 .7-.7L12 2z"/></svg>
+            Publish
+          </button>`;
+        }
       } else if (isMine && track.isPublished) {
         actions += `<span class="studio-badge studio-badge-done">Published</span>`;
+      }
+
+      // Delete button for track owner
+      if (isMine) {
+        actions += `<button class="studio-act-btn delete-btn" data-action="delete" title="Delete track">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          Delete
+        </button>`;
+      }
+
+      // Admin controls on All Songs cards (not the owner's own track)
+      if (amOwner && !isMine) {
+        actions += `<button class="studio-act-btn delete-btn" data-action="unpublish" title="Unpublish and restrict">Unpublish</button>`;
+        actions += `<button class="studio-act-btn delete-btn" data-action="admin-delete" title="Delete track">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          Delete
+        </button>`;
       }
     }
 
@@ -358,10 +390,14 @@
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
       const action = btn.dataset.action;
-      if (action === 'play')    handlePlay(track, card);
-      if (action === 'lyrics')  handleShowPanel(track, 'lyrics');
-      if (action === 'video')   handleShowPanel(track, 'video');
-      if (action === 'publish') handlePublish(track, btn);
+      if (action === 'play')         handlePlay(track, card);
+      if (action === 'lyrics')       handleShowPanel(track, 'lyrics');
+      if (action === 'video')        handleShowPanel(track, 'video');
+      if (action === 'publish')      handlePublish(track, btn);
+      if (action === 'cancel')       handleDelete(track, card, btn);
+      if (action === 'delete')       handleDelete(track, card, btn);
+      if (action === 'unpublish')    handleUnpublish(track, card, btn);
+      if (action === 'admin-delete') handleDelete(track, card, btn);
     });
 
     return card;
@@ -493,6 +529,48 @@
       btn.disabled = false;
       btn.textContent = 'Publish';
       alert('Failed to publish: ' + err.message);
+    }
+  }
+
+  // ── Delete / Cancel ───────────────────────────────────────────────────────
+  async function handleDelete(track, card, btn) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      const res = await fetch('/api/music/generate/' + track.id, {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer ' + getToken() },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Delete failed');
+      card.remove();
+      await loadLibrary();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = track.status === 'PENDING' ? 'Cancel' : 'Delete';
+      alert('Failed: ' + err.message);
+    }
+  }
+
+  // ── Unpublish (admin) ─────────────────────────────────────────────────────
+  async function handleUnpublish(track, card, btn) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      const res = await fetch('/api/music/unpublish/' + track.id, {
+        method: 'PATCH',
+        headers: { Authorization: 'Bearer ' + getToken() },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unpublish failed');
+      card.remove();
+      await loadLibrary();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Unpublish';
+      alert('Failed: ' + err.message);
     }
   }
 

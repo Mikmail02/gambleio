@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS ai_tracks (
   video_url      TEXT,                         -- final MP4 URL once video job completes
   status         TEXT    NOT NULL DEFAULT 'PENDING',   -- PENDING | COMPLETE | FAILED
   is_published   BOOLEAN NOT NULL DEFAULT FALSE,
+  is_restricted  BOOLEAN NOT NULL DEFAULT FALSE,       -- admin-flagged; owner cannot republish
   created_at     BIGINT  NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 );
 
@@ -27,6 +28,7 @@ DO $$ BEGIN
   ALTER TABLE ai_tracks ADD COLUMN IF NOT EXISTS wants_video   BOOLEAN NOT NULL DEFAULT FALSE;
   ALTER TABLE ai_tracks ADD COLUMN IF NOT EXISTS video_task_id TEXT;
   ALTER TABLE ai_tracks ADD COLUMN IF NOT EXISTS video_url     TEXT;
+  ALTER TABLE ai_tracks ADD COLUMN IF NOT EXISTS is_restricted BOOLEAN NOT NULL DEFAULT FALSE;
   -- Rename kie_task_id → task_id if the old column still exists
   IF EXISTS (
     SELECT 1 FROM information_schema.columns

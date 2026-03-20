@@ -419,7 +419,7 @@ const AI_TRACK_COLS = `
   id, user_id, task_id, title, style, prompt,
   audio_url, image_url, lyrics,
   suno_clip_id, wants_video, video_task_id, video_url,
-  status, is_published, created_at`;
+  status, is_published, is_restricted, created_at`;
 
 function rowToAiTrack(r) {
   return {
@@ -436,9 +436,10 @@ function rowToAiTrack(r) {
     wantsVideo:  !!r.wants_video,
     videoTaskId: r.video_task_id || null,
     videoUrl:    r.video_url   || null,
-    status:      r.status      || 'PENDING',
-    isPublished: !!r.is_published,
-    createdAt:   Number(r.created_at),
+    status:       r.status      || 'PENDING',
+    isPublished:  !!r.is_published,
+    isRestricted: !!r.is_restricted,
+    createdAt:    Number(r.created_at),
   };
 }
 
@@ -527,10 +528,21 @@ async function getAiTrackById(id) {
 
 async function publishAiTrack(id, userId) {
   const res = await getPool().query(
-    `UPDATE ai_tracks SET is_published = TRUE WHERE id = $1 AND user_id = $2 RETURNING id`,
+    `UPDATE ai_tracks SET is_published = TRUE WHERE id = $1 AND user_id = $2 AND is_restricted = FALSE RETURNING id`,
     [id, userId]
   );
   return res.rowCount > 0;
+}
+
+async function deleteAiTrack(id) {
+  await getPool().query(`DELETE FROM ai_tracks WHERE id = $1`, [id]);
+}
+
+async function unpublishAiTrack(id) {
+  await getPool().query(
+    `UPDATE ai_tracks SET is_published = FALSE, is_restricted = TRUE WHERE id = $1`,
+    [id]
+  );
 }
 
 module.exports = {
@@ -566,4 +578,6 @@ module.exports = {
   getAiTrackByVideoTaskId,
   getAiTrackById,
   publishAiTrack,
+  deleteAiTrack,
+  unpublishAiTrack,
 };

@@ -3942,12 +3942,12 @@ function memAiCreate(doc) {
   const id = String(aiTracksMemNextId++);
   aiTracksMemory.set(id, {
     id,
-    userId:      doc.userId,   taskId:     doc.taskId,
-    title:       doc.title  || '', style:  doc.style  || '', prompt: doc.prompt || '',
-    audioUrl:    null,         imageUrl:   null,  lyrics:    null,
-    sunoClipId:  null,         wantsVideo: !!doc.wantsVideo,
-    videoTaskId: null,         videoUrl:   null,
-    status: 'PENDING', isPublished: false, createdAt: Date.now(),
+    userId:       doc.userId,  taskId:     doc.taskId,
+    title:        doc.title || '', style:  doc.style || '', prompt: doc.prompt || '',
+    audioUrl:     null,        imageUrl:   null,  lyrics:    null,
+    sunoClipId:   null,        wantsVideo: !!doc.wantsVideo,
+    videoTaskId:  null,        videoUrl:   null,
+    status: 'PENDING', isPublished: false, isRestricted: false, createdAt: Date.now(),
   });
   return id;
 }
@@ -3976,20 +3976,28 @@ function memAiGetByVideoTaskId(vtid) {
 function memAiGetById(id)              { return aiTracksMemory.get(id) || null; }
 function memAiPublish(id, userId) {
   const t = aiTracksMemory.get(id);
-  if (t && t.userId === userId) { t.isPublished = true; return true; }
+  if (t && t.userId === userId && !t.isRestricted) { t.isPublished = true; return true; }
   return false;
+}
+function memAiDelete(id)               { aiTracksMemory.delete(id); }
+function memAiUnpublish(id)            {
+  const t = aiTracksMemory.get(id);
+  if (t) { t.isPublished = false; t.isRestricted = true; }
 }
 
 // Skuddsikre DB/memory shims (Sjekker faktisk om funksjonene finnes i db.js først)
-async function aiCreate(doc)                  { return (typeof useDb !== 'undefined' && useDb && db.createAiTrack) ? db.createAiTrack(doc) : memAiCreate(doc); }
-async function aiUpdateByTaskId(id, u)        { return (typeof useDb !== 'undefined' && useDb && db.updateAiTrackByTaskId) ? db.updateAiTrackByTaskId(id, u) : memAiUpdateByTaskId(id, u); }
-async function aiUpdateByVideoTaskId(id, u)   { return (typeof useDb !== 'undefined' && useDb && db.updateAiTrackByVideoTaskId) ? db.updateAiTrackByVideoTaskId(id, u) : memAiUpdateByVideoTaskId(id, u); }
-async function aiGetByUser(uid)               { return (typeof useDb !== 'undefined' && useDb && db.getAiTracksByUser) ? db.getAiTracksByUser(uid) : memAiGetByUser(uid); }
-async function aiGetPublished()               { return (typeof useDb !== 'undefined' && useDb && db.getPublishedAiTracks) ? db.getPublishedAiTracks() : memAiGetPublished(); }
-async function aiGetByTaskId(tid)             { return (typeof useDb !== 'undefined' && useDb && db.getAiTrackByTaskId) ? db.getAiTrackByTaskId(tid) : memAiGetByTaskId(tid); }
-async function aiGetByVideoTaskId(vtid)       { return (typeof useDb !== 'undefined' && useDb && db.getAiTrackByVideoTaskId) ? db.getAiTrackByVideoTaskId(vtid) : memAiGetByVideoTaskId(vtid); }
-async function aiGetById(id)                  { return (typeof useDb !== 'undefined' && useDb && db.getAiTrackById) ? db.getAiTrackById(id) : memAiGetById(id); }
-async function aiPublish(id, uid)             { return (typeof useDb !== 'undefined' && useDb && db.publishAiTrack) ? db.publishAiTrack(id, uid) : memAiPublish(id, uid); }
+const _db = () => typeof useDb !== 'undefined' && useDb;
+async function aiCreate(doc)                  { return _db() && db.createAiTrack           ? db.createAiTrack(doc)                    : memAiCreate(doc); }
+async function aiUpdateByTaskId(id, u)        { return _db() && db.updateAiTrackByTaskId   ? db.updateAiTrackByTaskId(id, u)          : memAiUpdateByTaskId(id, u); }
+async function aiUpdateByVideoTaskId(id, u)   { return _db() && db.updateAiTrackByVideoTaskId ? db.updateAiTrackByVideoTaskId(id, u)  : memAiUpdateByVideoTaskId(id, u); }
+async function aiGetByUser(uid)               { return _db() && db.getAiTracksByUser       ? db.getAiTracksByUser(uid)                : memAiGetByUser(uid); }
+async function aiGetPublished()               { return _db() && db.getPublishedAiTracks    ? db.getPublishedAiTracks()                : memAiGetPublished(); }
+async function aiGetByTaskId(tid)             { return _db() && db.getAiTrackByTaskId      ? db.getAiTrackByTaskId(tid)               : memAiGetByTaskId(tid); }
+async function aiGetByVideoTaskId(vtid)       { return _db() && db.getAiTrackByVideoTaskId ? db.getAiTrackByVideoTaskId(vtid)         : memAiGetByVideoTaskId(vtid); }
+async function aiGetById(id)                  { return _db() && db.getAiTrackById          ? db.getAiTrackById(id)                    : memAiGetById(id); }
+async function aiPublish(id, uid)             { return _db() && db.publishAiTrack          ? db.publishAiTrack(id, uid)               : memAiPublish(id, uid); }
+async function aiDelete(id)                   { return _db() && db.deleteAiTrack           ? db.deleteAiTrack(id)                     : memAiDelete(id); }
+async function aiUnpublish(id)                { return _db() && db.unpublishAiTrack        ? db.unpublishAiTrack(id)                  : memAiUnpublish(id); }
 
 // ── Music API helpers ──────────────────────────────────────────────────────
 //
@@ -4154,8 +4162,11 @@ app.post('/api/music/webhook', async (req, res) => {
     if (audioTrack) {
       console.log('WEBHOOK: matched audio track id=', audioTrack.id, 'current status=', audioTrack.status);
 
-      // Kie.ai wraps Suno output in data.response.sunoData[] or similar
-      const clips = data.response?.sunoData
+      // Kie.ai nests the track array at body.data.data (confirmed via logs)
+      // Fall back to other known shapes just in case
+      const clips = data.data
+                 || data.response?.data
+                 || data.response?.sunoData
                  || data.sunoData
                  || data.response?.clips
                  || data.clips
@@ -4166,7 +4177,7 @@ app.post('/api/music/webhook', async (req, res) => {
       console.log('WEBHOOK: clips=', JSON.stringify(clips));
       console.log('WEBHOOK: first clip=', JSON.stringify(first));
 
-      // Extract fields — try nested clip object first, then top-level data
+      // Extract fields — snake_case first (kie.ai), then camelCase fallback
       const audioUrl   = first?.audio_url   || first?.audioUrl   || data.audio_url   || data.audioUrl   || null;
       const imageUrl   = first?.image_url   || first?.imageUrl   || data.image_url   || data.imageUrl   || null;
       const rawLyrics  = first?.lyric_text  || first?.lyricText  || first?.lyrics
@@ -4299,11 +4310,52 @@ app.patch('/api/music/publish/:id', requireUser, async (req, res) => {
     if (!track)                             return res.status(404).json({ error: 'Track not found' });
     if (track.userId !== req.user.username) return res.status(403).json({ error: 'Not your track' });
     if (track.status !== 'COMPLETE')        return res.status(400).json({ error: 'Track is not ready yet' });
+    if (track.isRestricted)                 return res.status(403).json({ error: 'This track has been restricted by an admin.' });
     await aiPublish(id, req.user.username);
     res.json({ ok: true });
   } catch (e) {
     console.error('MUSIC API ERROR (publish):', e);
     res.status(500).json({ error: 'Failed to publish track' });
+  }
+});
+
+// ── DELETE /api/music/generate/:id ────────────────────────────────────────
+// Owner of track OR site owner can delete. Works for both PENDING (cancel)
+// and COMPLETE (delete) tracks. Future webhooks for a deleted task are
+// silently ignored because aiGetByTaskId returns null.
+app.delete('/api/music/generate/:id', requireUser, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const track = await aiGetById(id);
+    if (!track) return res.status(404).json({ error: 'Track not found' });
+    const isSiteOwner = req.user.isOwner || req.user.role === 'owner';
+    if (track.userId !== req.user.username && !isSiteOwner) {
+      return res.status(403).json({ error: 'Not your track' });
+    }
+    await aiDelete(id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('MUSIC API ERROR (delete):', e);
+    res.status(500).json({ error: 'Failed to delete track' });
+  }
+});
+
+// ── PATCH /api/music/unpublish/:id  (site owner only) ─────────────────────
+// Sets isPublished=false AND isRestricted=true so the creator cannot
+// republish without owner intervention.
+app.patch('/api/music/unpublish/:id', requireUser, async (req, res) => {
+  const { id } = req.params;
+  try {
+    if (!req.user.isOwner && req.user.role !== 'owner') {
+      return res.status(403).json({ error: 'Owner only' });
+    }
+    const track = await aiGetById(id);
+    if (!track) return res.status(404).json({ error: 'Track not found' });
+    await aiUnpublish(id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('MUSIC API ERROR (unpublish):', e);
+    res.status(500).json({ error: 'Failed to unpublish track' });
   }
 });
 
