@@ -3928,13 +3928,13 @@ function requireUser(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   getUserFromSession(token).then((user) => {
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
-    ensureFields(user);
+    // FJERNET: ensureFields(user) som Claude diktet opp!
     req.user = user;
     next();
   }).catch(next);
 }
 
-// ── AI Music – In-memory store (fallback when !useDb) ──────────────────────
+// ── AI Music – In-memory store (fallback when db functions are missing) ────
 const aiTracksMemory = new Map();
 let aiTracksMemNextId = 1;
 
@@ -3980,16 +3980,16 @@ function memAiPublish(id, userId) {
   return false;
 }
 
-// DB/memory shims
-async function aiCreate(doc)                  { return useDb ? db.createAiTrack(doc)                      : memAiCreate(doc); }
-async function aiUpdateByTaskId(id, u)        { return useDb ? db.updateAiTrackByTaskId(id, u)            : memAiUpdateByTaskId(id, u); }
-async function aiUpdateByVideoTaskId(id, u)   { return useDb ? db.updateAiTrackByVideoTaskId(id, u)       : memAiUpdateByVideoTaskId(id, u); }
-async function aiGetByUser(uid)               { return useDb ? db.getAiTracksByUser(uid)                  : memAiGetByUser(uid); }
-async function aiGetPublished()               { return useDb ? db.getPublishedAiTracks()                  : memAiGetPublished(); }
-async function aiGetByTaskId(tid)             { return useDb ? db.getAiTrackByTaskId(tid)                 : memAiGetByTaskId(tid); }
-async function aiGetByVideoTaskId(vtid)       { return useDb ? db.getAiTrackByVideoTaskId(vtid)           : memAiGetByVideoTaskId(vtid); }
-async function aiGetById(id)                  { return useDb ? db.getAiTrackById(id)                      : memAiGetById(id); }
-async function aiPublish(id, uid)             { return useDb ? db.publishAiTrack(id, uid)                 : memAiPublish(id, uid); }
+// Skuddsikre DB/memory shims (Sjekker faktisk om funksjonene finnes i db.js først)
+async function aiCreate(doc)                  { return (typeof useDb !== 'undefined' && useDb && db.createAiTrack) ? db.createAiTrack(doc) : memAiCreate(doc); }
+async function aiUpdateByTaskId(id, u)        { return (typeof useDb !== 'undefined' && useDb && db.updateAiTrackByTaskId) ? db.updateAiTrackByTaskId(id, u) : memAiUpdateByTaskId(id, u); }
+async function aiUpdateByVideoTaskId(id, u)   { return (typeof useDb !== 'undefined' && useDb && db.updateAiTrackByVideoTaskId) ? db.updateAiTrackByVideoTaskId(id, u) : memAiUpdateByVideoTaskId(id, u); }
+async function aiGetByUser(uid)               { return (typeof useDb !== 'undefined' && useDb && db.getAiTracksByUser) ? db.getAiTracksByUser(uid) : memAiGetByUser(uid); }
+async function aiGetPublished()               { return (typeof useDb !== 'undefined' && useDb && db.getPublishedAiTracks) ? db.getPublishedAiTracks() : memAiGetPublished(); }
+async function aiGetByTaskId(tid)             { return (typeof useDb !== 'undefined' && useDb && db.getAiTrackByTaskId) ? db.getAiTrackByTaskId(tid) : memAiGetByTaskId(tid); }
+async function aiGetByVideoTaskId(vtid)       { return (typeof useDb !== 'undefined' && useDb && db.getAiTrackByVideoTaskId) ? db.getAiTrackByVideoTaskId(vtid) : memAiGetByVideoTaskId(vtid); }
+async function aiGetById(id)                  { return (typeof useDb !== 'undefined' && useDb && db.getAiTrackById) ? db.getAiTrackById(id) : memAiGetById(id); }
+async function aiPublish(id, uid)             { return (typeof useDb !== 'undefined' && useDb && db.publishAiTrack) ? db.publishAiTrack(id, uid) : memAiPublish(id, uid); }
 
 // ── Music API helpers ──────────────────────────────────────────────────────
 //
@@ -4012,14 +4012,18 @@ function buildWebhookBase(req) {
   return `${proto}://${host}`;
 }
 
-/** Call the provider's Suno Generate Music endpoint */
+/** Call the provider's Generate Music endpoint */
 async function callMusicGenerate(apiCfg, payload) {
-  console.log('MUSIC API REQUEST: POST', `${apiCfg.baseUrl}/suno/generate`, JSON.stringify(payload));
-  const r = await fetch(`${apiCfg.baseUrl}/suno/generate`, {
+  // RIKTIG URL for Kie.ai
+  const endpoint = `${apiCfg.baseUrl}/api/v1/generate`;
+  console.log('MUSIC API REQUEST: POST', endpoint, JSON.stringify(payload));
+  
+  const r = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiCfg.key}` },
     body: JSON.stringify(payload),
   });
+  
   const text = await r.text();
   console.log('MUSIC API RESPONSE:', r.status, text);
   try { return JSON.parse(text); } catch { return { code: r.status, msg: text }; }
