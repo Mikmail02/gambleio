@@ -77,6 +77,9 @@
             <button class="mp-playlist-opt" data-playlist="favorites">Favorites</button>
           </div>
         </div>
+        <button class="mp-btn mp-btn-studio hidden" id="mpStudio" title="AI Music Studio" aria-label="Open Music Studio">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
+        </button>
         <div class="mp-volume-wrap">
           <svg class="mp-volume-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8.3v7.4a4.5 4.5 0 0 0 2.5-3.7zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1A9 9 0 0 0 14 3.2z"/></svg>
           <input type="range" class="mp-volume" id="mpVolume" min="0" max="100" value="50" title="Volume" aria-label="Volume">
@@ -103,6 +106,124 @@
         </button>
       </div>
     </div>
+
+    <!-- ── AI Music Studio Modal ───────────────────────────────────────── -->
+    <div class="studio-overlay hidden" id="studioOverlay" role="dialog" aria-modal="true" aria-label="Music Studio">
+      <div class="studio-modal">
+        <div class="studio-header">
+          <span class="studio-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;margin-right:6px"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
+            Music Studio
+          </span>
+          <button class="studio-close-btn" id="studioClose" aria-label="Close studio">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <!-- Trial credits banner — owner only, updated dynamically -->
+        <div class="studio-trial-banner hidden" id="studioTrialBanner">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          <span id="studioTrialText">You have 2 free trial songs — <strong>2 songs left</strong></span>
+        </div>
+
+        <div class="studio-tabs" role="tablist">
+          <button class="studio-tab active hidden" data-tab="create" role="tab">✦ Create</button>
+          <button class="studio-tab hidden" data-tab="my-songs" role="tab">My Songs</button>
+          <button class="studio-tab" data-tab="all-songs" role="tab">All Songs</button>
+        </div>
+
+        <div class="studio-body">
+
+          <!-- Create Tab -->
+          <div class="studio-panel" id="studioCreate" role="tabpanel">
+            <div class="studio-mode-toggle">
+              <button class="studio-mode-btn active" data-mode="simple" id="studioModeSimple">Simple</button>
+              <button class="studio-mode-btn" data-mode="advanced" id="studioModeAdvanced">Advanced</button>
+            </div>
+
+            <form id="studioForm" class="studio-form" novalidate>
+              <!-- Advanced-only -->
+              <div class="studio-field studio-adv hidden">
+                <label class="studio-label" for="studioTitle">Title <span class="studio-char-hint">(max 80)</span></label>
+                <input type="text" id="studioTitle" class="studio-input" maxlength="80" placeholder="Your track title…">
+              </div>
+              <div class="studio-field studio-adv hidden">
+                <label class="studio-label" for="studioStyle">Style / Genre <span class="studio-char-hint">(max 1000)</span></label>
+                <textarea id="studioStyle" class="studio-textarea" maxlength="1000" rows="2" placeholder="pop, upbeat, female vocals, 120bpm…"></textarea>
+              </div>
+
+              <!-- Shared prompt (label changes per mode) -->
+              <div class="studio-field">
+                <label class="studio-label" id="studioPromptLabel" for="studioPrompt">Describe your track <span class="studio-char-hint">(max 5000)</span></label>
+                <textarea id="studioPrompt" class="studio-textarea" maxlength="5000" rows="5" placeholder="A chill lo-fi hip hop beat with jazzy piano and rain sounds…"></textarea>
+              </div>
+
+              <div class="studio-row-opts">
+                <label class="studio-checkbox studio-adv hidden" id="studioInstrumentalWrap">
+                  <input type="checkbox" id="studioInstrumental">
+                  <span>Instrumental (no vocals)</span>
+                </label>
+                <div class="studio-model-wrap">
+                  <label class="studio-label" for="studioModel">Model</label>
+                  <select id="studioModel" class="studio-select">
+                    <option value="chirp-v4-5">Suno v4.5</option>
+                    <option value="chirp-v4">Suno v4</option>
+                    <option value="chirp-v3-5">Suno v3.5</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Music Video toggle -->
+              <label class="studio-video-toggle" id="studioVideoWrap">
+                <div class="studio-video-toggle-left">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+                  <div>
+                    <span class="studio-video-toggle-title">Generate Music Video</span>
+                    <span class="studio-video-toggle-sub">Creates an MP4 from your track — takes longer</span>
+                  </div>
+                </div>
+                <div class="studio-video-switch">
+                  <input type="checkbox" id="studioWantsVideo" class="studio-video-checkbox">
+                  <span class="studio-video-slider"></span>
+                </div>
+              </label>
+
+              <button type="submit" class="studio-generate-btn" id="studioGenerateBtn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="m13 2-2 6H5l5.5 4-2 6L14 14l5.5 4-2-6L23 8h-6z"/></svg>
+                Generate Track
+              </button>
+              <div class="studio-status hidden" id="studioFormStatus"></div>
+            </form>
+          </div>
+
+          <!-- My Songs Tab -->
+          <div class="studio-panel hidden" id="studioMySongs" role="tabpanel">
+            <p class="studio-login-prompt hidden" id="studioLoginPrompt">Sign in to see your generated tracks.</p>
+            <p class="studio-empty-msg hidden" id="studioMyEmpty">No tracks yet — head to Create to generate your first!</p>
+            <div class="studio-track-list" id="studioMyTrackList"></div>
+          </div>
+
+          <!-- All Songs Tab -->
+          <div class="studio-panel hidden" id="studioAllSongs" role="tabpanel">
+            <p class="studio-empty-msg hidden" id="studioAllEmpty">No published tracks yet. Be the first!</p>
+            <div class="studio-track-list" id="studioAllTrackList"></div>
+          </div>
+
+        </div><!-- /.studio-body -->
+
+        <!-- Synced Lyrics Panel (shown inside modal when AI track with lyrics is playing) -->
+        <div class="studio-lyrics-panel hidden" id="studioLyricsPanel">
+          <div class="studio-lyrics-header">
+            <span class="studio-lyrics-title" id="studioLyricsTrackName"></span>
+            <button class="studio-lyrics-close" id="studioLyricsClose" aria-label="Hide lyrics">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div class="studio-lyrics-body" id="studioLyricsBody"></div>
+        </div>
+
+      </div><!-- /.studio-modal -->
+    </div><!-- /#studioOverlay -->
 
     <div class="chat-panel-wrap chat-panel-wrap--closed" id="chatPanelWrap" aria-label="Chat">
       <button type="button" class="chat-toggle" id="chatToggle" aria-label="Toggle chat"><span class="chat-toggle-label">Chat</span></button>
@@ -552,7 +673,7 @@
               <div class="patch-note-card-expanded-content">
                 <header class="patch-note-card-header">
                   <h3 class="patch-note-card-title">Patch notes v1.8</h3>
-                  <p class="patch-note-card-meta">Music player &amp; fixes</p>
+                  <p class="patch-note-card-meta">AI Music Studio, music player &amp; fixes</p>
                 </header>
                 <div class="patch-note-card-body">
                 <section class="patch-note-section">
@@ -563,17 +684,30 @@
                     <li><strong>Drag to move</strong> — Click and drag the player anywhere on your screen. Your position is remembered between sessions.</li>
                     <li><strong>Seek bar</strong> — Scrub through tracks with a visual progress bar showing elapsed and remaining time.</li>
                     <li><strong>Favorites</strong> — Heart any track to add it to your favorites playlist. Switch between "All Songs" and "Favorites" with the playlist toggle.</li>
-                    <li><strong>Sequential playback</strong> — Tracks play in order so you can learn the tracklist. Auto-advances to the next song when one ends.</li>
-                    <li><strong>Owner music management</strong> — Site owners can upload and delete .mp3 files directly from the Admin panel without redeploying.</li>
+                    <li><strong>Sequential playback</strong> — Tracks play in order and auto-advances to the next song when one ends.</li>
+                    <li><strong>Owner music management</strong> — Site owners can upload and delete tracks directly from the Admin panel.</li>
+                  </ul>
+                </section>
+                <section class="patch-note-section">
+                  <h4 class="patch-note-section-title">🎙️ AI Music Studio</h4>
+                  <p class="patch-note-section-desc">Generate original music tracks using AI — right inside the site.</p>
+                  <ul class="patch-note-list">
+                    <li><strong>Create tab</strong> — Describe a track or write your own lyrics and let AI compose and sing it for you. Choose your genre, style, and model.</li>
+                    <li><strong>Simple &amp; Advanced modes</strong> — Simple mode takes a single description. Advanced mode lets you set the title, style, and lyrics separately.</li>
+                    <li><strong>Music video generation</strong> — Optionally request a full music video alongside your track. The video syncs and loops with your audio in the player.</li>
+                    <li><strong>My Songs</strong> — All tracks you generate are saved to your personal library with live status updates while they generate.</li>
+                    <li><strong>Publish to All Songs</strong> — Completed tracks can be published to the global library for every player on the site to hear.</li>
+                    <li><strong>Synced lyrics</strong> — If a track has lyrics, they appear in a panel that highlights the current line in real time as the song plays.</li>
+                    <li><strong>All Songs</strong> — Browse every published AI track from all players in one place, directly from the music player.</li>
                   </ul>
                 </section>
                 <section class="patch-note-section">
                   <h4 class="patch-note-section-title">🐛 Bug fixes</h4>
                   <ul class="patch-note-list">
-                    <li><strong>Profile pages fixed</strong> — Visiting another player's profile no longer shows broken unstyled HTML.</li>
-                    <li><strong>Blackjack payouts</strong> — Push now correctly returns your bet. No more double-deduction on losses. Win display shows total return.</li>
-                    <li><strong>Blackjack balance timing</strong> — Your balance no longer updates before the result text appears.</li>
-                    <li><strong>Case Battle stats</strong> — Wins and losses from Case Battles now count on the leaderboard and in live stats.</li>
+                    <li><strong>Profile pages</strong> — Visiting another player's profile no longer shows broken unstyled HTML.</li>
+                    <li><strong>Blackjack payouts</strong> — Push now correctly returns your bet. No more double-deduction on losses.</li>
+                    <li><strong>Blackjack balance timing</strong> — Balance no longer updates before the result is shown.</li>
+                    <li><strong>Case Battle stats</strong> — Wins and losses from Case Battles now count on the leaderboard and live stats.</li>
                     <li><strong>Case Battle overview</strong> — Battle cards now show the entry price per player instead of the total pot.</li>
                   </ul>
                 </section>
@@ -1556,6 +1690,7 @@
   <script src="/js/main.js"></script>
   <script src="/js/feedback.js"></script>
   <script src="/js/music-player.js"></script>
+  <script src="/js/music-studio.js"></script>
   <script>
     console.log('[index.html] All scripts loaded. Final check:', {
       SlotIntegration: typeof window.SlotIntegration,

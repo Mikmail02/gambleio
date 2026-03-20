@@ -2,6 +2,7 @@
  * Backend server for Gambleio: user auth, stats tracking, leaderboard.
  * Run: node server.js
  */
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -3919,6 +3920,321 @@ app.delete('/api/music/tracks/:filename', requireOwner, (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed to delete track' });
+  }
+});
+
+// ── AI Music – requireUser middleware ──────────────────────────────────────
+function requireUser(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  getUserFromSession(token).then((user) => {
+    if (!user) return res.status(401).json({ error: 'Not authenticated' });
+    ensureFields(user);
+    req.user = user;
+    next();
+  }).catch(next);
+}
+
+// ── AI Music – In-memory store (fallback when !useDb) ──────────────────────
+const aiTracksMemory = new Map();
+let aiTracksMemNextId = 1;
+
+function memAiCreate(doc) {
+  const id = String(aiTracksMemNextId++);
+  aiTracksMemory.set(id, {
+    id,
+    userId:      doc.userId,   taskId:     doc.taskId,
+    title:       doc.title  || '', style:  doc.style  || '', prompt: doc.prompt || '',
+    audioUrl:    null,         imageUrl:   null,  lyrics:    null,
+    sunoClipId:  null,         wantsVideo: !!doc.wantsVideo,
+    videoTaskId: null,         videoUrl:   null,
+    status: 'PENDING', isPublished: false, createdAt: Date.now(),
+  });
+  return id;
+}
+function memAiUpdateByTaskId(taskId, updates) {
+  for (const t of aiTracksMemory.values()) {
+    if (t.taskId === taskId) { Object.assign(t, updates); break; }
+  }
+}
+function memAiUpdateByVideoTaskId(vtid, updates) {
+  for (const t of aiTracksMemory.values()) {
+    if (t.videoTaskId === vtid) { Object.assign(t, updates); break; }
+  }
+}
+function memAiGetByUser(userId) {
+  return [...aiTracksMemory.values()].filter(t => t.userId === userId).sort((a, b) => b.createdAt - a.createdAt);
+}
+function memAiGetPublished() {
+  return [...aiTracksMemory.values()].filter(t => t.isPublished && t.status === 'COMPLETE').sort((a, b) => b.createdAt - a.createdAt);
+}
+function memAiGetByTaskId(taskId) {
+  return [...aiTracksMemory.values()].find(t => t.taskId === taskId) || null;
+}
+function memAiGetByVideoTaskId(vtid) {
+  return [...aiTracksMemory.values()].find(t => t.videoTaskId === vtid) || null;
+}
+function memAiGetById(id)              { return aiTracksMemory.get(id) || null; }
+function memAiPublish(id, userId) {
+  const t = aiTracksMemory.get(id);
+  if (t && t.userId === userId) { t.isPublished = true; return true; }
+  return false;
+}
+
+// DB/memory shims
+async function aiCreate(doc)                  { return useDb ? db.createAiTrack(doc)                      : memAiCreate(doc); }
+async function aiUpdateByTaskId(id, u)        { return useDb ? db.updateAiTrackByTaskId(id, u)            : memAiUpdateByTaskId(id, u); }
+async function aiUpdateByVideoTaskId(id, u)   { return useDb ? db.updateAiTrackByVideoTaskId(id, u)       : memAiUpdateByVideoTaskId(id, u); }
+async function aiGetByUser(uid)               { return useDb ? db.getAiTracksByUser(uid)                  : memAiGetByUser(uid); }
+async function aiGetPublished()               { return useDb ? db.getPublishedAiTracks()                  : memAiGetPublished(); }
+async function aiGetByTaskId(tid)             { return useDb ? db.getAiTrackByTaskId(tid)                 : memAiGetByTaskId(tid); }
+async function aiGetByVideoTaskId(vtid)       { return useDb ? db.getAiTrackByVideoTaskId(vtid)           : memAiGetByVideoTaskId(vtid); }
+async function aiGetById(id)                  { return useDb ? db.getAiTrackById(id)                      : memAiGetById(id); }
+async function aiPublish(id, uid)             { return useDb ? db.publishAiTrack(id, uid)                 : memAiPublish(id, uid); }
+
+// ── Music API helpers ──────────────────────────────────────────────────────
+//
+// ENVIRONMENT VARIABLES — set in .env (local) or Render dashboard (production):
+//   MUSIC_API_KEY    — Bearer token for the music generation provider
+//   MUSIC_API_URL    — Provider base URL, no trailing slash (e.g. https://api.kie.ai)
+//   WEBHOOK_URL      — Your public server URL (e.g. https://gambleio.com)
+
+function getMusicApiConfig() {
+  return {
+    key:     process.env.MUSIC_API_KEY,
+    baseUrl: (process.env.MUSIC_API_URL || '').replace(/\/$/, ''),
+  };
+}
+
+function buildWebhookBase(req) {
+  if (process.env.WEBHOOK_URL) return process.env.WEBHOOK_URL.replace(/\/$/, '');
+  const proto = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+  const host  = req.headers['x-forwarded-host'] || req.headers.host;
+  return `${proto}://${host}`;
+}
+
+/** Call the provider's Suno Generate Music endpoint */
+async function callMusicGenerate(apiCfg, payload) {
+  const r = await fetch(`${apiCfg.baseUrl}/suno/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiCfg.key}` },
+    body: JSON.stringify(payload),
+  });
+  return r.json();
+}
+
+/** Call the provider's Suno create-music-video endpoint */
+async function callVideoGenerate(apiCfg, payload) {
+  const r = await fetch(`${apiCfg.baseUrl}/suno/create-music-video`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiCfg.key}` },
+    body: JSON.stringify(payload),
+  });
+  return r.json();
+}
+
+// ── POST /api/music/generate ───────────────────────────────────────────────
+app.post('/api/music/generate', requireUser, async (req, res) => {
+  // Owner-only: music generation is still in private testing
+  if (!(req.user.isOwner || req.user.role === 'owner')) {
+    return res.status(403).json({ error: 'Music generation is only available to the site owner.' });
+  }
+
+  const apiCfg = getMusicApiConfig();
+  if (!apiCfg.key || !apiCfg.baseUrl) {
+    return res.status(503).json({ error: 'Music generation is temporarily unavailable. Please try again later.' });
+  }
+
+  const { title, style, prompt, instrumental, customMode, model, wantsVideo } = req.body;
+
+  const webhookBase = buildWebhookBase(req);
+  const audioWebhook = `${webhookBase}/api/music/webhook`;
+
+  // Validate inputs and build provider payload
+  const payload = {
+    customMode:   !!customMode,
+    instrumental: !!instrumental,
+    model:        model || 'chirp-v4-5',
+    callBackUrl:  audioWebhook,
+  };
+
+  if (customMode) {
+    if (!style)              return res.status(400).json({ error: 'Style is required in Advanced Mode.' });
+    if (!title)              return res.status(400).json({ error: 'Title is required in Advanced Mode.' });
+    if (!instrumental && !prompt) return res.status(400).json({ error: 'Lyrics/Prompt required when not Instrumental.' });
+    payload.style = style;
+    payload.title = title;
+    if (!instrumental) payload.prompt = prompt;
+  } else {
+    if (!prompt) return res.status(400).json({ error: 'Prompt is required in Simple Mode.' });
+    payload.prompt = prompt;
+  }
+
+  let apiResp;
+  try {
+    apiResp = await callMusicGenerate(apiCfg, payload);
+  } catch (e) {
+    console.error('Music generate error:', e.message);
+    return res.status(502).json({ error: 'Failed to reach music generation API.' });
+  }
+
+  if (apiResp.code !== 200 || !apiResp.data?.taskId) {
+    return res.status(502).json({ error: apiResp.msg || 'Music generation API returned an error.' });
+  }
+
+  const taskId  = apiResp.data.taskId;
+  const trackId = await aiCreate({
+    userId:     req.user.username,
+    taskId,
+    title:      title || (prompt || '').slice(0, 80) || 'Untitled',
+    style:      style || '',
+    prompt:     prompt || '',
+    wantsVideo: !!wantsVideo,
+  });
+
+  res.json({
+    ok: true,
+    track: {
+      id: trackId, taskId, status: 'PENDING',
+      title:      title || (prompt || '').slice(0, 80) || 'Untitled',
+      wantsVideo: !!wantsVideo,
+      createdAt:  Date.now(),
+    },
+  });
+});
+
+// ── POST /api/music/webhook  (provider async callback – audio + video) ─────
+//
+// The provider fires this once when audio is ready, and again when
+// the video job (if requested) is ready. We distinguish them by
+// checking which task_id matches.
+app.post('/api/music/webhook', async (req, res) => {
+  // Acknowledge immediately so the provider doesn't retry
+  res.json({ ok: true });
+
+  try {
+    const body = req.body || {};
+    const data = body.data || body;
+
+    const incomingTaskId = data.taskId || data.task_id || body.taskId;
+    if (!incomingTaskId) return;
+
+    // ── Check: is this an audio callback? ────────────────────────────────
+    const audioTrack = await aiGetByTaskId(incomingTaskId);
+    if (audioTrack) {
+      // Extract track data — provider wraps Suno output in a clips/sunoData array
+      const clips   = data.response?.sunoData || data.sunoData
+                   || data.clips || data.tracks
+                   || (data.response?.clips);
+      const first   = Array.isArray(clips) ? clips[0] : null;
+
+      const audioUrl    = first?.audioUrl   || first?.audio_url   || data.audioUrl   || data.audio_url   || null;
+      const imageUrl    = first?.imageUrl   || first?.image_url   || data.imageUrl   || data.image_url   || null;
+      const rawLyrics   = first?.lyricText  || first?.lyrics      || data.lyricText  || data.lyrics      || null;
+      const titleUpd    = first?.title      || data.title         || null;
+      // Provider-internal clip ID — needed to request a video
+      const sunoClipId  = first?.id         || first?.clipId      || first?.clip_id  || data.clipId      || null;
+
+      const audioOk = !!(body.code === 200 || data.status === 'complete' || data.status === 'COMPLETE' || audioUrl);
+
+      if (!audioOk) {
+        // Audio generation failed
+        await aiUpdateByTaskId(incomingTaskId, { status: 'FAILED' });
+        return;
+      }
+
+      // Save audio data. If video is also requested, stay PENDING; else COMPLETE.
+      const needsVideo = audioTrack.wantsVideo && !!sunoClipId;
+      const audioUpdates = {
+        audioUrl:   audioUrl,
+        imageUrl:   imageUrl,
+        lyrics:     rawLyrics ? (typeof rawLyrics === 'object' ? JSON.stringify(rawLyrics) : rawLyrics) : undefined,
+        title:      titleUpd  || undefined,
+        sunoClipId: sunoClipId || undefined,
+        status:     needsVideo ? 'PENDING' : 'COMPLETE',
+      };
+      // Strip undefined keys
+      Object.keys(audioUpdates).forEach(k => audioUpdates[k] === undefined && delete audioUpdates[k]);
+      await aiUpdateByTaskId(incomingTaskId, audioUpdates);
+
+      // ── Chain: kick off video generation ─────────────────────────────
+      if (needsVideo) {
+        try {
+          const apiCfg = getMusicApiConfig();
+          // Video webhook reuses the same endpoint — provider passes a different taskId
+          const videoWebhookBase = process.env.WEBHOOK_URL
+            ? process.env.WEBHOOK_URL.replace(/\/$/, '')
+            : ''; // best-effort; may not be reachable in local dev
+          const videoPayload = {
+            clipId:     sunoClipId,
+            audioUrl:   audioUrl || undefined,
+            callBackUrl: videoWebhookBase ? `${videoWebhookBase}/api/music/webhook` : undefined,
+          };
+          Object.keys(videoPayload).forEach(k => videoPayload[k] === undefined && delete videoPayload[k]);
+
+          const videoResp = await callVideoGenerate(apiCfg, videoPayload);
+          if (videoResp.code === 200 && videoResp.data?.taskId) {
+            await aiUpdateByTaskId(incomingTaskId, { videoTaskId: videoResp.data.taskId });
+          } else {
+            // Video request failed — mark complete with audio only so user isn't stuck
+            console.warn('Video generation request failed:', videoResp.msg);
+            await aiUpdateByTaskId(incomingTaskId, { status: 'COMPLETE' });
+          }
+        } catch (e) {
+          console.error('Video chain error:', e.message);
+          await aiUpdateByTaskId(incomingTaskId, { status: 'COMPLETE' });
+        }
+      }
+      return;
+    }
+
+    // ── Check: is this a video callback? ─────────────────────────────────
+    const videoTrack = await aiGetByVideoTaskId(incomingTaskId);
+    if (videoTrack) {
+      const data2   = body.data || body;
+      const videoUrl = data2.videoUrl || data2.video_url
+                    || data2.response?.videoUrl || data2.response?.video_url
+                    || null;
+
+      const videoOk = !!(body.code === 200 || data2.status === 'complete' || data2.status === 'COMPLETE' || videoUrl);
+
+      await aiUpdateByVideoTaskId(incomingTaskId, {
+        videoUrl: videoUrl || undefined,
+        status:   videoOk ? 'COMPLETE' : 'COMPLETE', // complete either way — audio is already saved
+      });
+    }
+
+  } catch (e) {
+    console.error('Webhook processing error:', e.message);
+  }
+});
+
+// ── GET /api/music/library ────────────────────────────────────────────────
+app.get('/api/music/library', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const user  = await getUserFromSession(token).catch(() => null);
+  try {
+    const [mySongs, allSongs] = await Promise.all([
+      user ? aiGetByUser(user.username) : [],
+      aiGetPublished(),
+    ]);
+    res.json({ mySongs, allSongs });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load library' });
+  }
+});
+
+// ── PATCH /api/music/publish/:id ──────────────────────────────────────────
+app.patch('/api/music/publish/:id', requireUser, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const track = await aiGetById(id);
+    if (!track)                             return res.status(404).json({ error: 'Track not found' });
+    if (track.userId !== req.user.username) return res.status(403).json({ error: 'Not your track' });
+    if (track.status !== 'COMPLETE')        return res.status(400).json({ error: 'Track is not ready yet' });
+    await aiPublish(id, req.user.username);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to publish track' });
   }
 });
 

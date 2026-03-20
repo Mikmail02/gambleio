@@ -412,6 +412,127 @@ async function updateChatServerMessage(challengeId, newText) {
   }
 }
 
+// ── AI Tracks ──────────────────────────────────────────────────────────────
+
+// Columns selected in every AI-track query
+const AI_TRACK_COLS = `
+  id, user_id, task_id, title, style, prompt,
+  audio_url, image_url, lyrics,
+  suno_clip_id, wants_video, video_task_id, video_url,
+  status, is_published, created_at`;
+
+function rowToAiTrack(r) {
+  return {
+    id:          String(r.id),
+    userId:      r.user_id,
+    taskId:      r.task_id,
+    title:       r.title       || '',
+    style:       r.style       || '',
+    prompt:      r.prompt      || '',
+    audioUrl:    r.audio_url   || null,
+    imageUrl:    r.image_url   || null,
+    lyrics:      r.lyrics      || null,
+    sunoClipId:  r.suno_clip_id || null,
+    wantsVideo:  !!r.wants_video,
+    videoTaskId: r.video_task_id || null,
+    videoUrl:    r.video_url   || null,
+    status:      r.status      || 'PENDING',
+    isPublished: !!r.is_published,
+    createdAt:   Number(r.created_at),
+  };
+}
+
+async function createAiTrack(doc) {
+  const res = await getPool().query(
+    `INSERT INTO ai_tracks (user_id, task_id, title, style, prompt, wants_video, status, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7) RETURNING id`,
+    [doc.userId, doc.taskId, doc.title || '', doc.style || '', doc.prompt || '',
+     !!doc.wantsVideo, Date.now()]
+  );
+  return String(res.rows[0].id);
+}
+
+async function updateAiTrackByTaskId(taskId, updates) {
+  const sets = [];
+  const vals = [];
+  let i = 1;
+  if (updates.audioUrl    !== undefined) { sets.push(`audio_url = $${i++}`);    vals.push(updates.audioUrl); }
+  if (updates.imageUrl    !== undefined) { sets.push(`image_url = $${i++}`);    vals.push(updates.imageUrl); }
+  if (updates.lyrics      !== undefined) { sets.push(`lyrics = $${i++}`);       vals.push(updates.lyrics); }
+  if (updates.status      !== undefined) { sets.push(`status = $${i++}`);       vals.push(updates.status); }
+  if (updates.title       !== undefined) { sets.push(`title = $${i++}`);        vals.push(updates.title); }
+  if (updates.sunoClipId  !== undefined) { sets.push(`suno_clip_id = $${i++}`); vals.push(updates.sunoClipId); }
+  if (updates.videoTaskId !== undefined) { sets.push(`video_task_id = $${i++}`);vals.push(updates.videoTaskId); }
+  if (updates.videoUrl    !== undefined) { sets.push(`video_url = $${i++}`);    vals.push(updates.videoUrl); }
+  if (!sets.length) return;
+  vals.push(taskId);
+  await getPool().query(
+    `UPDATE ai_tracks SET ${sets.join(', ')} WHERE task_id = $${i}`,
+    vals
+  );
+}
+
+async function updateAiTrackByVideoTaskId(videoTaskId, updates) {
+  const sets = [];
+  const vals = [];
+  let i = 1;
+  if (updates.videoUrl !== undefined) { sets.push(`video_url = $${i++}`); vals.push(updates.videoUrl); }
+  if (updates.status   !== undefined) { sets.push(`status = $${i++}`);    vals.push(updates.status); }
+  if (!sets.length) return;
+  vals.push(videoTaskId);
+  await getPool().query(
+    `UPDATE ai_tracks SET ${sets.join(', ')} WHERE video_task_id = $${i}`,
+    vals
+  );
+}
+
+async function getAiTracksByUser(userId) {
+  const res = await getPool().query(
+    `SELECT ${AI_TRACK_COLS} FROM ai_tracks WHERE user_id = $1 ORDER BY created_at DESC`,
+    [userId]
+  );
+  return res.rows.map(rowToAiTrack);
+}
+
+async function getPublishedAiTracks() {
+  const res = await getPool().query(
+    `SELECT ${AI_TRACK_COLS} FROM ai_tracks WHERE is_published = TRUE AND status = 'COMPLETE' ORDER BY created_at DESC`
+  );
+  return res.rows.map(rowToAiTrack);
+}
+
+async function getAiTrackByTaskId(taskId) {
+  const res = await getPool().query(
+    `SELECT ${AI_TRACK_COLS} FROM ai_tracks WHERE task_id = $1`,
+    [taskId]
+  );
+  return res.rows[0] ? rowToAiTrack(res.rows[0]) : null;
+}
+
+async function getAiTrackByVideoTaskId(videoTaskId) {
+  const res = await getPool().query(
+    `SELECT ${AI_TRACK_COLS} FROM ai_tracks WHERE video_task_id = $1`,
+    [videoTaskId]
+  );
+  return res.rows[0] ? rowToAiTrack(res.rows[0]) : null;
+}
+
+async function getAiTrackById(id) {
+  const res = await getPool().query(
+    `SELECT ${AI_TRACK_COLS} FROM ai_tracks WHERE id = $1`,
+    [id]
+  );
+  return res.rows[0] ? rowToAiTrack(res.rows[0]) : null;
+}
+
+async function publishAiTrack(id, userId) {
+  const res = await getPool().query(
+    `UPDATE ai_tracks SET is_published = TRUE WHERE id = $1 AND user_id = $2 RETURNING id`,
+    [id, userId]
+  );
+  return res.rowCount > 0;
+}
+
 module.exports = {
   getPool,
   getUserByUsername,
@@ -436,4 +557,13 @@ module.exports = {
   submitFeedback,
   getFeedbacks,
   updateFeedbackStatus,
+  createAiTrack,
+  updateAiTrackByTaskId,
+  updateAiTrackByVideoTaskId,
+  getAiTracksByUser,
+  getPublishedAiTracks,
+  getAiTrackByTaskId,
+  getAiTrackByVideoTaskId,
+  getAiTrackById,
+  publishAiTrack,
 };

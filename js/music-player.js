@@ -463,5 +463,56 @@
     init();
   }
 
-  window.MusicPlayer = { play, pause, next, prev, fetchTracks, getActiveList };
+  // ── AI Track integration ───────────────────────────────────────────────
+  let currentAiTrack = null;   // { id, title, audioUrl, lyrics, ... }
+  let activeLyricLines = null; // parsed [{t, text}] or null
+
+  /** Load an AI-generated track into the shared audio element */
+  function loadAiTrack(aiTrack) {
+    currentAiTrack = aiTrack;
+    audio.src = aiTrack.audioUrl;
+    userInteracted = true;
+    audio.play().then(() => { playing = true; updateUI(); }).catch(() => {});
+    if (elTitle) {
+      elTitle.textContent = aiTrack.title || 'AI Track';
+      elTitle.title = aiTrack.title || 'AI Track';
+    }
+    updateUI();
+  }
+
+  /** Set parsed lyric lines [{t: seconds, text}] for synced display, or null to clear */
+  function setActiveLyrics(lines) {
+    activeLyricLines = lines;
+  }
+
+  /** Called by music-studio.js on timeupdate to get highlight index */
+  function getCurrentLyricIndex() {
+    if (!activeLyricLines) return -1;
+    const t = audio.currentTime;
+    let idx = -1;
+    for (let i = 0; i < activeLyricLines.length; i++) {
+      if (activeLyricLines[i].t <= t) idx = i;
+      else break;
+    }
+    return idx;
+  }
+
+  // Studio button — open handled by music-studio.js
+  const btnStudio = $('mpStudio');
+  if (btnStudio) {
+    btnStudio.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const event = new CustomEvent('music-studio:open');
+      window.dispatchEvent(event);
+    });
+  }
+
+  window.MusicPlayer = {
+    play, pause, next, prev, fetchTracks, getActiveList,
+    loadAiTrack,
+    setActiveLyrics,
+    getCurrentLyricIndex,
+    getAudio: () => audio,
+    getCurrentAiTrack: () => currentAiTrack,
+  };
 })();
