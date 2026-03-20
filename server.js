@@ -4130,79 +4130,109 @@ app.post('/api/music/generate', requireUser, async (req, res) => {
 
 // ── POST /api/music/webhook  (provider async callback – audio + video) ─────
 //
-// The provider fires this once when audio is ready, and again when
-// the video job (if requested) is ready. We distinguish them by
-// checking which task_id matches.
+// Kie.ai fires multiple callbacks per job (e.g. "text" stage for lyrics,
+// then intermediate "first" stage, then the final "complete" stage with audio).
+// We MUST NOT mark a track COMPLETE unless a real audioUrl is present.
 app.post('/api/music/webhook', async (req, res) => {
   // Acknowledge immediately so the provider doesn't retry
   res.json({ ok: true });
 
   try {
     const body = req.body || {};
+    console.log('WEBHOOK PAYLOAD:', JSON.stringify(body, null, 2));
+
     const data = body.data || body;
 
     const incomingTaskId = data.taskId || data.task_id || body.taskId;
-    if (!incomingTaskId) return;
+    if (!incomingTaskId) {
+      console.log('WEBHOOK: no taskId found, ignoring');
+      return;
+    }
 
     // ── Check: is this an audio callback? ────────────────────────────────
     const audioTrack = await aiGetByTaskId(incomingTaskId);
     if (audioTrack) {
-      // Extract track data — provider wraps Suno output in a clips/sunoData array
-      const clips   = data.response?.sunoData || data.sunoData
-                   || data.clips || data.tracks
-                   || (data.response?.clips);
-      const first   = Array.isArray(clips) ? clips[0] : null;
+      console.log('WEBHOOK: matched audio track id=', audioTrack.id, 'current status=', audioTrack.status);
 
-      const audioUrl    = first?.audioUrl   || first?.audio_url   || data.audioUrl   || data.audio_url   || null;
-      const imageUrl    = first?.imageUrl   || first?.image_url   || data.imageUrl   || data.image_url   || null;
-      const rawLyrics   = first?.lyricText  || first?.lyrics      || data.lyricText  || data.lyrics      || null;
-      const titleUpd    = first?.title      || data.title         || null;
-      // Provider-internal clip ID — needed to request a video
-      const sunoClipId  = first?.id         || first?.clipId      || first?.clip_id  || data.clipId      || null;
+      // Kie.ai wraps Suno output in data.response.sunoData[] or similar
+      const clips = data.response?.sunoData
+                 || data.sunoData
+                 || data.response?.clips
+                 || data.clips
+                 || data.tracks
+                 || null;
+      const first = Array.isArray(clips) ? clips[0] : (clips && typeof clips === 'object' ? clips : null);
 
-      const audioOk = !!(body.code === 200 || data.status === 'complete' || data.status === 'COMPLETE' || audioUrl);
+      console.log('WEBHOOK: clips=', JSON.stringify(clips));
+      console.log('WEBHOOK: first clip=', JSON.stringify(first));
 
-      if (!audioOk) {
-        // Audio generation failed
+      // Extract fields — try nested clip object first, then top-level data
+      const audioUrl   = first?.audio_url   || first?.audioUrl   || data.audio_url   || data.audioUrl   || null;
+      const imageUrl   = first?.image_url   || first?.imageUrl   || data.image_url   || data.imageUrl   || null;
+      const rawLyrics  = first?.lyric_text  || first?.lyricText  || first?.lyrics
+                      || data.lyric_text    || data.lyricText    || data.lyrics       || null;
+      const titleUpd   = first?.title       || data.title        || null;
+      const sunoClipId = first?.id          || first?.clip_id    || first?.clipId
+                      || data.clip_id       || data.clipId       || null;
+
+      console.log('WEBHOOK: extracted audioUrl=', audioUrl, 'sunoClipId=', sunoClipId, 'stage=', data.status || data.callbackType || 'unknown');
+
+      // ── GUARD: only save/update if there is actually something new ────
+      // Intermediate callbacks (lyrics stage, "first" preview) may have
+      // partial data. Always save what we have, but ONLY mark COMPLETE
+      // when a real audioUrl arrives.
+
+      // Explicit failure
+      if (data.status === 'failed' || data.status === 'FAILED' || body.code === 500) {
+        console.log('WEBHOOK: audio generation failed, marking FAILED');
         await aiUpdateByTaskId(incomingTaskId, { status: 'FAILED' });
         return;
       }
 
-      // Save audio data. If video is also requested, stay PENDING; else COMPLETE.
+      // Build partial update — only include fields that have values
+      const updates = {};
+      if (audioUrl)   updates.audioUrl   = audioUrl;
+      if (imageUrl)   updates.imageUrl   = imageUrl;
+      if (sunoClipId) updates.sunoClipId = sunoClipId;
+      if (titleUpd)   updates.title      = titleUpd;
+      if (rawLyrics)  updates.lyrics     = typeof rawLyrics === 'object' ? JSON.stringify(rawLyrics) : rawLyrics;
+
+      if (!audioUrl) {
+        // This is an intermediate callback (lyrics, preview, etc.) — save what
+        // we got but keep the track PENDING so the UI doesn't show it as done.
+        console.log('WEBHOOK: intermediate callback — no audioUrl yet, staying PENDING');
+        if (Object.keys(updates).length > 0) {
+          await aiUpdateByTaskId(incomingTaskId, updates);
+        }
+        return;
+      }
+
+      // We have a real audioUrl — decide final status
       const needsVideo = audioTrack.wantsVideo && !!sunoClipId;
-      const audioUpdates = {
-        audioUrl:   audioUrl,
-        imageUrl:   imageUrl,
-        lyrics:     rawLyrics ? (typeof rawLyrics === 'object' ? JSON.stringify(rawLyrics) : rawLyrics) : undefined,
-        title:      titleUpd  || undefined,
-        sunoClipId: sunoClipId || undefined,
-        status:     needsVideo ? 'PENDING' : 'COMPLETE',
-      };
-      // Strip undefined keys
-      Object.keys(audioUpdates).forEach(k => audioUpdates[k] === undefined && delete audioUpdates[k]);
-      await aiUpdateByTaskId(incomingTaskId, audioUpdates);
+      updates.status = needsVideo ? 'PENDING' : 'COMPLETE';
+      await aiUpdateByTaskId(incomingTaskId, updates);
+      console.log('WEBHOOK: audio saved, status=', updates.status);
 
       // ── Chain: kick off video generation ─────────────────────────────
       if (needsVideo) {
         try {
           const apiCfg = getMusicApiConfig();
-          // Video webhook reuses the same endpoint — provider passes a different taskId
           const videoWebhookBase = process.env.WEBHOOK_URL
             ? process.env.WEBHOOK_URL.replace(/\/$/, '')
-            : ''; // best-effort; may not be reachable in local dev
+            : '';
           const videoPayload = {
-            clipId:     sunoClipId,
-            audioUrl:   audioUrl || undefined,
+            clipId:      sunoClipId,
+            audioUrl:    audioUrl,
             callBackUrl: videoWebhookBase ? `${videoWebhookBase}/api/music/webhook` : undefined,
           };
-          Object.keys(videoPayload).forEach(k => videoPayload[k] === undefined && delete videoPayload[k]);
+          if (!videoPayload.callBackUrl) delete videoPayload.callBackUrl;
 
           const videoResp = await callVideoGenerate(apiCfg, videoPayload);
           if (videoResp.code === 200 && videoResp.data?.taskId) {
             await aiUpdateByTaskId(incomingTaskId, { videoTaskId: videoResp.data.taskId });
+            console.log('WEBHOOK: video job queued, videoTaskId=', videoResp.data.taskId);
           } else {
-            // Video request failed — mark complete with audio only so user isn't stuck
-            console.warn('Video generation request failed:', videoResp.msg);
+            console.warn('WEBHOOK: video request failed, completing with audio only:', videoResp.msg);
             await aiUpdateByTaskId(incomingTaskId, { status: 'COMPLETE' });
           }
         } catch (e) {
@@ -4216,18 +4246,23 @@ app.post('/api/music/webhook', async (req, res) => {
     // ── Check: is this a video callback? ─────────────────────────────────
     const videoTrack = await aiGetByVideoTaskId(incomingTaskId);
     if (videoTrack) {
-      const data2   = body.data || body;
-      const videoUrl = data2.videoUrl || data2.video_url
-                    || data2.response?.videoUrl || data2.response?.video_url
+      console.log('WEBHOOK: matched video track id=', videoTrack.id);
+      const videoUrl = data.response?.video_url || data.response?.videoUrl
+                    || data.video_url            || data.videoUrl
                     || null;
 
-      const videoOk = !!(body.code === 200 || data2.status === 'complete' || data2.status === 'COMPLETE' || videoUrl);
+      console.log('WEBHOOK: videoUrl=', videoUrl);
 
+      // Complete regardless — audio is already saved; video is a bonus
       await aiUpdateByVideoTaskId(incomingTaskId, {
-        videoUrl: videoUrl || undefined,
-        status:   videoOk ? 'COMPLETE' : 'COMPLETE', // complete either way — audio is already saved
+        ...(videoUrl ? { videoUrl } : {}),
+        status: 'COMPLETE',
       });
+      console.log('WEBHOOK: video saved, track COMPLETE');
+      return;
     }
+
+    console.log('WEBHOOK: taskId not matched to any track:', incomingTaskId);
 
   } catch (e) {
     console.error('MUSIC API ERROR (webhook):', e);
